@@ -1,0 +1,40 @@
+/'
+System Context diagram
+'/
+
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+LAYOUT_TOP_DOWN()
+LAYOUT_WITH_LEGEND()
+title System Context Diagram of \n "Intelligent system for development of trading strategies [ITS]";
+
+Person(customer, "Customer", "Service client")
+
+Boundary(its_board, "ITS internal board") {
+    Person(admin, "Admin", "ITS Service Admin")
+    System(its, "Intelligent system for development of trading strategies [ITS]")
+}
+
+' External systems
+System_Ext(moex, "MOEX", "MOEX Group")
+System_Ext(broker, "Broker", "")
+System_Ext(events_calendar, "Events Calendar", "Provider of the issuer's calendar of events")
+System_Ext(news_provider, "News Provider", "Provider of issuer's news")
+System_Ext(telegram, "Telegram", "Telegram notifications")
+System_Ext(mail_server, "Email", "Email notifications")
+
+
+' Links
+Rel_Neighbor(admin, its, "Manage Service", "https")
+BiRel_D(customer, its, "Entering rules", "https")
+
+Rel(events_calendar, its, "Reading events", "https")
+Rel(news_provider, its, "Reading news", "https")
+Rel(its, telegram, "Send notifications", "https")
+Rel(its, mail_server, "Send notifications", "SMTP")
+
+BiRel_D(broker, its, "Reading data, managing orders", "https")
+BiRel_D(broker, moex, "Managing orders", "https")
+
+@enduml

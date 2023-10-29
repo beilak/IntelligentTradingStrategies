@@ -1,0 +1,128 @@
+/'
+Container diagram
+'/
+
+@startuml
+!includeurl https://raw.githubusercontent.com/RicardoNiepel/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_TOP_DOWN()
+LAYOUT_WITH_LEGEND()
+title Container Diagram of \n "Intelligent system for development of trading strategies [ITS]"
+
+Person(admin, "Admin", "ITS Service Admin")
+Person(customer, "Customer", "Service client")
+
+
+Boundary(its_board, "ITS internal board") {
+        Boundary(ui, "Customer UI") {
+            Container(web_app, "Web APP", "React", "Main Web UI")
+        }
+
+        Boundary(tech_ui, "Tech UI") {
+            Container(admin_web_app, "Admin APP", "React", "Web UI for Admin Control")
+        }
+
+        Boundary(backend, "BackEnd") {
+            Boundary(services, "Services") {
+
+                Boundary(productions, "Productions ") {
+                    ' Productions Services
+                    Container(api_prod, "Service API", "Python, FastAPI", "API Manage production service")
+                    SystemDb(service_api_db, "PostgreSQL", "Service API DB")
+                    BiRel_D(api_prod, service_api_db, "CRUD", "https")
+
+                    Container(strategies_executor, "Strategies Executor", "Python", "To execute the selected strategy")
+
+                    Container(order, "Orders", "Python", "Order Management Service")
+                    SystemDb(order_db, "PostgreSQL", "Order DB")
+                    BiRel_D(order, order_db, "CRUD \n Order transactions", "https")
+
+                    ContainerDb(MQ_prod, "RabbitMQ", "Event Bus")
+
+                    ' Link Publish event's
+                    Rel_D(order, MQ_prod, "Order events", "AMQP")
+                    Rel_D(strategies_executor, MQ_prod, "Order events", "AMQP")
+
+                    ' Link Subscribe event's
+                    Rel_D(MQ_prod, api_prod, "Sub order evens", "AMQP")
+
+                }
+
+
+                Boundary(lab, "Laboratory ") {
+                    ' Laboratory service
+
+                    Container(api_lab, "Service API", "Python, FastAPI", "API Manage laboratory service")
+                    SystemDb(service_lab_db, "PostgreSQL", "Service API DB")
+                    BiRel(api_lab, service_lab_db, "CRUD", "https")
+
+                    Container(strategies_registry, "Strategies registry", "Python, FastAPI", "Strategies management")
+                    SystemDb(strategies_db, "PostgreSQL", "Strategies registry DB")
+                    BiRel(strategies_registry, strategies_db, "CRUD \n Strategies registry data", "https")
+
+
+                    Container(backtester, "Backtesting Service", "Python", "Backtesting strategies")
+                    SystemDb(backtester_db, "PostgreSQL", "Backtester DB")
+                    ContainerDb(cache, "Redis", "Cache Data")
+                    BiRel(backtester, backtester_db, "CRUD \n Strategies data", "https")
+                    BiRel(backtester, cache, "CRU \n History data cache", "https")
+
+                    Container(genetic, "Genetic Service", "Python", "Evolution of strategies")
+                    SystemDb(genetic_db, "PostgreSQL", "Genetic DB")
+                    BiRel(genetic, genetic_db, "CRUD \n Genetic data", "https")
+
+
+                    ContainerDb(MQ_lab, "RabbitMQ", "Event Bus")
+
+                    ' Link Publish event's
+                    Rel_D(strategies_registry, MQ_lab, "New strategies events", "AMQP")
+                    Rel_D(backtester, MQ_lab, "test strategies events", "AMQP")
+
+                    ' Link Subscribe event's
+                    Rel_D(MQ_lab, genetic, "Sub backtesting  evens", "AMQP")
+                    Rel_D(MQ_lab, backtester, "Sub evolution evens", "AMQP")
+
+                }
+
+
+                Container(notifications, "Notifications", "Python", "Notifications server")
+                Rel_D(MQ_prod, notifications, "Sub notify events", "AMQP")
+
+            }
+        }
+}
+
+' External systems
+System_Ext(broker, "Broker", "")
+System_Ext(moex, "MOEX", "MOEX Group")
+BiRel_D(broker, moex, "Managing orders", "https")
+
+System_Ext(github, "GitHub", "Strategies model registry")
+Rel(strategies_executor, github, "Read strategies code", "https")
+Rel(strategies_registry, github, "Read strategies code", "https")
+
+
+
+System_Ext(telegram, "Telegram", "Telegram notifications")
+System_Ext(mail_server, "Email", "Email notifications")
+
+' Link Clients to UI
+BiRel(customer, web_app, "Post/Get data \n Read analytics", "https")
+
+' Link Tech user to UI
+BiRel(admin, admin_web_app, "Mange Service", "https")
+
+' Link Client UI
+BiRel(web_app, api_prod, "CRUD", "https")
+BiRel(admin_web_app, api_prod, "CRUD", "https")
+BiRel(admin_web_app, api_lab, "CRUD", "https")
+
+' Link Notification to External servers
+Rel_D(notifications, telegram, "Send msg", "https")
+Rel_D(notifications, mail_server, "Send mail", "SMTP")
+
+
+' Link to Broker
+BiRel(order, broker, "Management orders", "https")
+
+@enduml

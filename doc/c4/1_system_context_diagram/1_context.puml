@@ -7,7 +7,7 @@ System Context diagram
 
 LAYOUT_TOP_DOWN()
 LAYOUT_WITH_LEGEND()
-title System Context Diagram of \n "Intelligent system for development of trading strategies [ITS]";
+title System Context Diagram of \n "Intelligent system for development of trading strategies [ITS]"
 
 Person(customer, "Customer", "Service client")
 

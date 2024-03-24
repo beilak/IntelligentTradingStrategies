@@ -1,21 +1,53 @@
 [tool.poetry]
 name = "intelligenttradingstrategies"
 version = "0.1.0"
-description = ""
+description = "Intelligent Trading Strategies"
 authors = ["Beilak <beylak@yandex.ru>"]
 license = "MIT"
 readme = "README.md"
+packages = [
+    {include = "its"}
+]
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = ">3.12, <3.13"
 statsmodels = "^0.14.0"
-ruff = "^0.1.3"
-black = "^23.10.1"
-aiohttp = "^3.8.6"
-isort = "^5.12.0"
+ruff = "*"
+black = "*"
+aiohttp = "*"
+isort = "*"
 tinkoff-investments = "^0.2.0b62"
+fastapi = "*"
+uvicorn = "*"
+fresh-bakery = "*"
+pydantic = "*"
+pydantic-settings = "*"
+beautifulsoup4 = "*"
+httpx = "*"
+requests = "*"
+custom-stock-bar = "^0.1.2"
+yfinance = "^0.2.36"
+stsp = "^0.1.1"
+pytest-asyncio = "0.21.0"
 
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.1"
+pytest-mock = "^3.12.0"
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+
+[tool.poetry.scripts]
+test = "pytest"
+
+[tool.pytest]
+testpaths = ["tests"]
+
+[tool.pytest.ini_options]
+pythonpath = [
+  ".", "its",
+]
+asyncio_mode = "auto"

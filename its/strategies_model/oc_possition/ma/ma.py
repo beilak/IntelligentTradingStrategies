@@ -124,4 +124,4 @@ class MaClose(MA, ClosePositionProtocol):
         ticker: str,
         prediction: PredictResponse,
     ) -> ExitPointResponse:
-        self.
+        ...

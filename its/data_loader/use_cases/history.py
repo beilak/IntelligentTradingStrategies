@@ -2,7 +2,7 @@
 from datetime import datetime
 
 from ..use_cases import interfaces as protocols
-from tinkoff.invest import CandleInterval
+from t_tech.invest import CandleInterval
 
 from ..common import models as cm
 

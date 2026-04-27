@@ -3,8 +3,8 @@
 import typing as tp
 from dataclasses import dataclass
 
-from tinkoff.invest import Share
-from tinkoff.invest.schemas import HistoricCandle
+from t_tech.invest import Share
+from t_tech.invest.schemas import HistoricCandle
 
 FiGlobalId: tp.TypeAlias = str
 TickerID: tp.TypeAlias = str

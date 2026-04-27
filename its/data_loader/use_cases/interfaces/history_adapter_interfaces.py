@@ -1,7 +1,7 @@
 import typing as tp
 from datetime import datetime
 
-from tinkoff.invest import CandleInterval
+from t_tech.invest import CandleInterval
 
 from ...common import models as cm
 

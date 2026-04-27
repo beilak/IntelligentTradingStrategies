@@ -1,6 +1,6 @@
 from datetime import date, datetime
 import fastapi
-from tinkoff.invest.utils import now
+from t_tech.invest.utils import now
 from its.container import UseCasesIOC
 
 from its.use_cases.custom_bars.custom_bar import CustomBar

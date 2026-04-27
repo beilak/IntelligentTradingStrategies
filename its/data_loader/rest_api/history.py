@@ -3,8 +3,8 @@ from typing import Literal
 from its.data_loader.common import models as cm
 from its.data_loader.use_cases import HistoryUseCase
 from its.container import UseCasesIOC
-from tinkoff.invest import CandleInterval
-from tinkoff.invest.utils import now
+from t_tech.invest import CandleInterval
+from t_tech.invest.utils import now
 from datetime import timedelta
 
 

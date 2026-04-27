@@ -1,8 +1,8 @@
 """Adapter connect to Broker and provide Info of instruments"""
 
-from tinkoff.invest import Client, Currency, CurrencyResponse, Share
-from tinkoff.invest.schemas import ShareResponse, SharesResponse
-from tinkoff.invest.services import InstrumentIdType, InstrumentsService
+from t_tech.invest import Client, Currency, CurrencyResponse, Share
+from t_tech.invest.schemas import ShareResponse, SharesResponse
+from t_tech.invest.services import InstrumentIdType, InstrumentsService
 
 from ..common import models as cm
 

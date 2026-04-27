@@ -3,8 +3,8 @@ import asyncio
 from datetime import datetime
 from functools import lru_cache
 
-from tinkoff.invest import AsyncClient, CandleInterval
-from tinkoff.invest.async_services import AsyncServices
+from t_tech.invest import AsyncClient, CandleInterval
+from t_tech.invest.async_services import AsyncServices
 from ..common import models as cm
 
 

@@ -3,8 +3,8 @@ from datetime import timedelta, datetime
 
 from pydantic import Field
 from pydantic_settings import BaseSettings
-from tinkoff.invest.utils import now
-from tinkoff.invest import CandleInterval
+from t_tech.invest.utils import now
+from t_tech.invest import CandleInterval
 
 
 class Config(BaseSettings):

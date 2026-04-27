@@ -1,7 +1,7 @@
 import custom_bar.converter as conv
 import custom_bar.bar_divider.gold_bar_divider as gold
 import pandas as pd
-from tinkoff.invest import Currency, CurrencyResponse
+from t_tech.invest import Currency, CurrencyResponse
 
 from its.data_loader.adapters.share_info_adapter import ShareInfoAdapter
 from its.data_loader.common.models import ShareInfoFilter

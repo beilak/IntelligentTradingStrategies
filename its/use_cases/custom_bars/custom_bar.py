@@ -1,5 +1,5 @@
 from datetime import datetime
-from tinkoff.invest import CandleInterval
+from t_tech.invest import CandleInterval
 from its.data_loader.adapters.share_info_adapter import ShareInfoAdapter
 from its.data_loader.use_cases.history import HistoryUseCase
 from its.data_loader.use_cases.share_info import ShareInfoUseCase
@@ -38,8 +38,8 @@ class CustomBar:
             from_=date_from,
             interval=CandleInterval.CANDLE_INTERVAL_DAY,
         )
-        print(trades[])
-        for i 
+        # print(trades[])
+        # for i
 
         # trades_df = trades[ticker_name]
 

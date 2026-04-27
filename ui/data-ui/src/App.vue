@@ -10,14 +10,17 @@ import {
   TrendingUp,
 } from "lucide-vue-next";
 import { computed, onMounted, ref, watch } from "vue";
-import { getPrices, getStocks } from "./api";
+import { getDividends, getPrices, getStocks } from "./api";
 import CandlestickChartPanel from "./components/CandlestickChart.vue";
 import { messages } from "./i18n";
-import type { Candle, Locale, Stock, StockFilters } from "./types";
+import type { Candle, Dividend, DividendSummary, Locale, Stock, StockFilters } from "./types";
 
 const savedLocale = localStorage.getItem("its-data-locale") as Locale | null;
 const locale = ref<Locale>(savedLocale === "en" ? "en" : "ru");
 const t = computed(() => messages[locale.value]);
+
+type ViewTab = "quotes" | "dividends" | "instruments";
+const activeTab = ref<ViewTab>("quotes");
 
 const stocks = ref<Stock[]>([]);
 const filters = ref<StockFilters>({
@@ -28,6 +31,8 @@ const filters = ref<StockFilters>({
   intervals: ["CANDLE_INTERVAL_DAY"],
 });
 const candles = ref<Candle[]>([]);
+const dividends = ref<Dividend[]>([]);
+const dividendsSummary = ref<DividendSummary[]>([]);
 
 const search = ref("");
 const classCode = ref("TQBR");
@@ -37,6 +42,7 @@ const startDate = ref(formatDate(addDays(new Date(), -180)));
 const endDate = ref(formatDate(new Date()));
 const isLoadingStocks = ref(false);
 const isLoadingPrices = ref(false);
+const isLoadingDividends = ref(false);
 const error = ref("");
 
 const orderedCandles = computed(() =>
@@ -58,7 +64,20 @@ const totalVolume = computed(() =>
   orderedCandles.value.reduce((sum, candle) => sum + Number(candle.volume ?? 0), 0),
 );
 
+const totalDividendsNet = computed(() =>
+  dividendsSummary.value.reduce((sum, d) => sum + Number(d.total_net ?? 0), 0),
+);
+const totalDividendsCount = computed(() =>
+  dividendsSummary.value.reduce((sum, d) => sum + d.count, 0),
+);
+
 watch(locale, (value) => localStorage.setItem("its-data-locale", value));
+
+watch(activeTab, async (tab) => {
+  if (tab === "dividends" && selectedFigi.value && !dividends.value.length) {
+    await loadDividends();
+  }
+});
 
 onMounted(async () => {
   await loadStocks();
@@ -147,11 +166,54 @@ function formatNumber(value: number | null | undefined, digits = 2) {
   }).format(value);
 }
 
+function formatDateOnly(dateStr: string | null) {
+  if (!dateStr) return "—";
+  const parsed = new Date(dateStr);
+  if (Number.isNaN(parsed.getTime())) return dateStr;
+  return new Intl.DateTimeFormat(locale.value === "ru" ? "ru-RU" : "en-US", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(parsed);
+}
+
 function formatVolume(value: number) {
   return new Intl.NumberFormat(locale.value === "ru" ? "ru-RU" : "en-US", {
     notation: "compact",
     maximumFractionDigits: 1,
   }).format(value);
+}
+
+async function loadDividends() {
+  if (!selectedFigi.value) {
+    dividends.value = [];
+    return;
+  }
+
+  isLoadingDividends.value = true;
+  error.value = "";
+  try {
+    const response = await getDividends({
+      figis: [selectedFigi.value],
+      class_code: classCode.value,
+      start_date: startDate.value,
+      end_date: endDate.value,
+    });
+    dividends.value = response.items;
+    dividendsSummary.value = response.summary;
+  } catch (err) {
+    error.value = formatError(err);
+    dividends.value = [];
+  } finally {
+    isLoadingDividends.value = false;
+  }
+}
+
+function setActiveTab(tab: ViewTab) {
+  activeTab.value = tab;
+  if (tab === "dividends") {
+    void loadDividends();
+  }
 }
 </script>
 
@@ -179,16 +241,30 @@ function formatVolume(value: number) {
 
     <main class="workspace">
       <aside class="source-rail" :aria-label="t.source">
-        <button class="source-item active" type="button">
+        <button
+          class="source-item"
+          :class="{ active: activeTab === 'quotes' }"
+          type="button"
+          @click="setActiveTab('quotes')"
+        >
           <CandleIcon :size="18" />
           <span>{{ t.quotes }}</span>
         </button>
-        <button class="source-item" type="button" disabled>
+        <button
+          class="source-item"
+          :class="{ active: activeTab === 'dividends' }"
+          type="button"
+          @click="setActiveTab('dividends')"
+        >
           <TrendingUp :size="18" />
           <span>{{ t.dividends }}</span>
-          <small>{{ t.planned }}</small>
         </button>
-        <button class="source-item" type="button">
+        <button
+          class="source-item"
+          :class="{ active: activeTab === 'instruments' }"
+          type="button"
+          @click="setActiveTab('instruments')"
+        >
           <BarChart3 :size="18" />
           <span>{{ t.instruments }}</span>
         </button>
@@ -261,16 +337,73 @@ function formatVolume(value: number) {
         </section>
 
         <section class="visual-grid">
-          <div class="chart-panel">
-            <div class="panel-head">
-              <div>
-                <span>{{ t.quotes }}</span>
-                <strong>{{ selectedStock?.name ?? selectedTicker }}</strong>
+          <template v-if="activeTab === 'quotes'">
+            <div class="chart-panel">
+              <div class="panel-head">
+                <div>
+                  <span>{{ t.quotes }}</span>
+                  <strong>{{ selectedStock?.name ?? selectedTicker }}</strong>
+                </div>
+                <Activity :size="18" />
               </div>
-              <Activity :size="18" />
+              <CandlestickChartPanel :candles="orderedCandles" :locale="locale" />
             </div>
-            <CandlestickChartPanel :candles="orderedCandles" :locale="locale" />
-          </div>
+          </template>
+
+          <template v-else-if="activeTab === 'dividends'">
+            <div class="chart-panel">
+              <div class="panel-head">
+                <div>
+                  <span>{{ t.dividends }}</span>
+                  <strong>{{ selectedStock?.name ?? selectedTicker }}</strong>
+                </div>
+                <TrendingUp :size="18" />
+              </div>
+              <div v-if="isLoadingDividends" class="loading-state">
+                <RefreshCw :class="{ spin: true }" :size="24" />
+                <span>{{ t.loading }}</span>
+              </div>
+              <div v-else-if="dividends.length === 0" class="empty-state">
+                <span>{{ t.empty }}</span>
+              </div>
+              <div v-else class="table-scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>{{ t.paymentDate }}</th>
+                      <th>{{ t.dividendNet }}</th>
+                      <th>{{ t.dividendType }}</th>
+                      <th>{{ t.closePrice }}</th>
+                      <th>{{ t.yieldPercent }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(div, idx) in dividends" :key="idx">
+                      <td>{{ formatDateOnly(div.payment_date) }}</td>
+                      <td>
+                        <strong>{{ formatNumber(div.dividend_net) }}</strong>
+                      </td>
+                      <td>{{ div.dividend_type }}</td>
+                      <td>{{ formatNumber(div.close_price) }}</td>
+                      <td>{{ formatNumber(div.yield_value, 2) }}%</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </template>
+
+          <template v-else-if="activeTab === 'instruments'">
+            <div class="chart-panel">
+              <div class="panel-head">
+                <div>
+                  <span>{{ t.instruments }}</span>
+                  <strong>{{ stocks.length }}</strong>
+                </div>
+                <BarChart3 :size="18" />
+              </div>
+            </div>
+          </template>
 
           <div class="instrument-panel">
             <div class="panel-head">

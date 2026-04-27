@@ -1,4 +1,4 @@
-import type { PricesResponse, StocksResponse } from "./types";
+import type { PricesResponse, StocksResponse, DividendsResponse } from "./types";
 
 const API_BASE = import.meta.env.VITE_DATA_API_BASE ?? "/api/data";
 
@@ -19,12 +19,24 @@ interface PriceParams {
   is_complete?: boolean;
 }
 
+interface DividendParams {
+  figis?: string[];
+  tickers?: string[];
+  class_code?: string;
+  start_date?: string;
+  end_date?: string;
+}
+
 export async function getStocks(params: StockParams): Promise<StocksResponse> {
   return request<StocksResponse>("/stocks", params);
 }
 
 export async function getPrices(params: PriceParams): Promise<PricesResponse> {
   return request<PricesResponse>("/prices", params);
+}
+
+export async function getDividends(params: DividendParams): Promise<DividendsResponse> {
+  return request<DividendsResponse>("/dividends", params);
 }
 
 async function request<T>(path: string, params: StockParams | PriceParams): Promise<T> {

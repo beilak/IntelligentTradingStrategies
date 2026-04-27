@@ -62,3 +62,37 @@ export interface PricesResponse {
   };
   summary: PriceSummary[];
 }
+
+export interface Dividend {
+  dividend_net: number;
+  payment_date: string;
+  declared_date: string | null;
+  last_buy_date: string | null;
+  dividend_type: string;
+  record_date: string | null;
+  regularity: string | null;
+  close_price: number | null;
+  yield_value: number | null;
+  created_at: string | null;
+  figi: string;
+  ticker: string | null;
+}
+
+export interface DividendSummary {
+  ticker: string;
+  figi: string;
+  total_net: number | null;
+  count: number;
+  last_payment: string | null;
+}
+
+export interface DividendsResponse {
+  items: Dividend[];
+  meta: {
+    figis: string[];
+    tickers: string[];
+    start_date: string;
+    end_date: string;
+  };
+  summary: DividendSummary[];
+}

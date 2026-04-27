@@ -1,0 +1,38 @@
+services:
+  data-backend:
+    build:
+      context: .
+      dockerfile: services/data_backend/Dockerfile
+    env_file:
+      - .env
+    environment:
+      tinvest_token: ${tinvest_token:-}
+      TINVEST_TOKEN: ${TINVEST_TOKEN:-}
+      TINKOFF_INVEST_API_TOKEN: ${TINKOFF_INVEST_API_TOKEN:-}
+      DATA_BACKEND_STOCKS_TTL_MINUTES: ${DATA_BACKEND_STOCKS_TTL_MINUTES:-30}
+    volumes:
+      - t-invest-cache:/app/its/data
+    expose:
+      - "8000"
+
+  data-ui:
+    build:
+      context: .
+      dockerfile: ui/data-ui/Dockerfile
+    expose:
+      - "80"
+    depends_on:
+      - data-backend
+
+  nginx-gateway:
+    build:
+      context: .
+      dockerfile: infra/nginx/Dockerfile
+    ports:
+      - "${ITS_GATEWAY_PORT:-8080}:80"
+    depends_on:
+      - data-backend
+      - data-ui
+
+volumes:
+  t-invest-cache:

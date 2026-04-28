@@ -5,6 +5,7 @@ import json
 import math
 import os
 import re
+import sys
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
@@ -159,6 +160,9 @@ def build_returns_matrix(prices: pd.DataFrame) -> pd.DataFrame:
 
 
 def load_registered_model(model_name: str) -> type[Strategy]:
+    for name in sorted(sys.modules, reverse=True):
+        if name == "its.strategies.models" or name.startswith("its.strategies.models."):
+            del sys.modules[name]
     module = importlib.import_module("its.strategies.models")
     registered_names = set(getattr(module, "__all__", []))
     if model_name not in registered_names:

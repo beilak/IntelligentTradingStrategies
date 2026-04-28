@@ -299,3 +299,49 @@ export interface BacktestResult {
     }>;
   }>;
 }
+
+export interface StrategyComparisonResult {
+  generated_at: string;
+  eligible_count: number;
+  winner: StrategyComparisonRow | null;
+  rows: StrategyComparisonRow[];
+  skipped: Array<{
+    model_name: string;
+    missing_tests: string[];
+    missing_metrics?: string[];
+  }>;
+  backtest_winners: Array<{
+    metric: string;
+    direction: "higher" | "lower";
+    winner: string;
+    value: number | null;
+  }>;
+  explanations: string[];
+}
+
+export interface StrategyComparisonRow {
+  rank: number;
+  model_name: string;
+  WF_Return: number | null;
+  WF_Calmar: number | null;
+  Robustness_Delta: number | null;
+  Sharpe_Stability: number | null;
+  Daily_Risk_CVaR: number | null;
+  WF_Max_Drawdown: number | null;
+  Backtest_Total_Return: number | null;
+  Backtest_Sharpe: number | null;
+  Backtest_Calmar: number | null;
+  Backtest_Max_Drawdown: number | null;
+  Backtest_Metric_Wins: number | null;
+  TOTAL_SCORE: number | null;
+  latest_tests: Record<
+    string,
+    {
+      file_name: string;
+      test_name: string;
+      generated_at: string;
+      test_type: string;
+      settings: Record<string, unknown>;
+    }
+  >;
+}

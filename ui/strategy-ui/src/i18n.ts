@@ -1,5 +1,7 @@
 import type { Locale } from "./types";
 
+type MessageValue = string | string[];
+
 export const messages = {
   ru: {
     appTitle: "ITS Strategy Lab",
@@ -23,6 +25,27 @@ export const messages = {
     cpcv: "CPCV",
     walkForward: "WalkForward",
     backtesting: "Backtesting",
+    strategyComparison: "Сравнение стратегий",
+    strategyComparisonSubtitle: "Последние сохраненные CPCV, WalkForward и Backtesting",
+    runComparison: "Обновить сравнение",
+    noComparison: "Нет моделей с полным набором сохраненных тестов",
+    eligibleModels: "Моделей в рейтинге",
+    skippedModels: "Пропущено",
+    recommendation: "Рекомендация",
+    latestTests: "Последние тесты",
+    backtestWinners: "Победители Backtesting",
+    noBacktestWinners: "Нужно минимум две стратегии с сохраненным Backtesting, чтобы выбрать победителей по метрикам.",
+    explanation: "Пояснение",
+    totalScore: "TOTAL_SCORE",
+    metricWins: "Побед по метрикам",
+    comparisonExplanations: [
+      "WF_Return: фактическая доходность WalkForward из последнего сохраненного WF-теста.",
+      "WF_Calmar: эффективность доходности относительно просадки в WalkForward.",
+      "Robustness_Delta: абсолютное расхождение между медианной оценкой доходности CPCV и доходностью WF.",
+      "Sharpe_Stability: прокси-метрика стабильности Sharpe по CPCV; чем ниже, тем лучше.",
+      "Backtest_Metric_Wins: количество метрик VectorBT backtest, где модель оказалась лучшей.",
+      "TOTAL_SCORE: агрегированный рейтинг стратегии; чем выше, тем лучше.",
+    ],
     cpcvSettings: "Настройки CPCV",
     walkForwardSettings: "Настройки WalkForward",
     backtestSettings: "Настройки Backtesting",
@@ -102,6 +125,27 @@ export const messages = {
     cpcv: "CPCV",
     walkForward: "WalkForward",
     backtesting: "Backtesting",
+    strategyComparison: "Strategy Comparison",
+    strategyComparisonSubtitle: "Latest saved CPCV, WalkForward, and Backtesting tests",
+    runComparison: "Refresh comparison",
+    noComparison: "No models with a complete saved test set",
+    eligibleModels: "Ranked models",
+    skippedModels: "Skipped",
+    recommendation: "Recommendation",
+    latestTests: "Latest tests",
+    backtestWinners: "Backtesting winners",
+    noBacktestWinners: "At least two strategies with saved Backtesting results are required to choose metric winners.",
+    explanation: "Explanation",
+    totalScore: "TOTAL_SCORE",
+    metricWins: "Metric wins",
+    comparisonExplanations: [
+      "WF_Return: realized WalkForward return metric from the latest saved WF test.",
+      "WF_Calmar: return efficiency relative to drawdown in WalkForward.",
+      "Robustness_Delta: absolute gap between CPCV median return estimate and WF return.",
+      "Sharpe_Stability: stability proxy from CPCV; lower is better.",
+      "Backtest_Metric_Wins: number of VectorBT backtest metrics where the model is best.",
+      "TOTAL_SCORE: aggregate rank score; higher is better.",
+    ],
     cpcvSettings: "CPCV Settings",
     walkForwardSettings: "WalkForward Settings",
     backtestSettings: "Backtesting Settings",
@@ -159,7 +203,7 @@ export const messages = {
     module: "Module",
     middleLayerName: "Middle layer: Signal Model",
   },
-} satisfies Record<Locale, Record<string, string>>;
+} satisfies Record<Locale, Record<string, MessageValue>>;
 
 export const cpcvMetricTranslations: Record<Locale, Record<string, string>> = {
   ru: {

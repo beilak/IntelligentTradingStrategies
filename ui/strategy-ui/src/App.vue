@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {
+  BarChart3,
   Boxes,
   BrainCircuit,
   DatabaseZap,
@@ -11,12 +12,14 @@ import {
   RefreshCw,
   Scale,
   SearchCheck,
+  Trophy,
   X,
 } from "lucide-vue-next";
 import { computed, onMounted, ref, watch } from "vue";
 import {
   getBacktestTest,
   getCpcvTest,
+  getLatestStrategyComparison,
   getModelDetail,
   getRegistry,
   getWalkForwardTest,
@@ -40,6 +43,7 @@ import type {
   RegistryGroup,
   RegistryItem,
   RegistryResponse,
+  StrategyComparisonResult,
   WalkForwardResult,
   WalkForwardSavedTest,
   WalkForwardSettings,
@@ -61,22 +65,26 @@ const isWalkForwardRunning = ref(false);
 const isWalkForwardLoading = ref(false);
 const isBacktestRunning = ref(false);
 const isBacktestLoading = ref(false);
+const isComparisonLoading = ref(false);
 const error = ref("");
 const cpcvError = ref("");
 const walkForwardError = ref("");
 const backtestError = ref("");
+const comparisonError = ref("");
 const savedCpcvTests = ref<CpcvSavedTest[]>([]);
 const savedWalkForwardTests = ref<WalkForwardSavedTest[]>([]);
 const savedBacktestTests = ref<BacktestSavedTest[]>([]);
 const cpcvResult = ref<CpcvResult | null>(null);
 const walkForwardResult = ref<WalkForwardResult | null>(null);
 const backtestResult = ref<BacktestResult | null>(null);
+const comparisonResult = ref<StrategyComparisonResult | null>(null);
 const cpcvSettings = ref<CpcvSettings>(defaultCpcvSettings());
 const walkForwardSettings = ref<WalkForwardSettings>(defaultWalkForwardSettings());
 const backtestSettings = ref<BacktestSettings>(defaultBacktestSettings());
 const showCpcvModal = ref(false);
 const showWalkForwardModal = ref(false);
 const showBacktestModal = ref(false);
+const showComparisonModal = ref(false);
 const showAssetsModal = ref(false);
 const showWeightsModal = ref(false);
 const activeAssetsSource = ref<"cpcv" | "walkForward">("cpcv");
@@ -146,6 +154,9 @@ const activeAssetCount = computed(() =>
     : (cpcvResult.value?.metadata.asset_count ?? 0),
 );
 const pieSegments = computed(() => buildPieSegments(selectedWeightRecord.value));
+const comparisonExplanations = computed(() =>
+  Array.isArray(t.value.comparisonExplanations) ? t.value.comparisonExplanations : [],
+);
 
 watch(locale, (value) => localStorage.setItem("its-strategy-locale", value));
 
@@ -184,6 +195,7 @@ async function loadModel(modelName: string) {
     cpcvError.value = "";
     walkForwardError.value = "";
     backtestError.value = "";
+    comparisonError.value = "";
     await loadSavedCpcvTests(modelName);
     await loadSavedWalkForwardTests(modelName);
     await loadSavedBacktestTests(modelName);
@@ -191,6 +203,23 @@ async function loadModel(modelName: string) {
     error.value = formatError(err);
   } finally {
     isModelLoading.value = false;
+  }
+}
+
+async function openComparison() {
+  showComparisonModal.value = true;
+  await loadComparison();
+}
+
+async function loadComparison() {
+  isComparisonLoading.value = true;
+  comparisonError.value = "";
+  try {
+    comparisonResult.value = await getLatestStrategyComparison();
+  } catch (err) {
+    comparisonError.value = formatError(err);
+  } finally {
+    isComparisonLoading.value = false;
   }
 }
 
@@ -208,8 +237,8 @@ function iconFor(groupId: string) {
 }
 
 function labelFor(groupId: string) {
-  const labels = t.value as Record<string, string>;
-  return labels[groupId] ?? groupId;
+  const value = (t.value as Record<string, string | string[]>)[groupId];
+  return typeof value === "string" ? value : groupId;
 }
 
 function formatError(err: unknown) {
@@ -465,6 +494,27 @@ function formatWeight(value: number) {
   return `${(value * 100).toFixed(2)}%`;
 }
 
+function formatScore(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+  return value.toFixed(2);
+}
+
+function formatMetricValue(value: number | null | undefined, mode: "percent" | "number" = "number") {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+  if (mode === "percent") return `${(value * 100).toFixed(2)}%`;
+  return value.toLocaleString(locale.value === "ru" ? "ru-RU" : "en-US", {
+    maximumFractionDigits: 4,
+  });
+}
+
+function testTypeLabel(value: string) {
+  return {
+    cpcv: "CPCV",
+    walk_forward: "WalkForward",
+    backtesting: "Backtesting",
+  }[value] ?? value;
+}
+
 function openAssetsModal(source: "cpcv" | "walkForward") {
   activeAssetsSource.value = source;
   showAssetsModal.value = true;
@@ -592,6 +642,10 @@ function buildPieSegments(record: BacktestResult["rebalance_weights"][number] | 
       showLabel: item.weight / total >= 0.025,
     };
   });
+}
+
+function colorForWeightItem(ticker: string) {
+  return pieSegments.value.find((segment) => segment.ticker === ticker)?.color ?? "#8992a3";
 }
 
 function piePath(cx: number, cy: number, radius: number, startRatio: number, endRatio: number) {
@@ -753,11 +807,176 @@ function polarPoint(cx: number, cy: number, radius: number, ratio: number) {
                     <small>{{ t.planned }}</small>
                   </article>
                 </div>
+                <button class="report-btn featured comparison-wide-btn" type="button" @click="openComparison">
+                  <BarChart3 :size="18" />
+                  <div>
+                    <strong>{{ t.strategyComparison }}</strong>
+                    <small>{{ t.strategyComparisonSubtitle }}</small>
+                  </div>
+                </button>
               </section>
             </template>
           </div>
         </section>
       </section>
+
+      <div v-if="showComparisonModal" class="modal-overlay" @click.self="showComparisonModal = false">
+        <div class="modal-fullscreen">
+          <div class="modal-header">
+            <div class="section-title">
+              <span>{{ t.strategyComparisonSubtitle }}</span>
+              <strong>{{ t.strategyComparison }}</strong>
+            </div>
+            <button class="icon-button" type="button" @click="showComparisonModal = false">
+              <X :size="18" />
+            </button>
+          </div>
+
+          <p v-if="comparisonError" class="error-banner">{{ comparisonError }}</p>
+
+          <div class="cpcv-actions">
+            <button class="primary-button" type="button" :disabled="isComparisonLoading" @click="loadComparison">
+              <RefreshCw v-if="isComparisonLoading" class="spin" :size="17" />
+              <BarChart3 v-else :size="17" />
+              <span>{{ isComparisonLoading ? t.processing : t.runComparison }}</span>
+            </button>
+            <small v-if="comparisonResult">{{ formatDateTime(comparisonResult.generated_at) }}</small>
+          </div>
+
+          <div v-if="isComparisonLoading" class="empty-state">
+            <RefreshCw class="spin" :size="24" />
+            <span>{{ t.loading }}</span>
+          </div>
+
+          <div v-else-if="comparisonResult" class="comparison-layout">
+            <section class="result-strip">
+              <article>
+                <span>{{ t.eligibleModels }}</span>
+                <strong>{{ comparisonResult.eligible_count }}</strong>
+              </article>
+              <article>
+                <span>{{ t.skippedModels }}</span>
+                <strong>{{ comparisonResult.skipped.length }}</strong>
+              </article>
+              <article>
+                <span>{{ t.recommendation }}</span>
+                <strong>{{ comparisonResult.winner?.model_name ?? "—" }}</strong>
+                <small>{{ t.totalScore }}: {{ formatScore(comparisonResult.winner?.TOTAL_SCORE) }}</small>
+              </article>
+            </section>
+
+            <section v-if="comparisonResult.rows.length" class="chart-panel">
+              <div class="section-title">
+                <span>{{ t.strategyComparison }}</span>
+                <strong>{{ comparisonResult.rows.length }}</strong>
+              </div>
+              <div class="table-scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>{{ t.models }}</th>
+                      <th>{{ t.totalScore }}</th>
+                      <th>WF Return</th>
+                      <th>WF Calmar</th>
+                      <th>Robustness Delta</th>
+                      <th>Sharpe Stability</th>
+                      <th>{{ t.metricWins }}</th>
+                      <th>Backtest Return</th>
+                      <th>Backtest Sharpe</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="row in comparisonResult.rows" :key="row.model_name">
+                      <td>
+                        <strong class="rank-badge">
+                          <Trophy v-if="row.rank === 1" :size="14" />
+                          {{ row.rank }}
+                        </strong>
+                      </td>
+                      <td><strong>{{ row.model_name }}</strong></td>
+                      <td>{{ formatScore(row.TOTAL_SCORE) }}</td>
+                      <td>{{ formatMetricValue(row.WF_Return, "percent") }}</td>
+                      <td>{{ formatMetricValue(row.WF_Calmar) }}</td>
+                      <td>{{ formatMetricValue(row.Robustness_Delta, "percent") }}</td>
+                      <td>{{ formatMetricValue(row.Sharpe_Stability, "percent") }}</td>
+                      <td>{{ formatScore(row.Backtest_Metric_Wins) }}</td>
+                      <td>{{ formatMetricValue(row.Backtest_Total_Return, "percent") }}</td>
+                      <td>{{ formatMetricValue(row.Backtest_Sharpe) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section v-else class="empty-state">
+              <span>{{ t.noComparison }}</span>
+            </section>
+
+            <section v-if="comparisonResult.rows.length" class="dual-chart-grid">
+              <div class="chart-panel">
+                <div class="section-title">
+                  <span>{{ t.latestTests }}</span>
+                  <strong>{{ comparisonResult.rows[0].model_name }}</strong>
+                </div>
+                <div class="saved-list">
+                  <article v-for="(test, testType) in comparisonResult.rows[0].latest_tests" :key="testType" class="saved-card">
+                    <div>
+                      <strong>{{ testTypeLabel(String(testType)) }} / {{ test.test_name }}</strong>
+                      <small>{{ formatDateTime(test.generated_at) }}</small>
+                    </div>
+                    <code>{{ test.file_name }}</code>
+                  </article>
+                </div>
+              </div>
+
+              <div class="chart-panel">
+                <div class="section-title">
+                  <span>{{ t.backtestWinners }}</span>
+                  <strong>{{ comparisonResult.backtest_winners.length }}</strong>
+                </div>
+                <div class="metrics-grid compact-metrics">
+                  <div v-for="item in comparisonResult.backtest_winners" :key="`${item.metric}-${item.winner}`" class="metric-item">
+                    <span class="metric-label">{{ translateMetric(item.metric) }}</span>
+                    <span class="metric-value">{{ item.winner }} · {{ formatMetricValue(item.value) }}</span>
+                  </div>
+                </div>
+                <div v-if="comparisonResult.backtest_winners.length === 0" class="small-state">
+                  {{ t.noBacktestWinners }}
+                </div>
+              </div>
+            </section>
+
+            <section class="dual-chart-grid">
+              <div class="chart-panel">
+                <div class="section-title">
+                  <span>{{ t.skippedModels }}</span>
+                  <strong>{{ comparisonResult.skipped.length }}</strong>
+                </div>
+                <div v-if="comparisonResult.skipped.length" class="saved-list">
+                  <article v-for="item in comparisonResult.skipped" :key="item.model_name" class="saved-card">
+                    <div>
+                      <strong>{{ item.model_name }}</strong>
+                      <small>{{ [...item.missing_tests, ...(item.missing_metrics ?? [])].join(", ") }}</small>
+                    </div>
+                  </article>
+                </div>
+                <div v-else class="small-state">{{ t.empty }}</div>
+              </div>
+
+              <div class="chart-panel">
+                <div class="section-title">
+                  <span>{{ t.explanation }}</span>
+                  <strong>{{ t.totalScore }}</strong>
+                </div>
+                <div class="comparison-notes">
+                  <p v-for="item in comparisonExplanations" :key="item">{{ item }}</p>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
 
       <div v-if="showCpcvModal" class="modal-overlay" @click.self="showCpcvModal = false">
         <div class="modal-fullscreen">
@@ -1451,7 +1670,12 @@ function polarPoint(cx: number, cy: number, radius: number, ratio: number) {
                   </thead>
                   <tbody>
                     <tr v-for="item in selectedWeightRecord.weights" :key="item.ticker">
-                      <td><strong>{{ item.ticker }}</strong></td>
+                      <td>
+                        <span class="legend-ticker">
+                          <span class="legend-dot" :style="{ backgroundColor: colorForWeightItem(item.ticker) }"></span>
+                          <strong>{{ item.ticker }}</strong>
+                        </span>
+                      </td>
                       <td>{{ formatWeight(item.weight) }}</td>
                     </tr>
                   </tbody>

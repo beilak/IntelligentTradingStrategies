@@ -34,6 +34,7 @@ services:
       STRATEGY_WF_CACHE_DIR: /app/its/data/strategy_tests/walk_forward
       STRATEGY_BACKTEST_CACHE_DIR: /app/its/data/strategy_tests/backtest
     volumes:
+      - ./its/strategies:/app/its/strategies:ro
       - strategy-test-cache:/app/its/data/strategy_tests
     depends_on:
       - data-backend

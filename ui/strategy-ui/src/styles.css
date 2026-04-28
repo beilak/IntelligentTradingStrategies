@@ -567,9 +567,35 @@ select {
   gap: 8px;
 }
 
+.comparison-layout {
+  display: grid;
+  gap: 14px;
+}
+
 .metrics-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 6px;
+}
+
+.compact-metrics {
+  grid-template-columns: 1fr;
+}
+
+.comparison-notes {
+  color: #c8ceda;
+  display: grid;
+  gap: 8px;
+  line-height: 1.45;
+}
+
+.comparison-notes p {
+  margin: 0;
+}
+
+.rank-badge {
+  align-items: center;
+  display: inline-flex;
   gap: 6px;
 }
 
@@ -640,6 +666,21 @@ select {
   margin: 0 auto;
   max-height: 620px;
   width: min(100%, 620px);
+}
+
+.legend-ticker {
+  align-items: center;
+  display: inline-flex;
+  gap: 9px;
+}
+
+.legend-dot {
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.04);
+  flex: 0 0 auto;
+  height: 11px;
+  width: 11px;
 }
 
 .full-height-table {
@@ -753,6 +794,29 @@ td {
   cursor: pointer;
   padding: 12px;
   text-align: left;
+}
+
+.report-btn.featured {
+  border-color: rgba(174, 233, 209, 0.34);
+}
+
+.report-btn.featured svg {
+  color: #aee9d1;
+}
+
+.comparison-wide-btn {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  margin-top: 10px;
+  width: 100%;
+}
+
+.report-btn small {
+  color: #8992a3;
+  display: block;
+  line-height: 1.35;
+  margin-top: 6px;
 }
 
 .report-btn:hover {

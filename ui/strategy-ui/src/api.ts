@@ -7,6 +7,7 @@ import type {
   CpcvSettings,
   ModelDetail,
   RegistryResponse,
+  StrategyComparisonResult,
   WalkForwardResult,
   WalkForwardSavedTest,
   WalkForwardSettings,
@@ -16,6 +17,10 @@ const API_BASE = import.meta.env.VITE_STRATEGY_API_BASE ?? "/api/strategies";
 
 export async function getRegistry(): Promise<RegistryResponse> {
   return request<RegistryResponse>("/registry");
+}
+
+export async function getLatestStrategyComparison(): Promise<StrategyComparisonResult> {
+  return request<StrategyComparisonResult>("/comparison/latest");
 }
 
 export async function getModelDetail(modelName: string): Promise<ModelDetail> {

@@ -2,12 +2,14 @@ import ast
 import dataclasses
 import importlib
 import inspect
+import sys
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from services.strategy_backend.app.backtest import router as backtest_router
+from services.strategy_backend.app.comparison import router as comparison_router
 from services.strategy_backend.app.cpcv import router as cpcv_router
 from services.strategy_backend.app.walk_forward import router as walk_forward_router
 
@@ -58,6 +60,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(backtest_router, prefix=API_PREFIX)
+    app.include_router(comparison_router, prefix=API_PREFIX)
     app.include_router(cpcv_router, prefix=API_PREFIX)
     app.include_router(walk_forward_router, prefix=API_PREFIX)
 
@@ -121,7 +124,7 @@ def get_registry_info(registry_id: str) -> dict[str, str]:
 
 def load_registry_group(registry_info: dict[str, str]) -> dict[str, Any]:
     module_name = registry_info["module"]
-    module = importlib.import_module(module_name)
+    module = import_fresh_module(module_name)
     names = list(getattr(module, "__all__", []))
     items = []
 
@@ -145,6 +148,13 @@ def load_registry_group(registry_info: dict[str, str]) -> dict[str, Any]:
         items.append(describe_object(obj, fallback_module=module_name))
 
     return {**registry_info, "items": items, "count": len(items)}
+
+
+def import_fresh_module(module_name: str) -> Any:
+    for name in sorted(sys.modules, reverse=True):
+        if name == module_name or name.startswith(f"{module_name}."):
+            del sys.modules[name]
+    return importlib.import_module(module_name)
 
 
 def describe_object(obj: Any, fallback_module: str | None = None) -> dict[str, Any]:

@@ -30,3 +30,30 @@ class ModelTurnoverWithInverseVolatilityBuilder(StrategyBuilder):
                 ]
             ),
         )
+
+
+class ModelHighTurnoverWithInverseVolatilityBuilder(StrategyBuilder):
+    """Build a High turnover-filtered strategy with InverseVolatility allocation."""
+
+    TURNOVER_LOOKBACK_BARS = 2
+    MIN_TURNOVER_RUB = 1_000_000_000
+
+    @override
+    def build(self) -> Strategy:
+        return Strategy(
+            name="Turnover_with_EQ",
+            description=f"Min Turnover {self.MIN_TURNOVER_RUB} for last MIN_TURNOVER_RUB. Allocation is InverseVolatility",
+            pipeline=Pipeline(
+                steps=[
+                    (
+                        "turnover_pre_selection",
+                        IntradayTurnoverSelector(
+                            asset_universe_prices=self._asset_universe_prices,
+                            lookback_bars=self.TURNOVER_LOOKBACK_BARS,
+                            min_turnover=self.MIN_TURNOVER_RUB,
+                        ),
+                    ),
+                    ("allocation", InverseVolatility()),
+                ]
+            ),
+        )

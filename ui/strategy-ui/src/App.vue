@@ -11,10 +11,11 @@ import {
   RefreshCw,
   Scale,
   SearchCheck,
+  X,
 } from "lucide-vue-next";
 import { computed, onMounted, ref, watch } from "vue";
 import { getCpcvTest, getModelDetail, getRegistry, listCpcvTests, runCpcvTest } from "./api";
-import { messages } from "./i18n";
+import { messages, cpcvMetricTranslations } from "./i18n";
 import type {
   CpcvResult,
   CpcvSavedTest,
@@ -43,6 +44,12 @@ const cpcvError = ref("");
 const savedCpcvTests = ref<CpcvSavedTest[]>([]);
 const cpcvResult = ref<CpcvResult | null>(null);
 const cpcvSettings = ref<CpcvSettings>(defaultCpcvSettings());
+const showCpcvModal = ref(false);
+const showAssetsModal = ref(false);
+const xAxisLabels = ref<Array<{ x: number; text: string }>>([]);
+const yAxisLabels = ref<Array<{ y: number; text: string }>>([]);
+const isFullscreen = ref(false);
+const chartContainer = ref<HTMLElement | null>(null);
 
 const groups = computed(() => registry.value?.groups ?? []);
 const selectedGroup = computed<RegistryGroup | undefined>(() =>
@@ -56,6 +63,9 @@ watch(locale, (value) => localStorage.setItem("its-strategy-locale", value));
 
 onMounted(async () => {
   await loadRegistry();
+  document.addEventListener("fullscreenchange", () => {
+    isFullscreen.value = !!document.fullscreenElement;
+  });
 });
 
 async function loadRegistry() {
@@ -133,7 +143,6 @@ async function openCpcvTest(testName: string) {
     cpcvSettings.value = {
       ...cpcvSettings.value,
       ...cpcvResult.value.metadata.settings,
-      force: false,
     };
   } catch (err) {
     cpcvError.value = formatError(err);
@@ -168,8 +177,7 @@ function defaultCpcvSettings(): CpcvSettings {
     class_code: "TQBR",
     n_folds: 10,
     n_test_folds: 6,
-    asset_limit: 40,
-    force: false,
+    test_size: 0.33,
   };
 }
 
@@ -177,22 +185,66 @@ function toDateInput(value: Date) {
   return value.toISOString().slice(0, 10);
 }
 
+async function toggleFullscreen() {
+  if (!chartContainer.value) return;
+  if (document.fullscreenElement) {
+    await document.exitFullscreen();
+  } else {
+    await chartContainer.value.requestFullscreen();
+  }
+}
+
 function formatDateTime(value?: string) {
   if (!value) return "—";
   return value.replace("T", " ").replace(/\.\d+.*$/, "");
 }
 
+function translateMetric(metric: string): string {
+  return cpcvMetricTranslations[locale.value][metric] ?? metric;
+}
+
 function buildChartLines(result: CpcvResult | null) {
   const paths = result?.paths ?? [];
   const values = paths.flatMap((path) => path.points.map((point) => point.value));
-  if (!values.length) return [];
+  if (!values.length) {
+    xAxisLabels.value = [];
+    yAxisLabels.value = [];
+    return [];
+  }
   const min = Math.min(...values);
   const max = Math.max(...values);
   const range = max - min || 1;
   const width = 720;
   const height = 260;
-  const pad = 18;
+  const pad = 48;
   const colors = ["#66d9ef", "#ffcc66", "#aee9d1", "#ff6b8a", "#b48cf2", "#7dd3fc"];
+
+  const timePoints = paths[0]?.points ?? [];
+
+  const xLabels: Array<{ x: number; text: string }> = [];
+  if (timePoints.length > 0) {
+    const step = Math.max(1, Math.ceil(timePoints.length / 5));
+    const indices = [0];
+    for (let i = step; i < timePoints.length - 1; i += step) indices.push(i);
+    if (timePoints.length > 1) indices.push(timePoints.length - 1);
+
+    indices.forEach((pointIndex) => {
+      const x = pad + (pointIndex / Math.max(timePoints.length - 1, 1)) * (width - pad * 2);
+      const d = new Date(timePoints[pointIndex].time);
+      const text = `${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
+      xLabels.push({ x, text });
+    });
+  }
+  xAxisLabels.value = xLabels;
+
+  const yLabels: Array<{ y: number; text: string }> = [];
+  const tickCount = 5;
+  for (let i = 0; i <= tickCount; i++) {
+    const tick = min + (range * i) / tickCount;
+    const y = height - pad - ((tick - min) / range) * (height - pad * 2);
+    yLabels.push({ y, text: (tick * 100).toFixed(1) + "%" });
+  }
+  yAxisLabels.value = yLabels;
 
   return paths.map((path, index) => {
     const lastIndex = Math.max(path.points.length - 1, 1);
@@ -334,181 +386,238 @@ function buildChartLines(result: CpcvResult | null) {
               </section>
 
               <section class="detail-section">
-                <span>{{ t.reports }}</span>
+                <span>{{ t.testing }}</span>
                 <div class="report-grid">
+                  <button class="report-btn" type="button" @click="showCpcvModal = true">
+                    <strong>CPCV</strong>
+                  </button>
                   <article v-for="report in modelDetail.future_reports.filter((item) => item.id !== 'cpcv')" :key="report.id" class="report">
                     <strong>{{ report.title }}</strong>
                     <small>{{ t.planned }}</small>
                   </article>
                 </div>
               </section>
-
-              <section class="detail-section cpcv-section">
-                <div class="section-title">
-                  <span>{{ t.cpcvSettings }}</span>
-                  <strong>{{ t.cpcv }}</strong>
-                </div>
-
-                <p v-if="cpcvError" class="error-banner">{{ cpcvError }}</p>
-
-                <div class="cpcv-layout">
-                  <div class="form-grid">
-                    <label>
-                      <span>{{ t.testName }}</span>
-                      <input v-model="cpcvSettings.test_name" type="text" />
-                    </label>
-                    <label>
-                      <span>{{ t.startDate }}</span>
-                      <input v-model="cpcvSettings.start_date" type="date" />
-                    </label>
-                    <label>
-                      <span>{{ t.endDate }}</span>
-                      <input v-model="cpcvSettings.end_date" type="date" />
-                    </label>
-                    <label>
-                      <span>{{ t.interval }}</span>
-                      <select v-model="cpcvSettings.interval">
-                        <option value="CANDLE_INTERVAL_DAY">Day</option>
-                        <option value="CANDLE_INTERVAL_HOUR">Hour</option>
-                        <option value="CANDLE_INTERVAL_WEEK">Week</option>
-                        <option value="CANDLE_INTERVAL_MONTH">Month</option>
-                      </select>
-                    </label>
-                    <label>
-                      <span>{{ t.classCode }}</span>
-                      <input v-model="cpcvSettings.class_code" type="text" />
-                    </label>
-                    <label>
-                      <span>{{ t.nFolds }}</span>
-                      <input v-model.number="cpcvSettings.n_folds" min="2" max="30" type="number" />
-                    </label>
-                    <label>
-                      <span>{{ t.nTestFolds }}</span>
-                      <input v-model.number="cpcvSettings.n_test_folds" min="1" max="29" type="number" />
-                    </label>
-                    <label>
-                      <span>{{ t.assetLimit }}</span>
-                      <input v-model.number="cpcvSettings.asset_limit" min="2" max="500" type="number" />
-                    </label>
-                  </div>
-
-                  <div class="cpcv-actions">
-                    <label class="checkbox-row">
-                      <input v-model="cpcvSettings.force" type="checkbox" />
-                      <span>{{ t.forceRun }}</span>
-                    </label>
-                    <button class="primary-button" type="button" :disabled="isCpcvRunning" @click="runCpcv">
-                      <RefreshCw v-if="isCpcvRunning" class="spin" :size="17" />
-                      <PlayCircle v-else :size="17" />
-                      <span>{{ isCpcvRunning ? t.processing : t.runAndSave }}</span>
-                    </button>
-                  </div>
-                </div>
-
-                <div class="saved-tests">
-                  <div class="section-title">
-                    <span>{{ t.savedTests }}</span>
-                    <strong>{{ savedCpcvTests.length }}</strong>
-                  </div>
-                  <div v-if="isCpcvLoading" class="small-state">
-                    <RefreshCw class="spin" :size="17" />
-                    <span>{{ t.loading }}</span>
-                  </div>
-                  <div v-else-if="savedCpcvTests.length === 0" class="small-state">
-                    <span>{{ t.noSavedTests }}</span>
-                  </div>
-                  <div v-else class="saved-list">
-                    <article v-for="test in savedCpcvTests" :key="test.file_name" class="saved-card">
-                      <div>
-                        <strong>{{ test.test_name }}</strong>
-                        <small>{{ formatDateTime(test.generated_at) }}</small>
-                      </div>
-                      <button class="icon-text-button" type="button" @click="openCpcvTest(test.test_name)">
-                        <FolderOpen :size="16" />
-                        <span>{{ t.loadSaved }}</span>
-                      </button>
-                    </article>
-                  </div>
-                </div>
-
-                <div v-if="cpcvResult" class="cpcv-results">
-                  <div class="result-strip">
-                    <article>
-                      <span>{{ t.train }}</span>
-                      <strong>{{ cpcvResult.metadata.train_period.rows }}</strong>
-                      <small>{{ formatDateTime(cpcvResult.metadata.train_period.start) }} - {{ formatDateTime(cpcvResult.metadata.train_period.end) }}</small>
-                    </article>
-                    <article>
-                      <span>{{ t.test }}</span>
-                      <strong>{{ cpcvResult.metadata.test_period.rows }}</strong>
-                      <small>{{ formatDateTime(cpcvResult.metadata.test_period.start) }} - {{ formatDateTime(cpcvResult.metadata.test_period.end) }}</small>
-                    </article>
-                    <article>
-                      <span>{{ t.assets }}</span>
-                      <strong>{{ cpcvResult.metadata.asset_count }}</strong>
-                      <small>{{ cpcvResult.metadata.settings.interval }}</small>
-                    </article>
-                  </div>
-
-                  <div class="chart-panel">
-                    <div class="section-title">
-                      <span>{{ t.testPaths }}</span>
-                      <strong>{{ cpcvResult.paths.length }}</strong>
-                    </div>
-                    <svg class="cpcv-chart" viewBox="0 0 720 260" role="img">
-                      <line x1="18" y1="242" x2="702" y2="242" />
-                      <line x1="18" y1="18" x2="18" y2="242" />
-                      <polyline
-                        v-for="(line, index) in chartLines"
-                        :key="index"
-                        :points="line.points"
-                        :stroke="line.color"
-                        :opacity="line.opacity"
-                      />
-                    </svg>
-                  </div>
-
-                  <div class="tables-grid">
-                    <div>
-                      <div class="section-title">
-                        <span>{{ t.metrics }}</span>
-                        <strong>{{ cpcvResult.metadata.test_name }}</strong>
-                      </div>
-                      <div class="table-scroll compact-table">
-                        <table>
-                          <tbody>
-                            <tr v-for="row in cpcvResult.report" :key="row.metric">
-                              <th>{{ row.metric }}</th>
-                              <td>{{ row.value }}</td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-
-                    <div>
-                      <div class="section-title">
-                        <span>{{ t.cvSummary }}</span>
-                        <strong>CPCV</strong>
-                      </div>
-                      <div class="table-scroll compact-table">
-                        <table>
-                          <tbody>
-                            <tr v-for="row in cpcvResult.cv_summary" :key="row.metric">
-                              <th>{{ row.metric }}</th>
-                              <td>{{ row.value }}</td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </section>
             </template>
           </div>
         </section>
       </section>
+
+      <div v-if="showCpcvModal" class="modal-overlay" @click.self="showCpcvModal = false">
+        <div class="modal-fullscreen">
+          <div class="modal-header">
+            <div class="section-title">
+              <span>{{ t.cpcvSettings }}</span>
+              <strong>{{ t.cpcv }}</strong>
+            </div>
+            <button class="icon-button" type="button" @click="showCpcvModal = false">
+              <X :size="18" />
+            </button>
+          </div>
+
+          <p v-if="cpcvError" class="error-banner">{{ cpcvError }}</p>
+
+          <div class="cpcv-layout">
+            <div class="form-grid">
+              <label>
+                <span>{{ t.testName }}</span>
+                <input v-model="cpcvSettings.test_name" type="text" />
+              </label>
+              <label>
+                <span>{{ t.startDate }}</span>
+                <input v-model="cpcvSettings.start_date" type="date" />
+              </label>
+              <label>
+                <span>{{ t.endDate }}</span>
+                <input v-model="cpcvSettings.end_date" type="date" />
+              </label>
+              <label>
+                <span>{{ t.interval }}</span>
+                <select v-model="cpcvSettings.interval">
+                  <option value="CANDLE_INTERVAL_DAY">Day</option>
+                  <option value="CANDLE_INTERVAL_HOUR">Hour</option>
+                  <option value="CANDLE_INTERVAL_WEEK">Week</option>
+                  <option value="CANDLE_INTERVAL_MONTH">Month</option>
+                </select>
+              </label>
+              <label>
+                <span>{{ t.classCode }}</span>
+                <input v-model="cpcvSettings.class_code" type="text" />
+              </label>
+              <label>
+                <span>{{ t.nFolds }}</span>
+                <input v-model.number="cpcvSettings.n_folds" min="2" max="30" type="number" />
+              </label>
+              <label>
+                <span>{{ t.nTestFolds }}</span>
+                <input v-model.number="cpcvSettings.n_test_folds" min="1" max="29" type="number" />
+              </label>
+              <label>
+                <span>{{ t.testSize }}</span>
+                <input v-model.number="cpcvSettings.test_size" min="0.05" max="0.50" step="0.01" type="number" />
+              </label>
+            </div>
+
+            <div class="cpcv-actions">
+              <button class="primary-button" type="button" :disabled="isCpcvRunning" @click="runCpcv">
+                <RefreshCw v-if="isCpcvRunning" class="spin" :size="17" />
+                <PlayCircle v-else :size="17" />
+                <span>{{ isCpcvRunning ? t.processing : t.runAndSave }}</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="saved-tests">
+            <div class="section-title">
+              <span>{{ t.savedTests }}</span>
+              <strong>{{ savedCpcvTests.length }}</strong>
+            </div>
+            <div v-if="isCpcvLoading" class="small-state">
+              <RefreshCw class="spin" :size="17" />
+              <span>{{ t.loading }}</span>
+            </div>
+            <div v-else-if="savedCpcvTests.length === 0" class="small-state">
+              <span>{{ t.noSavedTests }}</span>
+            </div>
+            <div v-else class="saved-list">
+              <article v-for="test in savedCpcvTests" :key="test.file_name" class="saved-card">
+                <div>
+                  <strong>{{ test.test_name }}</strong>
+                  <small>{{ formatDateTime(test.generated_at) }}</small>
+                </div>
+                <button class="icon-text-button" type="button" @click="openCpcvTest(test.test_name)">
+                  <FolderOpen :size="16" />
+                  <span>{{ t.loadSaved }}</span>
+                </button>
+              </article>
+            </div>
+          </div>
+
+          <div v-if="cpcvResult" class="cpcv-results">
+            <div class="result-strip">
+              <article>
+                <span>{{ t.train }}</span>
+                <strong>{{ cpcvResult.metadata.train_period.rows }}</strong>
+                <small>{{ formatDateTime(cpcvResult.metadata.train_period.start) }} - {{ formatDateTime(cpcvResult.metadata.train_period.end) }}</small>
+              </article>
+              <article>
+                <span>{{ t.test }}</span>
+                <strong>{{ cpcvResult.metadata.test_period.rows }}</strong>
+                <small>{{ formatDateTime(cpcvResult.metadata.test_period.start) }} - {{ formatDateTime(cpcvResult.metadata.test_period.end) }}</small>
+              </article>
+              <article>
+                <span>{{ t.assets }}</span>
+                <strong>{{ cpcvResult.metadata.asset_count }}</strong>
+                <small>{{ cpcvResult.metadata.settings.interval }}</small>
+                <button class="icon-text-button" type="button" @click="showAssetsModal = true">
+                  <span>{{ t.viewAssets }}</span>
+                </button>
+              </article>
+            </div>
+
+            <div class="chart-panel">
+              <div class="section-title">
+                <span>{{ t.testPaths }}</span>
+                <strong>{{ cpcvResult.paths.length }}</strong>
+              </div>
+              <div ref="chartContainer" class="chart-wrapper">
+                <button class="fullscreen-btn" type="button" @click="toggleFullscreen">
+                  {{ isFullscreen ? 'Exit ⛶' : 'Fullscreen ⛶' }}
+                </button>
+                <svg class="cpcv-chart" viewBox="0 0 720 260" role="img">
+                  <line x1="48" y1="212" x2="702" y2="212" />
+                  <line x1="48" y1="18" x2="48" y2="212" />
+                  <polyline
+                    v-for="(line, index) in chartLines"
+                    :key="index"
+                    :points="line.points"
+                    :stroke="line.color"
+                    :opacity="line.opacity"
+                  />
+                  <text
+                    v-for="(label, i) in xAxisLabels"
+                    :key="'x' + i"
+                    :x="label.x"
+                    y="228"
+                    text-anchor="middle"
+                    font-size="10"
+                    fill="#8992a3"
+                  >{{ label.text }}</text>
+                  <text
+                    v-for="(label, i) in yAxisLabels"
+                    :key="'y' + i"
+                    :x="44"
+                    :y="label.y"
+                    text-anchor="end"
+                    font-size="10"
+                    fill="#8992a3"
+                    dominant-baseline="middle"
+                  >{{ label.text }}</text>
+                </svg>
+              </div>
+            </div>
+
+            <div class="metrics-container">
+              <div class="metrics-section">
+                <div class="section-title">
+                  <span>{{ t.metrics }}</span>
+                  <strong>{{ cpcvResult.metadata.test_name }}</strong>
+                </div>
+                <div class="metrics-grid">
+                  <div v-for="row in cpcvResult.report" :key="row.metric" class="metric-item">
+                    <span class="metric-label">{{ translateMetric(row.metric) }}</span>
+                    <span class="metric-value">{{ row.value }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="metrics-section">
+                <div class="section-title">
+                  <span>{{ t.cvSummary }}</span>
+                  <strong>CPCV</strong>
+                </div>
+                <div class="metrics-grid">
+                  <div v-for="row in cpcvResult.cv_summary" :key="row.metric" class="metric-item">
+                    <span class="metric-label">{{ translateMetric(row.metric) }}</span>
+                    <span class="metric-value">{{ row.value }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="showAssetsModal" class="modal-overlay" @click.self="showAssetsModal = false">
+          <div class="modal-fullscreen" style="max-width: 800px">
+            <div class="modal-header">
+              <div class="section-title">
+                <span>{{ t.assets }}</span>
+                <strong>{{ cpcvResult?.metadata.asset_count ?? 0 }}</strong>
+              </div>
+              <button class="icon-button" type="button" @click="showAssetsModal = false">
+                <X :size="18" />
+              </button>
+            </div>
+            <div class="table-scroll" style="max-height: 70vh">
+              <table>
+                <thead>
+                  <tr>
+                    <th>FIGI</th>
+                    <th>Ticker</th>
+                    <th>Name</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="asset in cpcvResult?.metadata.assets ?? []" :key="asset.figi">
+                    <td><code>{{ asset.figi }}</code></td>
+                    <td><strong>{{ asset.ticker }}</strong></td>
+                    <td>{{ asset.name }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
     </main>
   </div>
 </template>

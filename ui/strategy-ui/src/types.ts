@@ -68,8 +68,7 @@ export interface CpcvSettings {
   class_code: string;
   n_folds: number;
   n_test_folds: number;
-  asset_limit: number;
-  force: boolean;
+  test_size: number;
 }
 
 export interface CpcvPeriod {

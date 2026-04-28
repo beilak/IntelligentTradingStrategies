@@ -490,6 +490,40 @@ select {
   width: 100%;
 }
 
+.chart-wrapper {
+  position: relative;
+}
+
+.fullscreen-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 10;
+  background: #151821;
+  border: 1px solid #2b3342;
+  border-radius: 4px;
+  color: #c8ceda;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
+.fullscreen-btn:hover {
+  background: #252b36;
+}
+
+.chart-wrapper:fullscreen {
+  background: #11141b;
+  padding: 16px;
+  width: 100vw;
+  height: 100vh;
+}
+
+.chart-wrapper:fullscreen .cpcv-chart {
+  max-height: none;
+  height: 100%;
+}
+
 .cpcv-chart line {
   stroke: #2b3342;
   stroke-width: 1;
@@ -502,18 +536,46 @@ select {
   stroke-width: 1.35;
 }
 
-.tables-grid {
+.metrics-container {
   display: grid;
-  gap: 12px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
 }
 
-.compact-table table {
-  min-width: 360px;
+.metrics-section {
+  display: grid;
+  gap: 8px;
 }
 
-.compact-table th {
-  width: 56%;
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 6px;
+}
+
+.metric-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: #0b0e14;
+  border: 1px solid #2b3342;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.metric-item:hover {
+  border-color: #3d4a5c;
+}
+
+.metric-label {
+  color: #8992a3;
+  margin-right: 12px;
+}
+
+.metric-value {
+  color: #c8ceda;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 
 .empty-state {
@@ -579,7 +641,7 @@ td {
   .main-grid,
   .hero-panel,
   .form-grid,
-  .tables-grid {
+  .metrics-container {
     grid-template-columns: 1fr;
   }
 
@@ -612,4 +674,52 @@ td {
     align-items: stretch;
     flex-direction: column;
   }
+}
+
+.report-btn {
+  background: #0b0e14;
+  border: 1px solid #2b3342;
+  border-radius: 8px;
+  cursor: pointer;
+  padding: 12px;
+  text-align: left;
+}
+
+.report-btn:hover {
+  border-color: rgba(102, 217, 239, 0.5);
+}
+
+.report-btn strong {
+  color: #f4f6fb;
+  display: block;
+}
+
+.modal-overlay {
+  align-items: center;
+  background: rgba(0, 0, 0, 0.85);
+  display: grid;
+  inset: 0;
+  justify-content: center;
+  padding: 20px;
+  position: fixed;
+  z-index: 100;
+}
+
+.modal-fullscreen {
+  background: #11141b;
+  border: 1px solid #252b36;
+  border-radius: 12px;
+  display: grid;
+  gap: 16px;
+  max-height: 95vh;
+  max-width: 1400px;
+  overflow: auto;
+  padding: 20px;
+  width: 100%;
+}
+
+.modal-header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
 }

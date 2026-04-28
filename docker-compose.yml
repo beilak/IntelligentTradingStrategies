@@ -32,6 +32,7 @@ services:
       DATA_BACKEND_BASE_URL: http://data-backend:8000/api/v1
       STRATEGY_TEST_CACHE_DIR: /app/its/data/strategy_tests/cpcv
       STRATEGY_WF_CACHE_DIR: /app/its/data/strategy_tests/walk_forward
+      STRATEGY_BACKTEST_CACHE_DIR: /app/its/data/strategy_tests/backtest
     volumes:
       - strategy-test-cache:/app/its/data/strategy_tests
     depends_on:
@@ -48,6 +49,16 @@ services:
     depends_on:
       - strategy-backend
 
+  launchpad-ui:
+    build:
+      context: .
+      dockerfile: ui/launchpad-ui/Dockerfile
+    expose:
+      - "80"
+    depends_on:
+      - data-ui
+      - strategy-ui
+
   nginx-gateway:
     build:
       context: .
@@ -59,6 +70,7 @@ services:
       - data-ui
       - strategy-backend
       - strategy-ui
+      - launchpad-ui
 
 volumes:
   t-invest-cache:

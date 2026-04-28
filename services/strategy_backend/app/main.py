@@ -8,6 +8,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from services.strategy_backend.app.cpcv import router as cpcv_router
+from services.strategy_backend.app.walk_forward import router as walk_forward_router
 
 
 API_PREFIX = "/api/v1"
@@ -56,6 +57,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(cpcv_router, prefix=API_PREFIX)
+    app.include_router(walk_forward_router, prefix=API_PREFIX)
 
     @app.get(f"{API_PREFIX}/health")
     async def health() -> dict[str, str]:
@@ -99,7 +101,7 @@ def create_app() -> FastAPI:
             "component_groups": component_groups,
             "future_reports": [
                 {"id": "cpcv", "title": "CPCV", "status": "available"},
-                {"id": "walk_forward", "title": "WalkForward", "status": "planned"},
+                {"id": "walk_forward", "title": "WalkForward", "status": "available"},
                 {"id": "backtesting", "title": "Backtesting", "status": "planned"},
             ],
         }

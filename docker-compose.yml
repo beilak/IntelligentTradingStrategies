@@ -31,6 +31,7 @@ services:
     environment:
       DATA_BACKEND_BASE_URL: http://data-backend:8000/api/v1
       STRATEGY_TEST_CACHE_DIR: /app/its/data/strategy_tests/cpcv
+      STRATEGY_WF_CACHE_DIR: /app/its/data/strategy_tests/walk_forward
     volumes:
       - strategy-test-cache:/app/its/data/strategy_tests
     depends_on:

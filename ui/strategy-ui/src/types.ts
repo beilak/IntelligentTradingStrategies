@@ -100,6 +100,7 @@ export interface CpcvResult {
     settings: CpcvSettings;
     train_period: CpcvPeriod;
     test_period: CpcvPeriod;
+    stitch_rule?: string;
     assets: Array<{
       figi: string;
       ticker: string;
@@ -116,6 +117,97 @@ export interface CpcvResult {
     metric: string;
     value: string;
     numeric_value: number | null;
+  }>;
+  paths: Array<{
+    name: string;
+    final_return: number;
+    points: Array<{
+      time: string;
+      value: number;
+    }>;
+  }>;
+}
+
+export interface WalkForwardSettings {
+  test_name: string;
+  start_date: string;
+  end_date: string;
+  interval: string;
+  class_code: string;
+  test_size: number;
+  train_size_months: number;
+  freq_months: number;
+  wf_test_size: number;
+}
+
+export interface WalkForwardSavedTest {
+  file_name: string;
+  test_name: string;
+  model_name: string;
+  generated_at: string;
+  settings: Partial<WalkForwardSettings>;
+  train_period: Partial<CpcvPeriod>;
+  test_period: Partial<CpcvPeriod>;
+  asset_count: number;
+}
+
+export interface WalkForwardResult {
+  metadata: {
+    model_name: string;
+    strategy_name: string;
+    strategy_description: string;
+    test_name: string;
+    test_type: string;
+    generated_at: string;
+    settings: WalkForwardSettings;
+    train_period: CpcvPeriod;
+    test_period: CpcvPeriod;
+    stitch_rule?: string;
+    assets: Array<{
+      figi: string;
+      ticker: string;
+      name: string;
+    }>;
+    asset_count: number;
+  };
+  cv_summary: Array<{
+    metric: string;
+    value: string;
+    numeric_value: number | null;
+  }>;
+  report: Array<{
+    metric: string;
+    value: string;
+    numeric_value: number | null;
+  }>;
+  oos_curve?: {
+    name: string;
+    stitch_rule: string;
+    final_return: number | null;
+    rows: number;
+    duplicates_removed: number;
+    segments?: Array<{
+      name: string;
+      window_index: number;
+      final_return: number;
+      points: Array<{
+        time: string;
+        value: number;
+      }>;
+    }>;
+    points: Array<{
+      time: string;
+      value: number;
+    }>;
+  };
+  windows?: Array<{
+    split_id: number;
+    train_start: string;
+    train_end: string;
+    train_rows: number;
+    test_start: string;
+    test_end: string;
+    test_rows: number;
   }>;
   paths: Array<{
     name: string;

@@ -494,6 +494,21 @@ select {
   position: relative;
 }
 
+.chart-meta {
+  align-items: center;
+  color: #8992a3;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12px;
+  gap: 8px 16px;
+  justify-content: space-between;
+  margin-top: 8px;
+}
+
+.chart-meta strong {
+  color: #c8ceda;
+}
+
 .fullscreen-btn {
   position: absolute;
   top: 8px;

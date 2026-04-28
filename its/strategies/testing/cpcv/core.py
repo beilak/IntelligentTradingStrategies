@@ -76,6 +76,15 @@ def generate_cpcv_report(
             "tag": strategy.name,
         },
     )
+    paths = population_to_paths(population)
+    unique_path_count = count_unique_paths(paths)
+    cv_summary.append(
+        {
+            "metric": "Number of Unique Chart Paths",
+            "value": str(unique_path_count),
+            "numeric_value": float(unique_path_count),
+        }
+    )
 
     report_portfolio = combine_population(population)
     report_rows = series_to_rows(report_portfolio.summary(), "value")
@@ -112,7 +121,7 @@ def generate_cpcv_report(
         },
         "cv_summary": cv_summary,
         "report": report_rows,
-        "paths": population_to_paths(population),
+        "paths": paths,
     }
 
 
@@ -177,6 +186,8 @@ def population_to_paths(population: Any) -> list[dict[str, Any]]:
         returns = getattr(portfolio, "cumulative_returns_df", None)
         if returns is None:
             continue
+        if callable(returns):
+            returns = returns()
         frame = returns.copy()
         if isinstance(frame, pd.Series):
             series = frame
@@ -197,12 +208,24 @@ def population_to_paths(population: Any) -> list[dict[str, Any]]:
             continue
         paths.append(
             {
-                "name": f"path_{index}",
+                "name": getattr(portfolio, "name", None) or f"path_{index}",
                 "points": points,
                 "final_return": points[-1]["value"],
             }
         )
     return paths
+
+
+def count_unique_paths(paths: list[dict[str, Any]]) -> int:
+    signatures = set()
+    for path in paths:
+        signatures.add(
+            tuple(
+                (point["time"], round(point["value"], 12))
+                for point in path.get("points", [])
+            )
+        )
+    return len(signatures)
 
 
 def series_to_rows(series: Any, value_key: str) -> list[dict[str, Any]]:

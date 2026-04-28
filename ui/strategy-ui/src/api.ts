@@ -1,4 +1,13 @@
-import type { CpcvResult, CpcvSavedTest, CpcvSettings, ModelDetail, RegistryResponse } from "./types";
+import type {
+  CpcvResult,
+  CpcvSavedTest,
+  CpcvSettings,
+  ModelDetail,
+  RegistryResponse,
+  WalkForwardResult,
+  WalkForwardSavedTest,
+  WalkForwardSettings,
+} from "./types";
 
 const API_BASE = import.meta.env.VITE_STRATEGY_API_BASE ?? "/api/strategies";
 
@@ -22,6 +31,28 @@ export async function getCpcvTest(modelName: string, testName: string): Promise<
 
 export async function runCpcvTest(modelName: string, settings: CpcvSettings): Promise<CpcvResult> {
   return request<CpcvResult>(`/models/${encodeURIComponent(modelName)}/cpcv/run`, {
+    method: "POST",
+    body: JSON.stringify(settings),
+  });
+}
+
+export async function listWalkForwardTests(modelName: string): Promise<{ items: WalkForwardSavedTest[] }> {
+  return request<{ items: WalkForwardSavedTest[] }>(
+    `/models/${encodeURIComponent(modelName)}/walk-forward/tests`,
+  );
+}
+
+export async function getWalkForwardTest(modelName: string, testName: string): Promise<WalkForwardResult> {
+  return request<WalkForwardResult>(
+    `/models/${encodeURIComponent(modelName)}/walk-forward/tests/${encodeURIComponent(testName)}`,
+  );
+}
+
+export async function runWalkForwardTest(
+  modelName: string,
+  settings: WalkForwardSettings,
+): Promise<WalkForwardResult> {
+  return request<WalkForwardResult>(`/models/${encodeURIComponent(modelName)}/walk-forward/run`, {
     method: "POST",
     body: JSON.stringify(settings),
   });

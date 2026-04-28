@@ -354,7 +354,11 @@ function setActiveTab(tab: ViewTab) {
                 </div>
                 <Activity :size="18" />
               </div>
-              <CandlestickChartPanel :candles="orderedCandles" :locale="locale" />
+              <CandlestickChartPanel
+                :candles="orderedCandles"
+                :interval="interval"
+                :locale="locale"
+              />
             </div>
           </template>
 

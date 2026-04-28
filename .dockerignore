@@ -7,4 +7,6 @@ node_modules
 dist
 ui/data-ui/node_modules
 ui/data-ui/dist
+ui/strategy-ui/node_modules
+ui/strategy-ui/dist
 its/data

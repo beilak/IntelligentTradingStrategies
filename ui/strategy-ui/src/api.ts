@@ -1,0 +1,40 @@
+import type { CpcvResult, CpcvSavedTest, CpcvSettings, ModelDetail, RegistryResponse } from "./types";
+
+const API_BASE = import.meta.env.VITE_STRATEGY_API_BASE ?? "/api/strategies";
+
+export async function getRegistry(): Promise<RegistryResponse> {
+  return request<RegistryResponse>("/registry");
+}
+
+export async function getModelDetail(modelName: string): Promise<ModelDetail> {
+  return request<ModelDetail>(`/models/${encodeURIComponent(modelName)}`);
+}
+
+export async function listCpcvTests(modelName: string): Promise<{ items: CpcvSavedTest[] }> {
+  return request<{ items: CpcvSavedTest[] }>(`/models/${encodeURIComponent(modelName)}/cpcv/tests`);
+}
+
+export async function getCpcvTest(modelName: string, testName: string): Promise<CpcvResult> {
+  return request<CpcvResult>(
+    `/models/${encodeURIComponent(modelName)}/cpcv/tests/${encodeURIComponent(testName)}`,
+  );
+}
+
+export async function runCpcvTest(modelName: string, settings: CpcvSettings): Promise<CpcvResult> {
+  return request<CpcvResult>(`/models/${encodeURIComponent(modelName)}/cpcv/run`, {
+    method: "POST",
+    body: JSON.stringify(settings),
+  });
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json" },
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    throw new Error(payload?.detail ?? response.statusText);
+  }
+  return response.json() as Promise<T>;
+}

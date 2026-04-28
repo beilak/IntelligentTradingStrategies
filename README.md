@@ -22,6 +22,8 @@ docker compose up --build
 
 - UI данных: http://localhost:8080/data/
 - API данных: http://localhost:8080/api/data/
+- UI стратегий: http://localhost:8080/strategies/
+- API стратегий: http://localhost:8080/api/strategies/
 - Swagger backend: http://localhost:8080/api/data/docs
 
 Порт gateway можно переопределить:
@@ -34,13 +36,17 @@ ITS_GATEWAY_PORT=8090 docker compose up --build
 
 - `data-backend` - Python, FastAPI, asyncio. Отдает инструменты и свечи из Tinkoff Invest.
 - `data-ui` - Vue 3 UI для визуализации рыночных данных, dark mode, RU/EN.
+- `strategy-backend` - Python, FastAPI. Отдает registry компонентов и готовых стратегий.
+- `strategy-ui` - Vue 3 UI для модельеров торговых стратегий, dark mode, RU/EN.
 - `nginx-gateway` - единая точка входа, маршрутизирует `/data/` в UI и `/api/data/` в backend.
 
 ## Структура
 
 ```text
 services/data_backend/   # backend сервиса данных
+services/strategy_backend/ # backend registry торговых стратегий
 ui/data-ui/              # Vue UI сервиса данных
+ui/strategy-ui/          # Vue UI сервиса торговых стратегий
 infra/nginx/             # gateway nginx
 docker-compose.yml       # общая оркестрация
 ```

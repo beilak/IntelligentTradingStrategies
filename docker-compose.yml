@@ -24,6 +24,29 @@ services:
     depends_on:
       - data-backend
 
+  strategy-backend:
+    build:
+      context: .
+      dockerfile: services/strategy_backend/Dockerfile
+    environment:
+      DATA_BACKEND_BASE_URL: http://data-backend:8000/api/v1
+      STRATEGY_TEST_CACHE_DIR: /app/its/data/strategy_tests/cpcv
+    volumes:
+      - strategy-test-cache:/app/its/data/strategy_tests
+    depends_on:
+      - data-backend
+    expose:
+      - "8000"
+
+  strategy-ui:
+    build:
+      context: .
+      dockerfile: ui/strategy-ui/Dockerfile
+    expose:
+      - "80"
+    depends_on:
+      - strategy-backend
+
   nginx-gateway:
     build:
       context: .
@@ -33,6 +56,9 @@ services:
     depends_on:
       - data-backend
       - data-ui
+      - strategy-backend
+      - strategy-ui
 
 volumes:
   t-invest-cache:
+  strategy-test-cache:

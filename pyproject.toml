@@ -12,10 +12,7 @@ packages = [
 [tool.poetry.dependencies]
 python = ">3.12, <3.13"
 statsmodels = "^0.14.0"
-ruff = "*"
-black = "*"
 aiohttp = "*"
-isort = "*"
 fastapi = "*"
 uvicorn = "*"
 fresh-bakery = "*"
@@ -31,12 +28,18 @@ pytest-asyncio = "0.21.0"
 t-tech-investments = {version = "^0.3.5", source = "tbank"}
 aiometer = "^1.0.0"
 loguru = "^0.7.3"
-pandas = "^3.0.2"
+pandas = ">2.0.0,<3.0.0"
 async-lru = "^2.3.0"
+skfolio = "^0.20.1"
+vectorbt = "^1.0.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.1"
 pytest-mock = "^3.12.0"
+ruff = "*"
+black = "*"
+isort = "*"
+
 
 
 [[tool.poetry.source]]

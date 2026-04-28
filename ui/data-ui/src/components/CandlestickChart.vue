@@ -26,6 +26,7 @@ use([
 const props = defineProps<{
   candles: Candle[];
   locale: Locale;
+  interval: string;
 }>();
 
 const chartEl = ref<HTMLDivElement | null>(null);
@@ -49,7 +50,7 @@ onMounted(async () => {
 });
 
 watch(
-  () => [props.candles, props.locale],
+  () => [props.candles, props.locale, props.interval],
   () => renderChart(),
   { deep: true },
 );
@@ -80,7 +81,7 @@ function renderChart() {
     return;
   }
 
-  const labels = orderedCandles.value.map((candle) => formatTime(candle.time));
+  const labels = orderedCandles.value.map((candle) => formatAxisTime(candle.time));
   const candles = orderedCandles.value.map((candle) => [
     candle.open,
     candle.close,
@@ -109,6 +110,7 @@ function renderChart() {
         backgroundColor: "rgba(15, 17, 23, 0.94)",
         borderColor: "#2b3342",
         textStyle: { color: "#f4f6fb" },
+        formatter: (params: unknown) => formatTooltip(params),
       },
       axisPointer: {
         link: [{ xAxisIndex: "all" }],
@@ -124,7 +126,10 @@ function renderChart() {
           data: labels,
           boundaryGap: true,
           axisLine: { lineStyle: { color: "#2b3342" } },
-          axisLabel: { color: "#7d8596" },
+          axisLabel: {
+            color: "#7d8596",
+            hideOverlap: true,
+          },
           axisTick: { show: false },
           splitLine: { show: false },
           min: "dataMin",
@@ -136,7 +141,10 @@ function renderChart() {
           data: labels,
           boundaryGap: true,
           axisLine: { lineStyle: { color: "#2b3342" } },
-          axisLabel: { color: "#7d8596" },
+          axisLabel: {
+            color: "#7d8596",
+            hideOverlap: true,
+          },
           axisTick: { show: false },
           splitLine: { show: false },
           min: "dataMin",
@@ -203,15 +211,111 @@ function renderChart() {
   );
 }
 
-function formatTime(value: string) {
+function formatAxisTime(value: string) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) {
     return value;
   }
-  return new Intl.DateTimeFormat(props.locale === "ru" ? "ru-RU" : "en-US", {
+
+  if (isIntradayInterval()) {
+    return `${formatDatePart(parsed)}\n${formatTimePart(parsed)}`;
+  }
+
+  if (props.interval === "CANDLE_INTERVAL_MONTH") {
+    return new Intl.DateTimeFormat(currentLocale(), {
+      month: "short",
+      year: "2-digit",
+    }).format(parsed);
+  }
+
+  if (props.interval === "CANDLE_INTERVAL_WEEK") {
+    return new Intl.DateTimeFormat(currentLocale(), {
+      month: "short",
+      day: "2-digit",
+      year: "2-digit",
+    }).format(parsed);
+  }
+
+  return formatDatePart(parsed);
+}
+
+function formatTooltip(params: unknown) {
+  const rows = Array.isArray(params) ? params : [];
+  const firstRow = rows[0] as { dataIndex?: number } | undefined;
+  const candle = orderedCandles.value[firstRow?.dataIndex ?? 0];
+  const title = candle ? formatFullTime(candle.time) : "";
+
+  const body = rows
+    .map((row) => {
+      const item = row as { marker?: string; seriesName?: string; data?: unknown };
+      if (Array.isArray(item.data)) {
+        const [open, close, low, high] = item.data;
+        return `${item.marker ?? ""}${item.seriesName}: O ${open} H ${high} L ${low} C ${close}`;
+      }
+      if (typeof item.data === "object" && item.data !== null && "value" in item.data) {
+        return `${item.marker ?? ""}${item.seriesName}: ${String(item.data.value)}`;
+      }
+      return "";
+    })
+    .filter(Boolean)
+    .join("<br />");
+
+  return [title, body].filter(Boolean).join("<br />");
+}
+
+function formatFullTime(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  const options: Intl.DateTimeFormatOptions = isIntradayInterval()
+    ? {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: isSecondsInterval() ? "2-digit" : undefined,
+      }
+    : {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      };
+
+  return new Intl.DateTimeFormat(currentLocale(), options).format(parsed);
+}
+
+function formatDatePart(value: Date) {
+  return new Intl.DateTimeFormat(currentLocale(), {
     month: "short",
     day: "2-digit",
-  }).format(parsed);
+  }).format(value);
+}
+
+function formatTimePart(value: Date) {
+  return new Intl.DateTimeFormat(currentLocale(), {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: isSecondsInterval() ? "2-digit" : undefined,
+  }).format(value);
+}
+
+function isIntradayInterval() {
+  return (
+    props.interval.includes("_SEC") ||
+    props.interval.includes("_MIN") ||
+    props.interval.includes("_HOUR")
+  );
+}
+
+function isSecondsInterval() {
+  return props.interval.includes("_SEC");
+}
+
+function currentLocale() {
+  return props.locale === "ru" ? "ru-RU" : "en-US";
 }
 </script>
 

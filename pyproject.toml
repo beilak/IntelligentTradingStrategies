@@ -32,6 +32,7 @@ t-tech-investments = {version = "^0.3.5", source = "tbank"}
 aiometer = "^1.0.0"
 loguru = "^0.7.3"
 pandas = "^3.0.2"
+async-lru = "^2.3.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.1"

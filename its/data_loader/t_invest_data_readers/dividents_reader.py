@@ -1,6 +1,7 @@
 import asyncio
 from pathlib import Path
 import aiometer
+from async_lru import alru_cache
 
 import functools
 import pandas as pd
@@ -233,6 +234,7 @@ def _build_cache_rows(
     return cache_rows
 
 
+@alru_cache(ttl=100)
 async def _get_dividend(
     figi: str,
     start_date: pd.Timestamp,

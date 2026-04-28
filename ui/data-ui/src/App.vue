@@ -73,12 +73,6 @@ const totalDividendsCount = computed(() =>
 
 watch(locale, (value) => localStorage.setItem("its-data-locale", value));
 
-watch(activeTab, async (tab) => {
-  if (tab === "dividends" && selectedFigi.value && !dividends.value.length) {
-    await loadDividends();
-  }
-});
-
 onMounted(async () => {
   await loadStocks();
 });
@@ -100,9 +94,14 @@ async function loadStocks() {
     }
 
     if (selectedFigi.value) {
-      await loadPrices();
+      if (activeTab.value === "quotes") {
+        await loadPrices();
+      } else if (activeTab.value === "dividends") {
+        await loadDividends();
+      }
     } else {
       candles.value = [];
+      dividends.value = [];
     }
   } catch (err) {
     error.value = formatError(err);
@@ -138,9 +137,21 @@ async function loadPrices() {
   }
 }
 
+function onToolbarChange() {
+  if (activeTab.value === "quotes") {
+    void loadPrices();
+  } else if (activeTab.value === "dividends") {
+    void loadDividends();
+  }
+}
+
 function selectStock(stock: Stock) {
   selectedFigi.value = stock.figi;
-  void loadPrices();
+  if (activeTab.value === "quotes") {
+    void loadPrices();
+  } else if (activeTab.value === "dividends") {
+    void loadDividends();
+  }
 }
 
 function addDays(date: Date, days: number) {
@@ -211,9 +222,6 @@ async function loadDividends() {
 
 function setActiveTab(tab: ViewTab) {
   activeTab.value = tab;
-  if (tab === "dividends") {
-    void loadDividends();
-  }
 }
 </script>
 
@@ -290,7 +298,7 @@ function setActiveTab(tab: ViewTab) {
 
           <label class="control compact">
             <span>{{ t.interval }}</span>
-            <select v-model="interval" @change="loadPrices">
+            <select v-model="interval" @change="onToolbarChange">
               <option v-for="item in filters.intervals" :key="item" :value="item">
                 {{ item.replace("CANDLE_INTERVAL_", "") }}
               </option>
@@ -299,16 +307,16 @@ function setActiveTab(tab: ViewTab) {
 
           <label class="control date-control">
             <span>{{ t.from }}</span>
-            <input v-model="startDate" type="date" @change="loadPrices" />
+            <input v-model="startDate" type="date" @change="onToolbarChange" />
           </label>
 
           <label class="control date-control">
             <span>{{ t.to }}</span>
-            <input v-model="endDate" type="date" @change="loadPrices" />
+            <input v-model="endDate" type="date" @change="onToolbarChange" />
           </label>
 
-          <button class="refresh-button" type="submit" :disabled="isLoadingStocks || isLoadingPrices">
-            <RefreshCw :class="{ spin: isLoadingStocks || isLoadingPrices }" :size="17" />
+          <button class="refresh-button" type="submit" :disabled="isLoadingStocks || isLoadingPrices || isLoadingDividends">
+            <RefreshCw :class="{ spin: isLoadingStocks || isLoadingPrices || isLoadingDividends }" :size="17" />
             <span>{{ t.refresh }}</span>
           </button>
         </form>

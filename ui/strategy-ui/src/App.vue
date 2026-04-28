@@ -15,17 +15,23 @@ import {
 } from "lucide-vue-next";
 import { computed, onMounted, ref, watch } from "vue";
 import {
+  getBacktestTest,
   getCpcvTest,
   getModelDetail,
   getRegistry,
   getWalkForwardTest,
+  listBacktestTests,
   listCpcvTests,
   listWalkForwardTests,
+  runBacktestTest,
   runCpcvTest,
   runWalkForwardTest,
 } from "./api";
 import { messages, cpcvMetricTranslations } from "./i18n";
 import type {
+  BacktestResult,
+  BacktestSavedTest,
+  BacktestSettings,
   CpcvResult,
   CpcvSavedTest,
   CpcvSettings,
@@ -53,25 +59,40 @@ const isCpcvRunning = ref(false);
 const isCpcvLoading = ref(false);
 const isWalkForwardRunning = ref(false);
 const isWalkForwardLoading = ref(false);
+const isBacktestRunning = ref(false);
+const isBacktestLoading = ref(false);
 const error = ref("");
 const cpcvError = ref("");
 const walkForwardError = ref("");
+const backtestError = ref("");
 const savedCpcvTests = ref<CpcvSavedTest[]>([]);
 const savedWalkForwardTests = ref<WalkForwardSavedTest[]>([]);
+const savedBacktestTests = ref<BacktestSavedTest[]>([]);
 const cpcvResult = ref<CpcvResult | null>(null);
 const walkForwardResult = ref<WalkForwardResult | null>(null);
+const backtestResult = ref<BacktestResult | null>(null);
 const cpcvSettings = ref<CpcvSettings>(defaultCpcvSettings());
 const walkForwardSettings = ref<WalkForwardSettings>(defaultWalkForwardSettings());
+const backtestSettings = ref<BacktestSettings>(defaultBacktestSettings());
 const showCpcvModal = ref(false);
 const showWalkForwardModal = ref(false);
+const showBacktestModal = ref(false);
 const showAssetsModal = ref(false);
+const showWeightsModal = ref(false);
 const activeAssetsSource = ref<"cpcv" | "walkForward">("cpcv");
+const selectedWeightRecord = ref<BacktestResult["rebalance_weights"][number] | null>(null);
 const xAxisLabels = ref<Array<{ x: number; text: string }>>([]);
 const yAxisLabels = ref<Array<{ y: number; text: string }>>([]);
 const wfXAxisLabels = ref<Array<{ x: number; text: string }>>([]);
 const wfYAxisLabels = ref<Array<{ y: number; text: string }>>([]);
 const wfOosXAxisLabels = ref<Array<{ x: number; text: string }>>([]);
 const wfOosYAxisLabels = ref<Array<{ y: number; text: string }>>([]);
+const backtestEquityXAxisLabels = ref<Array<{ x: number; text: string }>>([]);
+const backtestEquityYAxisLabels = ref<Array<{ y: number; text: string }>>([]);
+const backtestDrawdownXAxisLabels = ref<Array<{ x: number; text: string }>>([]);
+const backtestDrawdownYAxisLabels = ref<Array<{ y: number; text: string }>>([]);
+const backtestSharpeXAxisLabels = ref<Array<{ x: number; text: string }>>([]);
+const backtestSharpeYAxisLabels = ref<Array<{ y: number; text: string }>>([]);
 const isFullscreen = ref(false);
 const chartContainer = ref<HTMLElement | null>(null);
 const walkForwardChartContainer = ref<HTMLElement | null>(null);
@@ -105,6 +126,15 @@ const walkForwardOosChartResult = computed(() => {
     paths: segments,
   };
 });
+const backtestEquityLines = computed(() =>
+  buildChartLines(curveToChartResult(backtestResult.value?.equity_curve), backtestEquityXAxisLabels, backtestEquityYAxisLabels, "money", ["#aee9d1"]),
+);
+const backtestDrawdownLines = computed(() =>
+  buildChartLines(curveToChartResult(backtestResult.value?.drawdown_curve), backtestDrawdownXAxisLabels, backtestDrawdownYAxisLabels, "percent", ["#ff6b8a"]),
+);
+const backtestSharpeLines = computed(() =>
+  buildChartLines(curveToChartResult(backtestResult.value?.rolling_sharpe), backtestSharpeXAxisLabels, backtestSharpeYAxisLabels, "number", ["#ffcc66"]),
+);
 const activeAssets = computed(() =>
   activeAssetsSource.value === "walkForward"
     ? (walkForwardResult.value?.metadata.assets ?? [])
@@ -115,6 +145,7 @@ const activeAssetCount = computed(() =>
     ? (walkForwardResult.value?.metadata.asset_count ?? 0)
     : (cpcvResult.value?.metadata.asset_count ?? 0),
 );
+const pieSegments = computed(() => buildPieSegments(selectedWeightRecord.value));
 
 watch(locale, (value) => localStorage.setItem("its-strategy-locale", value));
 
@@ -149,10 +180,13 @@ async function loadModel(modelName: string) {
     modelDetail.value = await getModelDetail(modelName);
     cpcvResult.value = null;
     walkForwardResult.value = null;
+    backtestResult.value = null;
     cpcvError.value = "";
     walkForwardError.value = "";
+    backtestError.value = "";
     await loadSavedCpcvTests(modelName);
     await loadSavedWalkForwardTests(modelName);
+    await loadSavedBacktestTests(modelName);
   } catch (err) {
     error.value = formatError(err);
   } finally {
@@ -268,6 +302,60 @@ async function runWalkForward() {
   }
 }
 
+async function loadSavedBacktestTests(modelName = selectedModelName.value) {
+  if (!modelName) return;
+  isBacktestLoading.value = true;
+  try {
+    savedBacktestTests.value = (await listBacktestTests(modelName)).items;
+  } catch (err) {
+    backtestError.value = formatError(err);
+  } finally {
+    isBacktestLoading.value = false;
+  }
+}
+
+async function openBacktestTest(testName: string) {
+  if (!selectedModelName.value) return;
+  isBacktestLoading.value = true;
+  backtestError.value = "";
+  try {
+    backtestResult.value = await getBacktestTest(selectedModelName.value, testName);
+    backtestSettings.value = {
+      ...backtestSettings.value,
+      ...backtestResult.value.metadata.settings,
+      fees: (backtestResult.value.metadata.settings.fees ?? 0) * 100,
+      tax_rate: (backtestResult.value.metadata.settings.tax_rate ?? 0) * 100,
+    };
+  } catch (err) {
+    backtestError.value = formatError(err);
+  } finally {
+    isBacktestLoading.value = false;
+  }
+}
+
+async function runBacktest() {
+  if (!selectedModelName.value) return;
+  isBacktestRunning.value = true;
+  backtestError.value = "";
+  try {
+    backtestResult.value = await runBacktestTest(selectedModelName.value, backendBacktestSettings());
+    await loadSavedBacktestTests(selectedModelName.value);
+  } catch (err) {
+    backtestError.value = formatError(err);
+  } finally {
+    isBacktestRunning.value = false;
+  }
+}
+
+function backendBacktestSettings(): BacktestSettings {
+  return {
+    ...backtestSettings.value,
+    fees: backtestSettings.value.fees / 100,
+    tax_rate: backtestSettings.value.tax_rate / 100,
+    slippage: 0,
+  };
+}
+
 function defaultCpcvSettings(): CpcvSettings {
   const end = new Date();
   const start = new Date(end);
@@ -301,8 +389,45 @@ function defaultWalkForwardSettings(): WalkForwardSettings {
   };
 }
 
+function defaultBacktestSettings(): BacktestSettings {
+  const end = new Date();
+  const start = new Date(end);
+  start.setFullYear(start.getFullYear() - 3);
+  const tradingStart = new Date(start);
+  tradingStart.setFullYear(tradingStart.getFullYear() + 1);
+  return {
+    test_name: "baseline",
+    start_date: toDateInput(start),
+    end_date: toDateInput(end),
+    interval: "CANDLE_INTERVAL_DAY",
+    class_code: "TQBR",
+    trading_start_date: toDateInput(tradingStart),
+    rebalance_freq: "3ME",
+    rebalance_on: "last",
+    init_cash: 1_000_000,
+    fees: 0.08,
+    slippage: 0,
+    freq: "1D",
+    rolling_window: 252,
+    tax_rate: 13,
+  };
+}
+
 function toDateInput(value: Date) {
   return value.toISOString().slice(0, 10);
+}
+
+function formatMoneyInput(value: number) {
+  if (!Number.isFinite(value)) return "";
+  return Math.round(value).toLocaleString("ru-RU").replace(/\u00a0/g, " ");
+}
+
+function updateInitCash(event: Event) {
+  const raw = (event.target as HTMLInputElement).value.replace(/\s/g, "");
+  const value = Number(raw);
+  if (Number.isFinite(value)) {
+    backtestSettings.value.init_cash = value;
+  }
 }
 
 async function toggleFullscreen() {
@@ -332,15 +457,43 @@ function translateMetric(metric: string): string {
   return cpcvMetricTranslations[locale.value][metric] ?? metric;
 }
 
+function formatPercent(value: number) {
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+function formatWeight(value: number) {
+  return `${(value * 100).toFixed(2)}%`;
+}
+
 function openAssetsModal(source: "cpcv" | "walkForward") {
   activeAssetsSource.value = source;
   showAssetsModal.value = true;
+}
+
+function openWeightsModal(record: BacktestResult["rebalance_weights"][number]) {
+  selectedWeightRecord.value = record;
+  showWeightsModal.value = true;
+}
+
+function curveToChartResult(curve?: { name: string; final_value: number | null; points: Array<{ time: string; value: number }> }) {
+  if (!curve?.points?.length) return null;
+  return {
+    paths: [
+      {
+        name: curve.name,
+        final_return: curve.final_value ?? 0,
+        points: curve.points,
+      },
+    ],
+  };
 }
 
 function buildChartLines(
   result: { paths: Array<{ points: Array<{ time: string; value: number }> }> } | null,
   xLabelsRef = xAxisLabels,
   yLabelsRef = yAxisLabels,
+  yFormat: "percent" | "money" | "number" = "percent",
+  palette = ["#66d9ef", "#ffcc66", "#aee9d1", "#ff6b8a", "#b48cf2", "#7dd3fc"],
 ) {
   const paths = result?.paths ?? [];
   const values = paths.flatMap((path) => path.points.map((point) => point.value));
@@ -358,7 +511,7 @@ function buildChartLines(
   const width = 720;
   const height = 260;
   const pad = 48;
-  const colors = ["#66d9ef", "#ffcc66", "#aee9d1", "#ff6b8a", "#b48cf2", "#7dd3fc"];
+  const colors = palette;
   const minTime = timestamps.length ? Math.min(...timestamps) : 0;
   const maxTime = timestamps.length ? Math.max(...timestamps) : 1;
   const timeRange = maxTime - minTime || 1;
@@ -388,7 +541,7 @@ function buildChartLines(
   for (let i = 0; i <= tickCount; i++) {
     const tick = min + (range * i) / tickCount;
     const y = height - pad - ((tick - min) / range) * (height - pad * 2);
-    yLabels.push({ y, text: (tick * 100).toFixed(1) + "%" });
+    yLabels.push({ y, text: formatAxisValue(tick, yFormat) });
   }
   yLabelsRef.value = yLabels;
 
@@ -407,6 +560,58 @@ function buildChartLines(
       opacity: Math.max(0.18, 0.86 - index * 0.004),
     };
   });
+}
+
+function formatAxisValue(value: number, mode: "percent" | "money" | "number") {
+  if (mode === "money") {
+    return Math.round(value).toLocaleString("ru-RU", { notation: "compact", maximumFractionDigits: 1 });
+  }
+  if (mode === "number") {
+    return value.toFixed(2);
+  }
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+function buildPieSegments(record: BacktestResult["rebalance_weights"][number] | null) {
+  if (!record) return [];
+  const colors = ["#66d9ef", "#ffcc66", "#aee9d1", "#ff6b8a", "#b48cf2", "#7dd3fc", "#fca5a5", "#86efac", "#f9a8d4", "#93c5fd"];
+  const total = record.weights.reduce((sum, item) => sum + Math.max(item.weight, 0), 0) || 1;
+  let cursor = 0;
+  return record.weights.map((item, index) => {
+    const start = cursor / total;
+    cursor += Math.max(item.weight, 0);
+    const end = cursor / total;
+    const middle = (start + end) / 2;
+    const labelPosition = polarPoint(112, 112, 92, middle);
+    return {
+      ...item,
+      color: colors[index % colors.length],
+      d: piePath(112, 112, 86, start, end),
+      labelX: labelPosition.x,
+      labelY: labelPosition.y,
+      showLabel: item.weight / total >= 0.025,
+    };
+  });
+}
+
+function piePath(cx: number, cy: number, radius: number, startRatio: number, endRatio: number) {
+  const start = polarPoint(cx, cy, radius, startRatio);
+  const end = polarPoint(cx, cy, radius, endRatio);
+  const largeArc = endRatio - startRatio > 0.5 ? 1 : 0;
+  return [
+    `M ${cx} ${cy}`,
+    `L ${start.x} ${start.y}`,
+    `A ${radius} ${radius} 0 ${largeArc} 1 ${end.x} ${end.y}`,
+    "Z",
+  ].join(" ");
+}
+
+function polarPoint(cx: number, cy: number, radius: number, ratio: number) {
+  const angle = ratio * Math.PI * 2 - Math.PI / 2;
+  return {
+    x: cx + radius * Math.cos(angle),
+    y: cy + radius * Math.sin(angle),
+  };
 }
 </script>
 
@@ -540,7 +745,10 @@ function buildChartLines(
                   <button class="report-btn" type="button" @click="showWalkForwardModal = true">
                     <strong>WalkForward</strong>
                   </button>
-                  <article v-for="report in modelDetail.future_reports.filter((item) => !['cpcv', 'walk_forward'].includes(item.id))" :key="report.id" class="report">
+                  <button class="report-btn" type="button" @click="showBacktestModal = true">
+                    <strong>Backtesting</strong>
+                  </button>
+                  <article v-for="report in modelDetail.future_reports.filter((item) => !['cpcv', 'walk_forward', 'backtesting'].includes(item.id))" :key="report.id" class="report">
                     <strong>{{ report.title }}</strong>
                     <small>{{ t.planned }}</small>
                   </article>
@@ -1000,6 +1208,258 @@ function buildChartLines(
           </div>
         </div>
 
+      </div>
+
+      <div v-if="showBacktestModal" class="modal-overlay" @click.self="showBacktestModal = false">
+        <div class="modal-fullscreen">
+          <div class="modal-header">
+            <div class="section-title">
+              <span>{{ t.backtestSettings }}</span>
+              <strong>{{ t.backtesting }}</strong>
+            </div>
+            <button class="icon-button" type="button" @click="showBacktestModal = false">
+              <X :size="18" />
+            </button>
+          </div>
+
+          <p v-if="backtestError" class="error-banner">{{ backtestError }}</p>
+
+          <div class="cpcv-layout">
+            <div class="form-grid">
+              <label><span>{{ t.testName }}</span><input v-model="backtestSettings.test_name" type="text" /></label>
+              <label><span>{{ t.startDate }}</span><input v-model="backtestSettings.start_date" type="date" /></label>
+              <label><span>{{ t.endDate }}</span><input v-model="backtestSettings.end_date" type="date" /></label>
+              <label><span>{{ t.tradingStartDate }}</span><input v-model="backtestSettings.trading_start_date" type="date" /></label>
+              <label>
+                <span>{{ t.interval }}</span>
+                <select v-model="backtestSettings.interval">
+                  <option value="CANDLE_INTERVAL_DAY">Day</option>
+                  <option value="CANDLE_INTERVAL_HOUR">Hour</option>
+                  <option value="CANDLE_INTERVAL_WEEK">Week</option>
+                  <option value="CANDLE_INTERVAL_MONTH">Month</option>
+                </select>
+              </label>
+              <label><span>{{ t.classCode }}</span><input v-model="backtestSettings.class_code" type="text" /></label>
+              <label><span>{{ t.rebalanceFreq }}</span><input v-model="backtestSettings.rebalance_freq" type="text" /></label>
+              <label>
+                <span>{{ t.rebalanceOn }}</span>
+                <select v-model="backtestSettings.rebalance_on">
+                  <option value="last">last</option>
+                  <option value="first">first</option>
+                </select>
+              </label>
+              <label><span>{{ t.initCash }}</span><input :value="formatMoneyInput(backtestSettings.init_cash)" inputmode="numeric" type="text" @input="updateInitCash" /></label>
+              <label><span>{{ t.fees }}</span><input v-model.number="backtestSettings.fees" min="0" step="0.0001" type="number" /></label>
+              <label><span>{{ t.taxRate }}</span><input v-model.number="backtestSettings.tax_rate" min="0" max="100" step="0.1" type="number" /></label>
+              <label><span>{{ t.rollingWindow }}</span><input v-model.number="backtestSettings.rolling_window" min="2" max="2000" type="number" /></label>
+            </div>
+
+            <div class="cpcv-actions">
+              <button class="primary-button" type="button" :disabled="isBacktestRunning" @click="runBacktest">
+                <RefreshCw v-if="isBacktestRunning" class="spin" :size="17" />
+                <PlayCircle v-else :size="17" />
+                <span>{{ isBacktestRunning ? t.processing : t.runAndSave }}</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="saved-tests">
+            <div class="section-title">
+              <span>{{ t.savedTests }}</span>
+              <strong>{{ savedBacktestTests.length }}</strong>
+            </div>
+            <div v-if="isBacktestLoading" class="small-state">
+              <RefreshCw class="spin" :size="17" />
+              <span>{{ t.loading }}</span>
+            </div>
+            <div v-else-if="savedBacktestTests.length === 0" class="small-state">
+              <span>{{ t.noSavedTests }}</span>
+            </div>
+            <div v-else class="saved-list">
+              <article v-for="test in savedBacktestTests" :key="test.file_name" class="saved-card">
+                <div>
+                  <strong>{{ test.test_name }}</strong>
+                  <small>{{ formatDateTime(test.generated_at) }}</small>
+                </div>
+                <button class="icon-text-button" type="button" @click="openBacktestTest(test.test_name)">
+                  <FolderOpen :size="16" />
+                  <span>{{ t.loadSaved }}</span>
+                </button>
+              </article>
+            </div>
+          </div>
+
+          <div v-if="backtestResult" class="cpcv-results">
+            <div class="result-strip">
+              <article>
+                <span>{{ t.source }}</span>
+                <strong>{{ backtestResult.metadata.price_period.rows }}</strong>
+                <small>{{ formatDateTime(backtestResult.metadata.price_period.start) }} - {{ formatDateTime(backtestResult.metadata.price_period.end) }}</small>
+              </article>
+              <article>
+                <span>{{ t.backtesting }}</span>
+                <strong>{{ backtestResult.metadata.trading_period.rows }}</strong>
+                <small>{{ formatDateTime(backtestResult.metadata.trading_period.start) }} - {{ formatDateTime(backtestResult.metadata.trading_period.end) }}</small>
+              </article>
+              <article>
+                <span>{{ t.assets }}</span>
+                <strong>{{ backtestResult.metadata.asset_count }}</strong>
+                <small>{{ backtestResult.metadata.settings.rebalance_freq }}</small>
+              </article>
+            </div>
+
+            <div class="chart-panel">
+              <div class="section-title">
+                <span>{{ t.equityCurve }}</span>
+                <strong>{{ backtestResult.metadata.test_name }}</strong>
+              </div>
+              <svg class="cpcv-chart" viewBox="0 0 720 260" role="img">
+                <line x1="48" y1="212" x2="702" y2="212" />
+                <line x1="48" y1="18" x2="48" y2="212" />
+                <polyline v-for="(line, index) in backtestEquityLines" :key="index" :points="line.points" :stroke="line.color" :opacity="line.opacity" />
+                <text x="375" y="252" text-anchor="middle" font-size="10" fill="#8992a3">Date</text>
+                <text x="12" y="118" text-anchor="middle" font-size="10" fill="#8992a3" transform="rotate(-90 12 118)">Value</text>
+                <text v-for="(label, i) in backtestEquityXAxisLabels" :key="'btx' + i" :x="label.x" y="228" text-anchor="middle" font-size="10" fill="#8992a3">{{ label.text }}</text>
+                <text v-for="(label, i) in backtestEquityYAxisLabels" :key="'bty' + i" :x="44" :y="label.y" text-anchor="end" font-size="10" fill="#8992a3" dominant-baseline="middle">{{ label.text }}</text>
+              </svg>
+            </div>
+
+            <div class="chart-panel">
+              <div class="section-title">
+                <span>{{ t.drawdown }}</span>
+                <strong>{{ t.rollingSharpe }}</strong>
+              </div>
+              <div class="dual-chart-grid">
+                <svg class="cpcv-chart" viewBox="0 0 720 260" role="img">
+                  <line x1="48" y1="212" x2="702" y2="212" />
+                  <line x1="48" y1="18" x2="48" y2="212" />
+                  <polyline v-for="(line, index) in backtestDrawdownLines" :key="index" :points="line.points" :stroke="line.color" :opacity="line.opacity" />
+                  <text x="375" y="252" text-anchor="middle" font-size="10" fill="#8992a3">Date</text>
+                  <text x="12" y="118" text-anchor="middle" font-size="10" fill="#8992a3" transform="rotate(-90 12 118)">Drawdown</text>
+                  <text v-for="(label, i) in backtestDrawdownXAxisLabels" :key="'btdx' + i" :x="label.x" y="228" text-anchor="middle" font-size="10" fill="#8992a3">{{ label.text }}</text>
+                  <text v-for="(label, i) in backtestDrawdownYAxisLabels" :key="'btdy' + i" :x="44" :y="label.y" text-anchor="end" font-size="10" fill="#8992a3" dominant-baseline="middle">{{ label.text }}</text>
+                </svg>
+                <svg class="cpcv-chart" viewBox="0 0 720 260" role="img">
+                  <line x1="48" y1="212" x2="702" y2="212" />
+                  <line x1="48" y1="18" x2="48" y2="212" />
+                  <polyline v-for="(line, index) in backtestSharpeLines" :key="index" :points="line.points" :stroke="line.color" :opacity="line.opacity" />
+                  <text x="375" y="252" text-anchor="middle" font-size="10" fill="#8992a3">Date</text>
+                  <text x="12" y="118" text-anchor="middle" font-size="10" fill="#8992a3" transform="rotate(-90 12 118)">Sharpe</text>
+                  <text v-for="(label, i) in backtestSharpeXAxisLabels" :key="'btsx' + i" :x="label.x" y="228" text-anchor="middle" font-size="10" fill="#8992a3">{{ label.text }}</text>
+                  <text v-for="(label, i) in backtestSharpeYAxisLabels" :key="'btsy' + i" :x="44" :y="label.y" text-anchor="end" font-size="10" fill="#8992a3" dominant-baseline="middle">{{ label.text }}</text>
+                </svg>
+              </div>
+            </div>
+
+            <div class="metrics-section">
+              <div class="section-title">
+                <span>{{ t.metrics }}</span>
+                <strong>{{ t.backtestResults }}</strong>
+              </div>
+              <div class="metrics-grid">
+                <div v-for="row in [...backtestResult.summary, ...backtestResult.report]" :key="row.metric" class="metric-item">
+                  <span class="metric-label">{{ translateMetric(row.metric) }}</span>
+                  <span class="metric-value">{{ row.value }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="chart-panel">
+              <div class="section-title">
+                <span>{{ t.rebalanceWeights }}</span>
+                <strong>{{ backtestResult.rebalance_weights.length }}</strong>
+              </div>
+              <div class="table-scroll">
+                <table>
+                  <tbody>
+                    <tr v-for="record in backtestResult.rebalance_weights.slice(0, 40)" :key="record.time">
+                      <th>{{ formatDateTime(record.time) }}</th>
+                      <td>
+                        <strong>{{ t.totalWeight }}: {{ formatWeight(record.total_weight) }} / {{ record.asset_count }}</strong>
+                        <br />
+                        <span v-for="item in record.weights.slice(0, 12)" :key="`${record.time}-${item.ticker}`" class="weight-pill">
+                          {{ item.ticker }} {{ formatWeight(item.weight) }}
+                        </span>
+                        <button
+                          v-if="record.weights.length > 12"
+                          class="icon-text-button compact-action"
+                          type="button"
+                          @click="openWeightsModal(record)"
+                        >
+                          {{ t.showAll }} (+{{ record.weights.length - 12 }} {{ t.hiddenAssets }})
+                        </button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="showWeightsModal" class="modal-overlay" @click.self="showWeightsModal = false">
+        <div class="modal-fullscreen weights-modal">
+          <div class="modal-header">
+            <div class="section-title">
+              <span>{{ t.portfolioComposition }}</span>
+              <strong>{{ formatDateTime(selectedWeightRecord?.time) }}</strong>
+            </div>
+            <button class="icon-button" type="button" @click="showWeightsModal = false">
+              <X :size="18" />
+            </button>
+          </div>
+
+          <div v-if="selectedWeightRecord" class="weights-layout">
+            <section class="pie-panel">
+              <div class="section-title">
+                <span>{{ t.totalWeight }}</span>
+                <strong>{{ formatWeight(selectedWeightRecord.total_weight) }} / {{ selectedWeightRecord.asset_count }}</strong>
+              </div>
+              <svg class="pie-chart" viewBox="0 0 224 224" role="img">
+                <path
+                  v-for="segment in pieSegments"
+                  :key="segment.ticker"
+                  :d="segment.d"
+                  :fill="segment.color"
+                  stroke="#11141b"
+                  stroke-width="0.8"
+                />
+                <text
+                  v-for="segment in pieSegments.filter((item) => item.showLabel)"
+                  :key="`${segment.ticker}-label`"
+                  :x="segment.labelX"
+                  :y="segment.labelY"
+                  fill="#f4f6fb"
+                  font-size="5"
+                  text-anchor="middle"
+                  dominant-baseline="middle"
+                >
+                  {{ segment.ticker }} {{ formatWeight(segment.weight) }}
+                </text>
+              </svg>
+            </section>
+
+            <section class="weights-table-panel">
+              <div class="table-scroll full-height-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Ticker</th>
+                      <th>Weight</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="item in selectedWeightRecord.weights" :key="item.ticker">
+                      <td><strong>{{ item.ticker }}</strong></td>
+                      <td>{{ formatWeight(item.weight) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </div>
       </div>
 
       <div v-if="showAssetsModal" class="modal-overlay" @click.self="showAssetsModal = false">

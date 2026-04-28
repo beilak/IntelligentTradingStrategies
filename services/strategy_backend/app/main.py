@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
+from services.strategy_backend.app.backtest import router as backtest_router
 from services.strategy_backend.app.cpcv import router as cpcv_router
 from services.strategy_backend.app.walk_forward import router as walk_forward_router
 
@@ -56,6 +57,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.include_router(backtest_router, prefix=API_PREFIX)
     app.include_router(cpcv_router, prefix=API_PREFIX)
     app.include_router(walk_forward_router, prefix=API_PREFIX)
 
@@ -102,7 +104,7 @@ def create_app() -> FastAPI:
             "future_reports": [
                 {"id": "cpcv", "title": "CPCV", "status": "available"},
                 {"id": "walk_forward", "title": "WalkForward", "status": "available"},
-                {"id": "backtesting", "title": "Backtesting", "status": "planned"},
+                {"id": "backtesting", "title": "Backtesting", "status": "available"},
             ],
         }
 

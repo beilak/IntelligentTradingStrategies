@@ -218,3 +218,84 @@ export interface WalkForwardResult {
     }>;
   }>;
 }
+
+export interface BacktestSettings {
+  test_name: string;
+  start_date: string;
+  end_date: string;
+  interval: string;
+  class_code: string;
+  trading_start_date: string;
+  rebalance_freq: string;
+  rebalance_on: string;
+  init_cash: number;
+  fees: number;
+  slippage: number;
+  freq: string;
+  rolling_window: number;
+  tax_rate: number;
+}
+
+export interface BacktestSavedTest {
+  file_name: string;
+  test_name: string;
+  model_name: string;
+  generated_at: string;
+  settings: Partial<BacktestSettings>;
+  trading_period: Partial<CpcvPeriod>;
+  asset_count: number;
+}
+
+export interface BacktestResult {
+  metadata: {
+    model_name: string;
+    strategy_name: string;
+    strategy_description: string;
+    test_name: string;
+    test_type: string;
+    generated_at: string;
+    settings: BacktestSettings;
+    price_period: CpcvPeriod;
+    trading_period: CpcvPeriod;
+    assets: Array<{
+      figi: string;
+      ticker: string;
+      name: string;
+    }>;
+    asset_count: number;
+  };
+  report: Array<{
+    metric: string;
+    value: string;
+    numeric_value: number | null;
+  }>;
+  summary: Array<{
+    metric: string;
+    value: string;
+    numeric_value: number | null;
+  }>;
+  equity_curve: {
+    name: string;
+    final_value: number | null;
+    points: Array<{ time: string; value: number }>;
+  };
+  drawdown_curve: {
+    name: string;
+    final_value: number | null;
+    points: Array<{ time: string; value: number }>;
+  };
+  rolling_sharpe: {
+    name: string;
+    final_value: number | null;
+    points: Array<{ time: string; value: number }>;
+  };
+  rebalance_weights: Array<{
+    time: string;
+    total_weight: number;
+    asset_count: number;
+    weights: Array<{
+      ticker: string;
+      weight: number;
+    }>;
+  }>;
+}

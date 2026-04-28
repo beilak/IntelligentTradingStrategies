@@ -123,9 +123,15 @@ def generate_walk_forward_report(
     }
 
 
-def walk_forward_summary(population: Any, settings: dict[str, Any]) -> list[dict[str, Any]]:
+def walk_forward_summary(
+    population: Any, settings: dict[str, Any]
+) -> list[dict[str, Any]]:
     return [
-        {"metric": "Number of WF Windows", "value": str(len(population)), "numeric_value": float(len(population))},
+        {
+            "metric": "Number of WF Windows",
+            "value": str(len(population)),
+            "numeric_value": float(len(population)),
+        },
         {
             "metric": "Train Size Months",
             "value": str(settings.get("train_size_months", 3)),
@@ -232,7 +238,9 @@ def describe_walk_forward_windows(
     x_test: pd.DataFrame,
 ) -> list[dict[str, Any]]:
     windows = []
-    for split_id, (train_index, test_index) in enumerate(walk_forward.split(x_test), start=1):
+    for split_id, (train_index, test_index) in enumerate(
+        walk_forward.split(x_test), start=1
+    ):
         train_dates = x_test.index[train_index]
         test_dates = x_test.index[test_index]
         windows.append(
@@ -284,4 +292,6 @@ def read_json(path: Path) -> dict[str, Any]:
 
 
 def cache_path(model_name: str, test_name: str) -> Path:
-    return CACHE_DIR / f"{safe_name(model_name)}_{safe_name(test_name)}_walk_forward.json"
+    return (
+        CACHE_DIR / f"{safe_name(model_name)}_{safe_name(test_name)}_walk_forward.json"
+    )

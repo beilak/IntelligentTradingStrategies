@@ -1,4 +1,7 @@
 import type {
+  BacktestResult,
+  BacktestSavedTest,
+  BacktestSettings,
   CpcvResult,
   CpcvSavedTest,
   CpcvSettings,
@@ -53,6 +56,28 @@ export async function runWalkForwardTest(
   settings: WalkForwardSettings,
 ): Promise<WalkForwardResult> {
   return request<WalkForwardResult>(`/models/${encodeURIComponent(modelName)}/walk-forward/run`, {
+    method: "POST",
+    body: JSON.stringify(settings),
+  });
+}
+
+export async function listBacktestTests(modelName: string): Promise<{ items: BacktestSavedTest[] }> {
+  return request<{ items: BacktestSavedTest[] }>(
+    `/models/${encodeURIComponent(modelName)}/backtest/tests`,
+  );
+}
+
+export async function getBacktestTest(modelName: string, testName: string): Promise<BacktestResult> {
+  return request<BacktestResult>(
+    `/models/${encodeURIComponent(modelName)}/backtest/tests/${encodeURIComponent(testName)}`,
+  );
+}
+
+export async function runBacktestTest(
+  modelName: string,
+  settings: BacktestSettings,
+): Promise<BacktestResult> {
+  return request<BacktestResult>(`/models/${encodeURIComponent(modelName)}/backtest/run`, {
     method: "POST",
     body: JSON.stringify(settings),
   });

@@ -556,6 +556,12 @@ select {
   gap: 16px;
 }
 
+.dual-chart-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .metrics-section {
   display: grid;
   gap: 8px;
@@ -591,6 +597,53 @@ select {
   color: #c8ceda;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
+}
+
+.weight-pill {
+  background: #151821;
+  border: 1px solid #2b3342;
+  border-radius: 6px;
+  color: #c8ceda;
+  display: inline-block;
+  font-size: 12px;
+  margin: 2px;
+  padding: 4px 6px;
+}
+
+.compact-action {
+  margin-left: 6px;
+  min-height: 28px;
+  padding: 0 8px;
+}
+
+.weights-modal {
+  max-width: 1180px;
+}
+
+.weights-layout {
+  align-items: start;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(360px, 0.92fr) minmax(360px, 1.08fr);
+}
+
+.pie-panel,
+.weights-table-panel {
+  background: #0b0e14;
+  border: 1px solid #2b3342;
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.pie-chart {
+  display: block;
+  margin: 0 auto;
+  max-height: 620px;
+  width: min(100%, 620px);
+}
+
+.full-height-table {
+  max-height: 70vh;
 }
 
 .empty-state {
@@ -656,7 +709,9 @@ td {
   .main-grid,
   .hero-panel,
   .form-grid,
-  .metrics-container {
+  .metrics-container,
+  .dual-chart-grid,
+  .weights-layout {
     grid-template-columns: 1fr;
   }
 

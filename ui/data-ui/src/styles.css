@@ -314,6 +314,10 @@ td small {
   grid-template-columns: minmax(0, 1.35fr) minmax(360px, 0.65fr);
 }
 
+.visual-grid.full-width {
+  grid-template-columns: 1fr;
+}
+
 .chart-panel,
 .instrument-panel {
   background: #11141b;
@@ -348,6 +352,10 @@ table {
   border-collapse: collapse;
   min-width: 620px;
   width: 100%;
+}
+
+.wide-table table {
+  min-width: 1280px;
 }
 
 th,
@@ -414,7 +422,7 @@ tbody tr.selected {
 
   .source-rail {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     position: static;
   }
 

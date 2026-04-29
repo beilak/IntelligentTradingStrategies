@@ -3,13 +3,46 @@ export type Locale = "ru" | "en";
 export interface Stock {
   figi: string;
   ticker: string;
+  uid?: string | null;
+  isin?: string | null;
   name: string;
   class_code: string;
   currency: string;
   exchange: string;
   sector?: string | null;
   country_of_risk?: string | null;
+  country_of_risk_name?: string | null;
   share_type?: string | null;
+  lot?: number | null;
+  trading_status?: string | null;
+  real_exchange?: string | null;
+  buy_available_flag?: boolean | null;
+  sell_available_flag?: boolean | null;
+  api_trade_available_flag?: boolean | null;
+  short_enabled_flag?: boolean | null;
+  for_qual_investor_flag?: boolean | null;
+}
+
+export interface Currency {
+  figi: string;
+  ticker: string;
+  uid?: string | null;
+  position_uid?: string | null;
+  iso_currency_name?: string | null;
+  name: string;
+  class_code: string;
+  currency: string;
+  exchange: string;
+  country_of_risk?: string | null;
+  country_of_risk_name?: string | null;
+  lot?: number | null;
+  trading_status?: string | null;
+  real_exchange?: string | null;
+  buy_available_flag?: boolean | null;
+  sell_available_flag?: boolean | null;
+  api_trade_available_flag?: boolean | null;
+  for_qual_investor_flag?: boolean | null;
+  weekend_flag?: boolean | null;
 }
 
 export interface Candle {
@@ -38,6 +71,14 @@ export interface StocksResponse {
   limit: number;
   offset: number;
   filters: StockFilters;
+}
+
+export interface CurrenciesResponse {
+  items: Currency[];
+  total: number;
+  limit: number;
+  offset: number;
+  filters: Pick<StockFilters, "class_codes" | "exchanges" | "countries" | "intervals">;
 }
 
 export interface PriceSummary {

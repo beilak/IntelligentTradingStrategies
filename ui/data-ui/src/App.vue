@@ -3,6 +3,7 @@ import {
   Activity,
   BarChart3,
   CandlestickChart as CandleIcon,
+  Coins,
   Database,
   Globe2,
   RefreshCw,
@@ -10,21 +11,31 @@ import {
   TrendingUp,
 } from "lucide-vue-next";
 import { computed, onMounted, ref, watch } from "vue";
-import { getDividends, getPrices, getStocks } from "./api";
+import { getCurrencies, getDividends, getPrices, getStocks } from "./api";
 import CandlestickChartPanel from "./components/CandlestickChart.vue";
 import { messages } from "./i18n";
-import type { Candle, Dividend, DividendSummary, Locale, Stock, StockFilters } from "./types";
+import type { Candle, Currency, Dividend, DividendSummary, Locale, Stock, StockFilters } from "./types";
 
 const savedLocale = localStorage.getItem("its-data-locale") as Locale | null;
 const locale = ref<Locale>(savedLocale === "en" ? "en" : "ru");
 const t = computed(() => messages[locale.value]);
 
-type ViewTab = "quotes" | "dividends" | "instruments";
+type ViewTab = "quotes" | "dividends" | "instruments" | "currencies";
 const activeTab = ref<ViewTab>("quotes");
 
 const stocks = ref<Stock[]>([]);
+const stockTotal = ref(0);
 const filters = ref<StockFilters>({
   class_codes: ["TQBR"],
+  exchanges: [],
+  sectors: [],
+  countries: [],
+  intervals: ["CANDLE_INTERVAL_DAY"],
+});
+const currencies = ref<Currency[]>([]);
+const currencyTotal = ref(0);
+const currencyFilters = ref<StockFilters>({
+  class_codes: [],
   exchanges: [],
   sectors: [],
   countries: [],
@@ -36,6 +47,7 @@ const dividendsSummary = ref<DividendSummary[]>([]);
 
 const search = ref("");
 const classCode = ref("TQBR");
+const currencyClassCode = ref("");
 const interval = ref("CANDLE_INTERVAL_DAY");
 const selectedFigi = ref("");
 const startDate = ref(formatDate(addDays(new Date(), -180)));
@@ -43,6 +55,7 @@ const endDate = ref(formatDate(new Date()));
 const isLoadingStocks = ref(false);
 const isLoadingPrices = ref(false);
 const isLoadingDividends = ref(false);
+const isLoadingCurrencies = ref(false);
 const error = ref("");
 
 const orderedCandles = computed(() =>
@@ -53,6 +66,26 @@ const lastCandle = computed(() => orderedCandles.value[orderedCandles.value.leng
 const firstCandle = computed(() => orderedCandles.value[0]);
 const selectedTicker = computed(
   () => selectedStock.value?.ticker ?? lastCandle.value?.ticker ?? t.value.empty,
+);
+const selectedClassCode = computed({
+  get: () => (activeTab.value === "currencies" ? currencyClassCode.value : classCode.value),
+  set: (value: string) => {
+    if (activeTab.value === "currencies") {
+      currencyClassCode.value = value;
+      return;
+    }
+    classCode.value = value;
+  },
+});
+const activeClassOptions = computed(() =>
+  activeTab.value === "currencies" ? currencyFilters.value.class_codes : filters.value.class_codes,
+);
+const isBusy = computed(
+  () =>
+    isLoadingStocks.value ||
+    isLoadingPrices.value ||
+    isLoadingDividends.value ||
+    isLoadingCurrencies.value,
 );
 const priceChangePct = computed(() => {
   if (!firstCandle.value || !lastCandle.value || !firstCandle.value.close) {
@@ -87,6 +120,7 @@ async function loadStocks() {
       limit: 300,
     });
     stocks.value = response.items;
+    stockTotal.value = response.total;
     filters.value = response.filters;
 
     if (!stocks.value.some((stock) => stock.figi === selectedFigi.value)) {
@@ -106,8 +140,34 @@ async function loadStocks() {
   } catch (err) {
     error.value = formatError(err);
     candles.value = [];
+    stockTotal.value = 0;
   } finally {
     isLoadingStocks.value = false;
+  }
+}
+
+async function loadCurrencies() {
+  isLoadingCurrencies.value = true;
+  error.value = "";
+  try {
+    const response = await getCurrencies({
+      class_code: currencyClassCode.value || undefined,
+      search: search.value,
+      limit: 300,
+    });
+    currencies.value = response.items;
+    currencyTotal.value = response.total;
+    currencyFilters.value = {
+      ...currencyFilters.value,
+      ...response.filters,
+      sectors: [],
+    };
+  } catch (err) {
+    error.value = formatError(err);
+    currencies.value = [];
+    currencyTotal.value = 0;
+  } finally {
+    isLoadingCurrencies.value = false;
   }
 }
 
@@ -142,7 +202,25 @@ function onToolbarChange() {
     void loadPrices();
   } else if (activeTab.value === "dividends") {
     void loadDividends();
+  } else if (activeTab.value === "currencies") {
+    void loadCurrencies();
   }
+}
+
+function onSubmitToolbar() {
+  if (activeTab.value === "currencies") {
+    void loadCurrencies();
+    return;
+  }
+  void loadStocks();
+}
+
+function onClassCodeChange() {
+  if (activeTab.value === "currencies") {
+    void loadCurrencies();
+    return;
+  }
+  void loadStocks();
 }
 
 function selectStock(stock: Stock) {
@@ -195,6 +273,13 @@ function formatVolume(value: number) {
   }).format(value);
 }
 
+function formatBool(value: boolean | null | undefined) {
+  if (value === null || value === undefined) {
+    return "—";
+  }
+  return value ? t.value.yes : t.value.no;
+}
+
 async function loadDividends() {
   if (!selectedFigi.value) {
     dividends.value = [];
@@ -222,6 +307,13 @@ async function loadDividends() {
 
 function setActiveTab(tab: ViewTab) {
   activeTab.value = tab;
+  if (tab === "quotes" && selectedFigi.value && candles.value.length === 0) {
+    void loadPrices();
+  } else if (tab === "dividends" && selectedFigi.value && dividends.value.length === 0) {
+    void loadDividends();
+  } else if (tab === "currencies" && currencies.value.length === 0) {
+    void loadCurrencies();
+  }
 }
 </script>
 
@@ -276,10 +368,19 @@ function setActiveTab(tab: ViewTab) {
           <BarChart3 :size="18" />
           <span>{{ t.instruments }}</span>
         </button>
+        <button
+          class="source-item"
+          :class="{ active: activeTab === 'currencies' }"
+          type="button"
+          @click="setActiveTab('currencies')"
+        >
+          <Coins :size="18" />
+          <span>{{ t.currencies }}</span>
+        </button>
       </aside>
 
       <section class="content">
-        <form class="toolbar" @submit.prevent="loadStocks">
+        <form class="toolbar" @submit.prevent="onSubmitToolbar">
           <label class="control search-control">
             <span>{{ t.search }}</span>
             <div class="input-shell">
@@ -290,13 +391,16 @@ function setActiveTab(tab: ViewTab) {
 
           <label class="control compact">
             <span>{{ t.classCode }}</span>
-            <select v-model="classCode" @change="loadStocks">
-              <option v-for="code in filters.class_codes" :key="code" :value="code">{{ code }}</option>
-              <option v-if="!filters.class_codes.includes(classCode)" :value="classCode">{{ classCode }}</option>
+            <select v-model="selectedClassCode" @change="onClassCodeChange">
+              <option v-if="activeTab === 'currencies'" value="">{{ t.all }}</option>
+              <option v-for="code in activeClassOptions" :key="code" :value="code">{{ code }}</option>
+              <option v-if="selectedClassCode && !activeClassOptions.includes(selectedClassCode)" :value="selectedClassCode">
+                {{ selectedClassCode }}
+              </option>
             </select>
           </label>
 
-          <label class="control compact">
+          <label v-if="activeTab === 'quotes' || activeTab === 'dividends'" class="control compact">
             <span>{{ t.interval }}</span>
             <select v-model="interval" @change="onToolbarChange">
               <option v-for="item in filters.intervals" :key="item" :value="item">
@@ -305,25 +409,25 @@ function setActiveTab(tab: ViewTab) {
             </select>
           </label>
 
-          <label class="control date-control">
+          <label v-if="activeTab === 'quotes' || activeTab === 'dividends'" class="control date-control">
             <span>{{ t.from }}</span>
             <input v-model="startDate" type="date" @change="onToolbarChange" />
           </label>
 
-          <label class="control date-control">
+          <label v-if="activeTab === 'quotes' || activeTab === 'dividends'" class="control date-control">
             <span>{{ t.to }}</span>
             <input v-model="endDate" type="date" @change="onToolbarChange" />
           </label>
 
-          <button class="refresh-button" type="submit" :disabled="isLoadingStocks || isLoadingPrices || isLoadingDividends">
-            <RefreshCw :class="{ spin: isLoadingStocks || isLoadingPrices || isLoadingDividends }" :size="17" />
+          <button class="refresh-button" type="submit" :disabled="isBusy">
+            <RefreshCw :class="{ spin: isBusy }" :size="17" />
             <span>{{ t.refresh }}</span>
           </button>
         </form>
 
         <p v-if="error" class="error-banner">{{ error }}</p>
 
-        <section class="metrics" :aria-label="t.marketData">
+        <section v-if="activeTab === 'quotes' || activeTab === 'dividends'" class="metrics" :aria-label="t.marketData">
           <article class="metric">
             <span>{{ t.selected }}</span>
             <strong>{{ selectedTicker }}</strong>
@@ -343,8 +447,44 @@ function setActiveTab(tab: ViewTab) {
             <strong>{{ formatVolume(totalVolume) }}</strong>
           </article>
         </section>
+        <section v-else-if="activeTab === 'instruments'" class="metrics" :aria-label="t.instruments">
+          <article class="metric">
+            <span>{{ t.instruments }}</span>
+            <strong>{{ stockTotal }}</strong>
+          </article>
+          <article class="metric">
+            <span>{{ t.class }}</span>
+            <strong>{{ classCode }}</strong>
+          </article>
+          <article class="metric">
+            <span>{{ t.sector }}</span>
+            <strong>{{ filters.sectors.length }}</strong>
+          </article>
+          <article class="metric">
+            <span>{{ t.country }}</span>
+            <strong>{{ filters.countries.length }}</strong>
+          </article>
+        </section>
+        <section v-else class="metrics" :aria-label="t.currencies">
+          <article class="metric">
+            <span>{{ t.currencies }}</span>
+            <strong>{{ currencyTotal }}</strong>
+          </article>
+          <article class="metric">
+            <span>{{ t.class }}</span>
+            <strong>{{ currencyClassCode || t.all }}</strong>
+          </article>
+          <article class="metric">
+            <span>{{ t.exchange }}</span>
+            <strong>{{ currencyFilters.exchanges.length }}</strong>
+          </article>
+          <article class="metric">
+            <span>{{ t.country }}</span>
+            <strong>{{ currencyFilters.countries.length }}</strong>
+          </article>
+        </section>
 
-        <section class="visual-grid">
+        <section class="visual-grid" :class="{ 'full-width': activeTab === 'instruments' || activeTab === 'currencies' }">
           <template v-if="activeTab === 'quotes'">
             <div class="chart-panel">
               <div class="panel-head">
@@ -410,18 +550,129 @@ function setActiveTab(tab: ViewTab) {
               <div class="panel-head">
                 <div>
                   <span>{{ t.instruments }}</span>
-                  <strong>{{ stocks.length }}</strong>
+                  <strong>{{ stockTotal }}</strong>
                 </div>
                 <BarChart3 :size="18" />
+              </div>
+              <div v-if="isLoadingStocks" class="loading-state">
+                <RefreshCw :class="{ spin: true }" :size="24" />
+                <span>{{ t.loading }}</span>
+              </div>
+              <div v-else-if="stocks.length === 0" class="empty-state">
+                <span>{{ t.empty }}</span>
+              </div>
+              <div v-else class="table-scroll wide-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>{{ t.ticker }}</th>
+                      <th>{{ t.name }}</th>
+                      <th>{{ t.sector }}</th>
+                      <th>{{ t.exchange }}</th>
+                      <th>{{ t.country }}</th>
+                      <th>{{ t.class }}</th>
+                      <th>{{ t.lot }}</th>
+                      <th>{{ t.status }}</th>
+                      <th>{{ t.availability }}</th>
+                      <th>{{ t.isin }}</th>
+                      <th>{{ t.uid }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="stock in stocks"
+                      :key="stock.figi"
+                      :class="{ selected: stock.figi === selectedFigi }"
+                      @click="selectStock(stock)"
+                    >
+                      <td>
+                        <strong>{{ stock.ticker }}</strong>
+                        <small>{{ stock.currency }}</small>
+                      </td>
+                      <td>{{ stock.name }}</td>
+                      <td>{{ stock.sector ?? "—" }}</td>
+                      <td>{{ stock.exchange }}</td>
+                      <td>{{ stock.country_of_risk_name ?? stock.country_of_risk ?? "—" }}</td>
+                      <td>{{ stock.class_code }}</td>
+                      <td>{{ stock.lot ?? "—" }}</td>
+                      <td>{{ stock.trading_status ?? "—" }}</td>
+                      <td>
+                        <strong>{{ formatBool(stock.buy_available_flag) }} / {{ formatBool(stock.sell_available_flag) }}</strong>
+                        <small>API {{ formatBool(stock.api_trade_available_flag) }}</small>
+                      </td>
+                      <td>{{ stock.isin ?? "—" }}</td>
+                      <td>{{ stock.uid ?? "—" }}</td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
           </template>
 
-          <div class="instrument-panel">
+          <template v-else-if="activeTab === 'currencies'">
+            <div class="chart-panel">
+              <div class="panel-head">
+                <div>
+                  <span>{{ t.currencies }}</span>
+                  <strong>{{ currencyTotal }}</strong>
+                </div>
+                <Coins :size="18" />
+              </div>
+              <div v-if="isLoadingCurrencies" class="loading-state">
+                <RefreshCw :class="{ spin: true }" :size="24" />
+                <span>{{ t.loading }}</span>
+              </div>
+              <div v-else-if="currencies.length === 0" class="empty-state">
+                <span>{{ t.empty }}</span>
+              </div>
+              <div v-else class="table-scroll wide-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>{{ t.ticker }}</th>
+                      <th>{{ t.name }}</th>
+                      <th>{{ t.isoCurrency }}</th>
+                      <th>{{ t.exchange }}</th>
+                      <th>{{ t.country }}</th>
+                      <th>{{ t.class }}</th>
+                      <th>{{ t.lot }}</th>
+                      <th>{{ t.status }}</th>
+                      <th>{{ t.availability }}</th>
+                      <th>{{ t.weekend }}</th>
+                      <th>{{ t.uid }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="currencyItem in currencies" :key="currencyItem.figi">
+                      <td>
+                        <strong>{{ currencyItem.ticker }}</strong>
+                        <small>{{ currencyItem.currency }}</small>
+                      </td>
+                      <td>{{ currencyItem.name }}</td>
+                      <td>{{ currencyItem.iso_currency_name ?? "—" }}</td>
+                      <td>{{ currencyItem.exchange }}</td>
+                      <td>{{ currencyItem.country_of_risk_name ?? currencyItem.country_of_risk ?? "—" }}</td>
+                      <td>{{ currencyItem.class_code }}</td>
+                      <td>{{ currencyItem.lot ?? "—" }}</td>
+                      <td>{{ currencyItem.trading_status ?? "—" }}</td>
+                      <td>
+                        <strong>{{ formatBool(currencyItem.buy_available_flag) }} / {{ formatBool(currencyItem.sell_available_flag) }}</strong>
+                        <small>API {{ formatBool(currencyItem.api_trade_available_flag) }}</small>
+                      </td>
+                      <td>{{ formatBool(currencyItem.weekend_flag) }}</td>
+                      <td>{{ currencyItem.uid ?? currencyItem.position_uid ?? "—" }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </template>
+
+          <div v-if="activeTab === 'quotes' || activeTab === 'dividends'" class="instrument-panel">
             <div class="panel-head">
               <div>
                 <span>{{ t.instruments }}</span>
-                <strong>{{ stocks.length }}</strong>
+                <strong>{{ stockTotal }}</strong>
               </div>
               <BarChart3 :size="18" />
             </div>

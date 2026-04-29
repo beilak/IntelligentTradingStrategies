@@ -13,7 +13,10 @@ from t_tech.invest import CandleInterval
 
 from its.data_loader.t_invest_data_readers.prices_reader import get_prices
 from its.data_loader.t_invest_data_readers.dividents_reader import get_dividends
-from its.data_loader.t_invest_data_readers.stock_info import get_stock_info
+from its.data_loader.t_invest_data_readers.stock_info import (
+    get_currencies_info,
+    get_stock_info,
+)
 
 API_PREFIX = "/api/v1"
 DEFAULT_CLASS_CODE = "TQBR"
@@ -38,13 +41,46 @@ DIVIDEND_COLUMNS = [
 STOCK_COLUMNS = [
     "figi",
     "ticker",
+    "uid",
+    "isin",
     "name",
     "class_code",
     "currency",
     "exchange",
     "sector",
     "country_of_risk",
+    "country_of_risk_name",
     "share_type",
+    "lot",
+    "trading_status",
+    "real_exchange",
+    "buy_available_flag",
+    "sell_available_flag",
+    "api_trade_available_flag",
+    "short_enabled_flag",
+    "for_qual_investor_flag",
+]
+
+CURRENCY_COLUMNS = [
+    "figi",
+    "ticker",
+    "uid",
+    "position_uid",
+    "iso_currency_name",
+    "name",
+    "class_code",
+    "currency",
+    "exchange",
+    "country_of_risk",
+    "country_of_risk_name",
+    "lot",
+    "trading_status",
+    "real_exchange",
+    "buy_available_flag",
+    "sell_available_flag",
+    "api_trade_available_flag",
+    "for_qual_investor_flag",
+    "weekend_flag",
 ]
 
 PRICE_COLUMNS = [
@@ -103,7 +139,7 @@ def create_app() -> FastAPI:
                     "id": "tinkoff-invest",
                     "name": "Tinkoff Invest",
                     "status": "active",
-                    "resources": ["stocks", "prices"],
+                    "resources": ["stocks", "currencies", "prices"],
                     "intervals": list(SUPPORTED_INTERVALS),
                 },
                 {
@@ -147,6 +183,37 @@ def create_app() -> FastAPI:
             "limit": limit,
             "offset": offset,
             "filters": build_stock_filters(stocks_df),
+        }
+
+    @app.get(f"{API_PREFIX}/currencies")
+    async def currencies(
+        class_code: str | None = None,
+        search: str | None = None,
+        tickers: Annotated[list[str] | None, Query()] = None,
+        exchange: str | None = None,
+        country_of_risk: str | None = None,
+        limit: Annotated[int, Query(ge=1, le=500)] = 200,
+        offset: Annotated[int, Query(ge=0)] = 0,
+    ) -> dict[str, object]:
+        token = get_tinvest_token()
+        currencies_df = await gateway.get_currencies(token)
+        filtered = filter_currencies(
+            currencies_df=currencies_df,
+            class_code=class_code,
+            search=search,
+            tickers=split_query_list(tickers),
+            exchange=exchange,
+            country_of_risk=country_of_risk,
+        )
+        total = len(filtered)
+        page = filtered.iloc[offset : offset + limit]
+
+        return {
+            "items": dataframe_to_records(page, CURRENCY_COLUMNS),
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "filters": build_currency_filters(currencies_df),
         }
 
     @app.get(f"{API_PREFIX}/prices")
@@ -318,14 +385,16 @@ class TInvestGateway:
         self._stocks_ttl = timedelta(minutes=ttl_minutes)
         self._stocks_cache: pd.DataFrame | None = None
         self._stocks_loaded_at: datetime | None = None
+        self._currencies_cache: pd.DataFrame | None = None
+        self._currencies_loaded_at: datetime | None = None
         self._lock = asyncio.Lock()
 
     async def get_stocks(self, token: str) -> pd.DataFrame:
-        if self._is_cache_fresh():
+        if self._is_stocks_cache_fresh():
             return self._stocks_cache.copy()  # type: ignore[union-attr]
 
         async with self._lock:
-            if self._is_cache_fresh():
+            if self._is_stocks_cache_fresh():
                 return self._stocks_cache.copy()  # type: ignore[union-attr]
 
             stocks_df = await get_stock_info(tikers=None, as_df=True, token=token)
@@ -333,10 +402,30 @@ class TInvestGateway:
             self._stocks_loaded_at = datetime.utcnow()
             return self._stocks_cache.copy()
 
-    def _is_cache_fresh(self) -> bool:
+    async def get_currencies(self, token: str) -> pd.DataFrame:
+        if self._is_currencies_cache_fresh():
+            return self._currencies_cache.copy()  # type: ignore[union-attr]
+
+        async with self._lock:
+            if self._is_currencies_cache_fresh():
+                return self._currencies_cache.copy()  # type: ignore[union-attr]
+
+            currencies_df = await get_currencies_info(
+                tikers=None, as_df=True, token=token
+            )
+            self._currencies_cache = normalize_currencies_frame(currencies_df)
+            self._currencies_loaded_at = datetime.utcnow()
+            return self._currencies_cache.copy()
+
+    def _is_stocks_cache_fresh(self) -> bool:
         if self._stocks_cache is None or self._stocks_loaded_at is None:
             return False
         return datetime.utcnow() - self._stocks_loaded_at < self._stocks_ttl
+
+    def _is_currencies_cache_fresh(self) -> bool:
+        if self._currencies_cache is None or self._currencies_loaded_at is None:
+            return False
+        return datetime.utcnow() - self._currencies_loaded_at < self._stocks_ttl
 
 
 def get_tinvest_token() -> str:
@@ -390,6 +479,20 @@ def normalize_stocks_frame(stocks_df: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def normalize_currencies_frame(currencies_df: pd.DataFrame) -> pd.DataFrame:
+    if currencies_df.empty:
+        return pd.DataFrame(columns=CURRENCY_COLUMNS)
+
+    prepared = currencies_df.copy()
+    for column in CURRENCY_COLUMNS:
+        if column not in prepared.columns:
+            prepared[column] = None
+
+    return prepared.sort_values(["ticker", "figi"], na_position="last").reset_index(
+        drop=True
+    )
+
+
 def filter_stocks(
     stocks_df: pd.DataFrame,
     class_code: str | None,
@@ -423,6 +526,48 @@ def filter_stocks(
     if sector:
         filtered = filtered.loc[
             filtered["sector"].astype(str).str.lower() == sector.lower()
+        ]
+    if country_of_risk:
+        filtered = filtered.loc[
+            filtered["country_of_risk"].astype(str).str.upper()
+            == country_of_risk.upper()
+        ]
+
+    return filtered.reset_index(drop=True)
+
+
+def filter_currencies(
+    currencies_df: pd.DataFrame,
+    class_code: str | None,
+    search: str | None,
+    tickers: list[str],
+    exchange: str | None,
+    country_of_risk: str | None,
+) -> pd.DataFrame:
+    filtered = currencies_df.copy()
+
+    if class_code:
+        filtered = filtered.loc[
+            filtered["class_code"].astype(str).str.upper() == class_code.upper()
+        ]
+    if tickers:
+        ticker_set = {ticker.upper() for ticker in tickers}
+        filtered = filtered.loc[
+            filtered["ticker"].astype(str).str.upper().isin(ticker_set)
+        ]
+    if search:
+        needle = search.strip().lower()
+        filtered = filtered.loc[
+            filtered["ticker"].astype(str).str.lower().str.contains(needle, na=False)
+            | filtered["name"].astype(str).str.lower().str.contains(needle, na=False)
+            | filtered["iso_currency_name"]
+            .astype(str)
+            .str.lower()
+            .str.contains(needle, na=False)
+        ]
+    if exchange:
+        filtered = filtered.loc[
+            filtered["exchange"].astype(str).str.upper() == exchange.upper()
         ]
     if country_of_risk:
         filtered = filtered.loc[
@@ -477,6 +622,15 @@ def build_stock_filters(stocks_df: pd.DataFrame) -> dict[str, list[str]]:
         "exchanges": unique_values(stocks_df, "exchange"),
         "sectors": unique_values(stocks_df, "sector"),
         "countries": unique_values(stocks_df, "country_of_risk"),
+        "intervals": list(SUPPORTED_INTERVALS),
+    }
+
+
+def build_currency_filters(currencies_df: pd.DataFrame) -> dict[str, list[str]]:
+    return {
+        "class_codes": unique_values(currencies_df, "class_code"),
+        "exchanges": unique_values(currencies_df, "exchange"),
+        "countries": unique_values(currencies_df, "country_of_risk"),
         "intervals": list(SUPPORTED_INTERVALS),
     }
 

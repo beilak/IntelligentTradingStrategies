@@ -14,7 +14,7 @@ from its.strategies.testing.cpcv import (
     annualized_factor,
     build_returns_matrix,
     load_registered_model,
-    population_to_paths,
+    safe_float,
     safe_name,
     series_to_rows,
     timestamp_to_string,
@@ -69,7 +69,21 @@ def generate_walk_forward_report(
         train_size=pd.DateOffset(months=train_size_months),
         freq=pd.DateOffset(months=freq_months),
     )
-    windows = describe_walk_forward_windows(walk_forward, x_test)
+    splits = collect_walk_forward_splits(walk_forward, x_test)
+    windows = splits_to_windows(splits)
+    if not windows:
+        test_period_start = timestamp_to_string(x_test.index.min())
+        test_period_end = timestamp_to_string(x_test.index.max())
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "WalkForward produced no test windows for the selected settings. "
+                f"OOS period is {test_period_start} -> {test_period_end} "
+                f"({len(x_test)} rows) after applying test_size={test_size_fraction}. "
+                f"Requested train_size_months={train_size_months}, "
+                f"freq_months={freq_months}, wf_test_size={settings.get('wf_test_size', 1)}."
+            ),
+        )
     population = cross_val_predict(
         strategy.pipeline,
         x_test,
@@ -82,7 +96,8 @@ def generate_walk_forward_report(
             "tag": strategy.name,
         },
     )
-    oos_curve = build_stitched_oos_curve(population)
+    paths = population_to_dated_paths(population, splits)
+    oos_curve = build_stitched_oos_curve(population, splits)
 
     return {
         "metadata": {
@@ -119,7 +134,7 @@ def generate_walk_forward_report(
         "report": series_to_rows(population.summary(), "value"),
         "oos_curve": oos_curve,
         "windows": windows,
-        "paths": population_to_paths(population),
+        "paths": paths,
     }
 
 
@@ -150,19 +165,19 @@ def walk_forward_summary(
     ]
 
 
-def build_stitched_oos_curve(population: Any) -> dict[str, Any]:
+def build_stitched_oos_curve(
+    population: Any,
+    splits: list[dict[str, Any]],
+) -> dict[str, Any]:
     returns_parts = []
-    for window_index, portfolio in enumerate(population):
-        returns = getattr(portfolio, "returns_df", None)
-        if returns is None:
+    for window_index, (portfolio, split) in enumerate(zip(population, splits, strict=False)):
+        returns = extract_portfolio_series(
+            portfolio,
+            "returns_df",
+            split["test_dates"],
+        )
+        if returns.empty:
             continue
-        if callable(returns):
-            returns = returns()
-        if not isinstance(returns, pd.Series):
-            returns = pd.Series(returns)
-        returns = returns.copy()
-        returns.index = pd.to_datetime(returns.index, errors="coerce")
-        returns = returns.loc[returns.index.notna()].sort_index()
         frame = returns.to_frame("return")
         frame["window_index"] = window_index
         returns_parts.append(frame)
@@ -233,19 +248,34 @@ def build_oos_segments(stitched: pd.DataFrame) -> list[dict[str, Any]]:
     return segments
 
 
-def describe_walk_forward_windows(
+def collect_walk_forward_splits(
     walk_forward: WalkForward,
     x_test: pd.DataFrame,
 ) -> list[dict[str, Any]]:
-    windows = []
+    splits = []
     for split_id, (train_index, test_index) in enumerate(
         walk_forward.split(x_test), start=1
     ):
         train_dates = x_test.index[train_index]
         test_dates = x_test.index[test_index]
-        windows.append(
+        splits.append(
             {
                 "split_id": split_id,
+                "train_dates": train_dates,
+                "test_dates": test_dates,
+            }
+        )
+    return splits
+
+
+def splits_to_windows(splits: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    windows = []
+    for split in splits:
+        train_dates = split["train_dates"]
+        test_dates = split["test_dates"]
+        windows.append(
+            {
+                "split_id": split["split_id"],
                 "train_start": timestamp_to_string(train_dates.min()),
                 "train_end": timestamp_to_string(train_dates.max()),
                 "train_rows": len(train_dates),
@@ -255,6 +285,81 @@ def describe_walk_forward_windows(
             }
         )
     return windows
+
+
+def population_to_dated_paths(
+    population: Any,
+    splits: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    windows = []
+    for index, (portfolio, split) in enumerate(zip(population, splits, strict=False), start=1):
+        returns = extract_portfolio_series(
+            portfolio,
+            "cumulative_returns_df",
+            split["test_dates"],
+        )
+        if returns.empty:
+            continue
+        points = [
+            {
+                "time": timestamp_to_string(row_index),
+                "value": float(value),
+            }
+            for row_index, value in returns.items()
+            if safe_float(value) is not None
+        ]
+        if not points:
+            continue
+        windows.append(
+            {
+                "name": getattr(portfolio, "name", None) or f"wf_window_{index}",
+                "final_return": points[-1]["value"],
+                "points": points,
+            }
+        )
+    return windows
+
+
+def extract_portfolio_series(
+    portfolio: Any,
+    attribute_name: str,
+    target_dates: pd.Index,
+) -> pd.Series:
+    values = getattr(portfolio, attribute_name, None)
+    if values is None:
+        return pd.Series(dtype="float64")
+    if callable(values):
+        values = values()
+    if isinstance(values, pd.DataFrame):
+        if values.empty:
+            return pd.Series(dtype="float64")
+        if len(values.columns) == 1:
+            series = values.iloc[:, 0]
+        else:
+            series = values.mean(axis=1)
+    elif isinstance(values, pd.Series):
+        series = values
+    else:
+        series = pd.Series(values)
+
+    series = pd.to_numeric(series, errors="coerce").dropna()
+    if series.empty:
+        return pd.Series(dtype="float64")
+
+    target_dates = pd.to_datetime(pd.Index(target_dates), errors="coerce")
+    target_dates = target_dates[target_dates.notna()]
+    if len(target_dates) == 0:
+        return pd.Series(dtype="float64")
+
+    if len(series) != len(target_dates):
+        if len(series) > len(target_dates):
+            series = series.iloc[-len(target_dates):]
+        else:
+            target_dates = target_dates[-len(series):]
+
+    series = series.copy()
+    series.index = pd.Index(target_dates)
+    return series.sort_index()
 
 
 def list_test_paths(model_name: str) -> list[Path]:

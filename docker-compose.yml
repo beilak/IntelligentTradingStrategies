@@ -34,6 +34,7 @@ services:
       STRATEGY_WF_CACHE_DIR: /app/its/data/strategy_tests/walk_forward
       STRATEGY_BACKTEST_CACHE_DIR: /app/its/data/strategy_tests/backtest
     volumes:
+      - ./its/ga:/app/its/ga:ro
       - ./its/strategies:/app/its/strategies:ro
       - strategy-test-cache:/app/its/data/strategy_tests
     depends_on:
@@ -50,6 +51,31 @@ services:
     depends_on:
       - strategy-backend
 
+  ga-backend:
+    build:
+      context: .
+      dockerfile: its/services/ga_backend/Dockerfile
+    environment:
+      DATA_BACKEND_BASE_URL: http://data-backend:8000/api/v1
+      GA_RUN_CACHE_DIR: /app/its/data/ga_runs
+    volumes:
+      - ./its/ga:/app/its/ga:ro
+      - ./its/strategies:/app/its/strategies
+      - ga-cache:/app/its/data/ga_runs
+    depends_on:
+      - data-backend
+    expose:
+      - "8000"
+
+  ga-ui:
+    build:
+      context: .
+      dockerfile: its/ui/ga-ui/Dockerfile
+    expose:
+      - "80"
+    depends_on:
+      - ga-backend
+
   launchpad-ui:
     build:
       context: .
@@ -59,6 +85,7 @@ services:
     depends_on:
       - data-ui
       - strategy-ui
+      - ga-ui
 
   nginx-gateway:
     build:
@@ -71,8 +98,11 @@ services:
       - data-ui
       - strategy-backend
       - strategy-ui
+      - ga-backend
+      - ga-ui
       - launchpad-ui
 
 volumes:
   t-invest-cache:
   strategy-test-cache:
+  ga-cache:

@@ -9,8 +9,12 @@ import sklearn.feature_selection as skf
 import sklearn.utils.validation as skv
 from skfolio.typing import ArrayLike, BoolArray
 
+from its.strategies.core.dataframe_selector_mixin import DataFrameSelectorMixin
 
-class IntradayTurnoverSelector(skf.SelectorMixin, skb.BaseEstimator):
+
+class IntradayTurnoverSelector(
+    DataFrameSelectorMixin, skf.SelectorMixin, skb.BaseEstimator
+):
     """Select assets by recent intraday ruble turnover.
 
     The selector is fitted on a wide returns/prices matrix where columns are asset
@@ -83,15 +87,15 @@ class IntradayTurnoverSelector(skf.SelectorMixin, skb.BaseEstimator):
 
         return self
 
-    def transform(self, X: ArrayLike) -> ArrayLike:
-        """Reduce X to selected assets while preserving DataFrame column names."""
-        skv.check_is_fitted(self)
-        if hasattr(X, "iloc"):
-            skv.validate_data(self, X, ensure_all_finite="allow-nan", reset=False)
-            return X.iloc[:, self.to_keep_]
+    # def transform(self, X: ArrayLike) -> ArrayLike:
+    #     """Reduce X to selected assets while preserving DataFrame column names."""
+    #     skv.check_is_fitted(self)
+    #     if hasattr(X, "iloc"):
+    #         skv.validate_data(self, X, ensure_all_finite="allow-nan", reset=False)
+    #         return X.iloc[:, self.to_keep_]
 
-        X = skv.validate_data(self, X, ensure_all_finite="allow-nan", reset=False)
-        return X[:, self.to_keep_]
+    #     X = skv.validate_data(self, X, ensure_all_finite="allow-nan", reset=False)
+    #     return X[:, self.to_keep_]
 
     def _get_support_mask(self) -> BoolArray:
         skv.check_is_fitted(self)

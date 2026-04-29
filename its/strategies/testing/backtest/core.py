@@ -210,6 +210,8 @@ def format_stat_value(metric: str, value: Any) -> str:
     numeric = safe_float(value)
     if numeric is None:
         return str(value)
+    if "[%]" in metric:
+        return f"{numeric:.2f}%"
     lower_metric = metric.lower()
     if any(word in lower_metric for word in ("value", "cash", "fees", "paid", "profit", "loss")):
         return f"{numeric:,.2f}".replace(",", " ")

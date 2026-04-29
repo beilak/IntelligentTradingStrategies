@@ -659,6 +659,18 @@ files = [
 colorama = {version = "*", markers = "platform_system == \"Windows\""}
 
 [[package]]
+name = "cloudpickle"
+version = "3.1.2"
+description = "Pickler class to extend the standard pickle.Pickler functionality"
+optional = false
+python-versions = ">=3.8"
+groups = ["main"]
+files = [
+    {file = "cloudpickle-3.1.2-py3-none-any.whl", hash = "sha256:9acb47f6afd73f60dc1df93bb801b472f05ff42fa6c84167d25cb206be1fbf4a"},
+    {file = "cloudpickle-3.1.2.tar.gz", hash = "sha256:7fda9eb655c9c230dab534f1983763de5835249750e85fbcef43aaa30a9a2414"},
+]
+
+[[package]]
 name = "colorama"
 version = "0.4.6"
 description = "Cross-platform colored terminal text."
@@ -3134,6 +3146,26 @@ toml = ["tomli (>=2.0.1)"]
 yaml = ["pyyaml (>=6.0.1)"]
 
 [[package]]
+name = "pygad"
+version = "3.6.0"
+description = "PyGAD: A Python Library for Building the Genetic Algorithm and Training Machine Learning Algoithms (Keras & PyTorch)."
+optional = false
+python-versions = ">=3"
+groups = ["main"]
+files = [
+    {file = "pygad-3.6.0-py3-none-any.whl", hash = "sha256:7ed198254a22c9a9680de3fdbf945e12d1083a06903bf93be7c014f67549cdc0"},
+    {file = "pygad-3.6.0.tar.gz", hash = "sha256:9b36d9deeb779f124f39a975d19a02a60c8967d4105a67cc3ec5b3a99ac86e35"},
+]
+
+[package.dependencies]
+cloudpickle = "*"
+matplotlib = "*"
+numpy = "*"
+
+[package.extras]
+deep-learning = ["keras", "torch"]
+
+[[package]]
 name = "pygments"
 version = "2.20.0"
 description = "Pygments is a syntax highlighting package written in Python."
@@ -4390,4 +4422,4 @@ repair = ["scipy (>=1.6.3)"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">3.12, <3.13"
-content-hash = "8afb85fc01977f84429c86dddbb779711a6578813472a69d50a677866c97f526"
+content-hash = "a0c6f6955f19db2f3223e3d51280d604213c7a2ebfaa29404c3202259370f7c9"

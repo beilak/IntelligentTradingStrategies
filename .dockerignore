@@ -5,6 +5,8 @@ __pycache__
 .DS_Store
 node_modules
 dist
+**/node_modules
+**/dist
 ui/data-ui/node_modules
 ui/data-ui/dist
 ui/strategy-ui/node_modules

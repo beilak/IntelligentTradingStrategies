@@ -87,8 +87,7 @@ def generate_cpcv_report(
         }
     )
 
-    report_portfolio = combine_population(population)
-    report_rows = series_to_rows(report_portfolio.summary(), "value")
+    report_rows = population_report_rows(population, paths)
 
     return {
         "metadata": {
@@ -176,12 +175,143 @@ def load_registered_model(model_name: str) -> type[Strategy]:
 def combine_population(population: Any) -> Any:
     iterator = iter(population)
     try:
-        combined = next(iterator)
+        return next(iterator)
     except StopIteration as exc:
         raise HTTPException(status_code=422, detail="CPCV produced no paths.") from exc
-    for portfolio in iterator:
-        combined += portfolio
-    return combined
+
+
+def population_report_rows(
+    population: Any,
+    paths: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    summaries = population_summary_frame(population)
+    rows = [
+        {
+            "metric": "Number of Test Paths",
+            "value": str(len(paths)),
+            "numeric_value": float(len(paths)),
+        }
+    ]
+
+    path_final_returns = pd.Series(
+        [
+            safe_float(path.get("final_return"))
+            for path in paths
+            if safe_float(path.get("final_return")) is not None
+        ],
+        dtype="float64",
+    )
+    if not path_final_returns.empty:
+        rows.extend(
+            [
+                metric_row("Ann. Ret (Median)", path_final_returns.median()),
+                metric_row("Ann. Ret (Mean)", path_final_returns.mean()),
+                metric_row(
+                    "Ann. Ret (Std)",
+                    path_final_returns.std() if len(path_final_returns) > 1 else 0.0,
+                ),
+            ]
+        )
+
+    sharpe_series = first_metric_series(
+        summaries,
+        "Annualized Sharpe Ratio",
+        "Sharpe Ratio",
+    )
+    if sharpe_series is not None:
+        rows.extend(
+            [
+                metric_row("Sharpe Ratio (Median)", sharpe_series.median()),
+                metric_row(
+                    "Sharpe Stability (Std)",
+                    sharpe_series.std() if len(sharpe_series) > 1 else 0.0,
+                ),
+            ]
+        )
+
+    for metric_name in (
+        "Annualized Mean",
+        "Mean",
+        "Calmar Ratio",
+        "MAX Drawdown",
+        "Max Drawdown",
+        "CVaR at 95%",
+        "Annualized Sharpe Ratio",
+        "Sharpe Ratio",
+        "Value at Risk",
+        "VaR at 95%",
+        "Average Drawdown",
+    ):
+        series = first_metric_series(summaries, metric_name)
+        if series is None:
+            continue
+        metric_label = normalize_metric_label(metric_name)
+        if any(row["metric"] == f"{metric_label} (Median)" for row in rows):
+            continue
+        rows.extend(
+            [
+                metric_row(f"{metric_label} (Median)", series.median()),
+                metric_row(
+                    f"{metric_label} (Std)",
+                    series.std() if len(series) > 1 else 0.0,
+                ),
+            ]
+        )
+
+    return [row for row in rows if row["value"] != ""]
+
+
+def population_summary_frame(population: Any) -> pd.DataFrame:
+    summary_rows: list[dict[str, float]] = []
+    for portfolio in population:
+        summary = getattr(portfolio, "summary", None)
+        if summary is None:
+            continue
+        if callable(summary):
+            summary = summary()
+        if not isinstance(summary, pd.Series):
+            summary = pd.Series(summary)
+        numeric_row = {
+            str(index): number
+            for index, value in summary.items()
+            if (number := safe_float(value)) is not None
+        }
+        if numeric_row:
+            summary_rows.append(numeric_row)
+    return pd.DataFrame(summary_rows)
+
+
+def first_metric_series(
+    summaries: pd.DataFrame,
+    *metric_names: str,
+) -> pd.Series | None:
+    if summaries.empty:
+        return None
+    for metric_name in metric_names:
+        if metric_name in summaries.columns:
+            series = pd.to_numeric(summaries[metric_name], errors="coerce").dropna()
+            if not series.empty:
+                return series
+    return None
+
+
+def normalize_metric_label(metric_name: str) -> str:
+    return {
+        "Annualized Mean": "Annualized Mean",
+        "Mean": "Mean",
+        "MAX Drawdown": "MAX Drawdown",
+        "Max Drawdown": "Max Drawdown",
+        "Annualized Sharpe Ratio": "Annualized Sharpe Ratio",
+        "Sharpe Ratio": "Sharpe Ratio",
+    }.get(metric_name, metric_name)
+
+
+def metric_row(metric: str, value: Any) -> dict[str, Any]:
+    return {
+        "metric": metric,
+        "value": stringify_value(value),
+        "numeric_value": safe_float(value),
+    }
 
 
 def population_to_paths(population: Any) -> list[dict[str, Any]]:

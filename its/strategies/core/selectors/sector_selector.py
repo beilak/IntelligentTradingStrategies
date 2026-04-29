@@ -3,8 +3,10 @@ import pandas as pd
 import sklearn.base as skb
 import sklearn.feature_selection as skf
 
+from its.strategies.core.dataframe_selector_mixin import DataFrameSelectorMixin
 
-class SectorSelector(skf.SelectorMixin, skb.BaseEstimator):
+
+class SectorSelector(DataFrameSelectorMixin, skf.SelectorMixin, skb.BaseEstimator):
     """
     Селектор бумаг по сектору.
 

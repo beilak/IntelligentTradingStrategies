@@ -67,13 +67,19 @@ def build_component(
     gene: GeneDefinition,
     *,
     asset_universe_prices=None,
+    runtime_context: dict[str, Any] | None = None,
 ):
+    context = dict(runtime_context or {})
+    if asset_universe_prices is not None:
+        context.setdefault("asset_universe_prices", asset_universe_prices)
+
     component_path = gene.resolved_component_path()
     if component_path:
         component_cls = import_symbol(component_path)
         kwargs = dict(gene.component_kwargs)
         if gene.asset_universe_arg:
-            kwargs[gene.asset_universe_arg] = asset_universe_prices
+            kwargs[gene.asset_universe_arg] = context.get("asset_universe_prices")
+        kwargs.update(resolve_runtime_kwargs(gene, context))
         component = component_cls(**kwargs)
         wrapper_path = gene.resolved_wrapper_path()
         if wrapper_path:
@@ -89,8 +95,29 @@ def build_component(
     kwargs = dict(gene.factory_kwargs)
     signature = inspect.signature(factory)
     if "asset_universe_prices" in signature.parameters:
-        kwargs["asset_universe_prices"] = asset_universe_prices
+        kwargs["asset_universe_prices"] = context.get("asset_universe_prices")
+    kwargs.update(resolve_runtime_kwargs(gene, context))
     return factory(**kwargs)
+
+
+def resolve_runtime_kwargs(
+    gene: GeneDefinition,
+    runtime_context: dict[str, Any],
+) -> dict[str, Any]:
+    missing = [
+        context_key
+        for context_key in gene.runtime_args.values()
+        if context_key not in runtime_context
+    ]
+    if missing:
+        raise ValueError(
+            f"GA gene {gene.id!r} requires missing runtime context keys: "
+            f"{', '.join(sorted(set(missing)))}."
+        )
+    return {
+        param_name: runtime_context[context_key]
+        for param_name, context_key in gene.runtime_args.items()
+    }
 
 
 def import_symbol(import_path: str):

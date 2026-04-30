@@ -56,7 +56,7 @@ def generate_cpcv_report(
     x_train = returns.iloc[:split_index]
     x_test = returns.iloc[split_index:]
 
-    strategy = model_cls(prices).build()
+    strategy = model_cls(prices, pd.DataFrame(stocks)).build()
     strategy.pipeline.fit(x_train)
 
     n_test_folds = settings.get("n_test_folds", 6)

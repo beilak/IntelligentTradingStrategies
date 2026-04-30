@@ -16,7 +16,6 @@ from its.strategies.testing.backtest.vectorbt_backtest import (
 from its.strategies.testing.cpcv import (
     load_registered_model,
     safe_float,
-    series_to_rows,
     timestamp_to_string,
 )
 
@@ -36,7 +35,7 @@ def generate_backtest_report(
         raise HTTPException(status_code=404, detail="No prices found for Backtesting.")
 
     close = build_close_prices(prices)
-    strategy = model_cls(prices).build()
+    strategy = model_cls(prices, pd.DataFrame(stocks)).build()
     trading_start_date = pd.Timestamp(
         settings.get("trading_start_date") or settings.get("start_date")
     )

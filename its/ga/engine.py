@@ -55,6 +55,7 @@ class GASearchRunner:
         self.stocks = stocks
         self.settings = settings
         self.progress_callback = progress_callback
+        self.assets_info = pd.DataFrame(stocks)
         self.alphabets = {group: load_gene_group(group) for group in ALPHABET_GROUPS}
         self.selector_keys = [gene.id for gene in self.alphabets["pre_selection"]]
         self.signal_keys = [gene.id for gene in self.alphabets["signal"]]
@@ -329,19 +330,34 @@ class GASearchRunner:
                         build_component(
                             selector,
                             asset_universe_prices=self.prices,
+                            runtime_context=self.runtime_context(),
                         ),
                     ),
                     (
                         "ga_signal",
-                        build_component(signal, asset_universe_prices=self.prices),
+                        build_component(
+                            signal,
+                            asset_universe_prices=self.prices,
+                            runtime_context=self.runtime_context(),
+                        ),
                     ),
                     (
                         "ga_allocation",
-                        build_component(allocation, asset_universe_prices=self.prices),
+                        build_component(
+                            allocation,
+                            asset_universe_prices=self.prices,
+                            runtime_context=self.runtime_context(),
+                        ),
                     ),
                 ]
             ),
         )
+
+    def runtime_context(self) -> dict[str, Any]:
+        return {
+            "asset_universe_prices": self.prices,
+            "assets_info": self.assets_info,
+        }
 
     def extract_raw_metrics(self, cpcv_population, wf_population) -> dict[str, float]:
         cpcv_finals = extract_path_final_returns(cpcv_population)

@@ -19,6 +19,7 @@ class GeneDefinition:
     component_path: str | None = None
     component_kwargs: dict[str, Any] = field(default_factory=dict)
     asset_universe_arg: str | None = None
+    runtime_args: dict[str, str] = field(default_factory=dict)
     wrapper: Any | None = None
     wrapper_path: str | None = None
     wrapper_kwargs: dict[str, Any] = field(default_factory=dict)
@@ -36,6 +37,7 @@ class GeneDefinition:
             "component_path": component_path,
             "component_kwargs": self.component_kwargs,
             "asset_universe_arg": self.asset_universe_arg,
+            "runtime_args": self.runtime_args,
             "wrapper_path": wrapper_path,
             "wrapper_kwargs": self.wrapper_kwargs,
             "factory_path": self.factory_path,

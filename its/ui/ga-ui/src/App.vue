@@ -9,6 +9,7 @@ import {
   Globe2,
   Layers3,
   Play,
+  CircleHelp,
   RefreshCw,
   Save,
   Sparkles,
@@ -71,7 +72,7 @@ const messages = {
     wfPurge: "WF purge rows",
     topN: "TOP-N",
     materializeTop: "Создать файлы TOP стратегий",
-    evolutionMovie: "Фильм эволюции",
+    evolutionMovie: "Монитор эволюции",
     scoreDynamics: "Динамика score",
     train: "Train",
     test: "Test",
@@ -81,6 +82,11 @@ const messages = {
     file: "Файл",
     empty: "Пусто",
     wrapper: "Обертка",
+    totalScore: "TOTAL",
+    wfReturn: "WF Return",
+    calmar: "Calmar",
+    drawdown: "Drawdown",
+    help: "Справка",
   },
   en: {
     appTitle: "ITS GA Lab",
@@ -125,7 +131,7 @@ const messages = {
     wfPurge: "WF purge rows",
     topN: "TOP-N",
     materializeTop: "Create TOP strategy files",
-    evolutionMovie: "Evolution movie",
+    evolutionMovie: "Evolution monitor",
     scoreDynamics: "Score dynamics",
     train: "Train",
     test: "Test",
@@ -135,12 +141,47 @@ const messages = {
     file: "File",
     empty: "Empty",
     wrapper: "Wrapper",
+    totalScore: "TOTAL",
+    wfReturn: "WF Return",
+    calmar: "Calmar",
+    drawdown: "Drawdown",
+    help: "Help",
+  },
+} satisfies Record<Locale, Record<string, string>>;
+
+const helpMessages = {
+  ru: {
+    numGenerations: "Сколько поколений пройдет GA. Больше поколений дает больше попыток улучшить стратегии, но увеличивает время расчета.",
+    solPerPop: "Сколько стратегий одновременно находится в каждом поколении. Большая популяция шире исследует пространство поиска, но дороже по вычислениям.",
+    parents: "Сколько лучших кандидатов используется для создания следующего поколения. Значение не должно превышать размер популяции.",
+    mutation: "Вероятность случайного изменения гена стратегии. Низкая мутация сохраняет найденные решения, высокая помогает выходить из локальных максимумов.",
+    selection: "tournament: выбирает лучших из случайных групп; sss: steady-state selection, сохраняет сильных кандидатов между поколениями; rank: отбор по рангу, снижает влияние экстремальных score; rws: roulette wheel selection, вероятность выбора пропорциональна fitness.",
+    tournament: "Размер случайной группы при tournament-отборе. Чем выше K, тем сильнее давление отбора в пользу лучших стратегий.",
+    keepParents: "-1 сохраняет всех родителей, 0 не переносит родителей напрямую, положительное число переносит указанное количество родителей в новое поколение.",
+    elitism: "Сколько лучших стратегий гарантированно переносится в следующее поколение без изменений.",
+    crossover: "uniform: каждый ген берется у одного из родителей независимо; single_point: обмен генами после одной точки разреза; two_points: обмен сегментом между двумя точками.",
+    stopCriteria: "Условие ранней остановки PyGAD. Например saturate_3 завершит поиск, если fitness не улучшается 3 поколения.",
+    topN: "Сколько лучших стратегий попадет в итоговый TOP и, если включено, будет материализовано в файлы.",
+  },
+  en: {
+    numGenerations: "How many GA generations to run. More generations give the search more chances to improve strategies, but increase runtime.",
+    solPerPop: "How many strategies are evaluated in each generation. A larger population explores the search space wider, but costs more compute.",
+    parents: "How many top candidates are used to create the next generation. Must not exceed the population size.",
+    mutation: "Probability of randomly changing a strategy gene. Lower mutation preserves found solutions, higher mutation helps escape local maxima.",
+    selection: "tournament: picks winners from random groups; sss: steady-state selection, keeps strong candidates across generations; rank: rank-based selection, reduces the impact of extreme scores; rws: roulette wheel selection, pick probability is proportional to fitness.",
+    tournament: "Random group size for tournament selection. Higher K increases selection pressure toward the best strategies.",
+    keepParents: "-1 keeps all parents, 0 does not copy parents directly, a positive value copies that many parents into the new generation.",
+    elitism: "How many best strategies are guaranteed to pass unchanged into the next generation.",
+    crossover: "uniform: each gene is independently taken from one parent; single_point: genes are swapped after one split point; two_points: a segment between two points is swapped.",
+    stopCriteria: "PyGAD early-stop condition. For example, saturate_3 stops when fitness does not improve for 3 generations.",
+    topN: "How many best strategies are included in the final TOP list and, when enabled, materialized into files.",
   },
 } satisfies Record<Locale, Record<string, string>>;
 
 const savedLocale = localStorage.getItem("its-ga-locale") as Locale | null;
 const locale = ref<Locale>(savedLocale === "en" ? "en" : "ru");
 const t = computed(() => messages[locale.value]);
+const help = computed(() => helpMessages[locale.value]);
 const alphabets = ref<AlphabetResponse | null>(null);
 const activeGroupId = ref("pre_selection");
 const currentRun = ref<GARun | null>(null);
@@ -148,9 +189,7 @@ const runs = ref<GARunSummary[]>([]);
 const isLoading = ref(false);
 const isRunning = ref(false);
 const error = ref("");
-const animationTick = ref(0);
 let pollTimer: number | null = null;
-let animationTimer: number | null = null;
 
 const settings = ref<GARunSettings>(defaultSettings());
 const groups = computed(() => alphabets.value?.groups ?? []);
@@ -160,11 +199,11 @@ const activeGroup = computed<AlphabetGroup | undefined>(() =>
 const currentGeneration = computed(() => {
   const populations = currentRun.value?.result?.population_scores;
   if (populations?.length) {
-    return populations[animationTick.value % populations.length];
+    return populations[populations.length - 1];
   }
   const events = currentRun.value?.events.filter((event) => event.population?.length) ?? [];
   if (!events.length) return null;
-  const event = events[animationTick.value % events.length];
+  const event = events[events.length - 1];
   return {
     generation: event.summary?.generation ?? 0,
     items: event.population ?? [],
@@ -187,15 +226,11 @@ const isRunActive = computed(() =>
 watch(locale, (value) => localStorage.setItem("its-ga-locale", value));
 
 onMounted(async () => {
-  animationTimer = window.setInterval(() => {
-    animationTick.value += 1;
-  }, 900);
   await refreshAll();
 });
 
 onBeforeUnmount(() => {
   stopPolling();
-  if (animationTimer !== null) window.clearInterval(animationTimer);
 });
 
 async function refreshAll() {
@@ -238,26 +273,31 @@ async function openRun(runId: string) {
 
 function startPolling(runId: string) {
   stopPolling();
+  void pollRun(runId);
   pollTimer = window.setInterval(async () => {
-    try {
-      currentRun.value = await getRun(runId);
-      if (currentRun.value.status === "completed" || currentRun.value.status === "failed") {
-        isRunning.value = false;
-        stopPolling();
-        await refreshAll();
-      }
-    } catch (err) {
-      error.value = formatError(err);
-      isRunning.value = false;
-      stopPolling();
-    }
-  }, 1800);
+    await pollRun(runId);
+  }, 1000);
 }
 
 function stopPolling() {
   if (pollTimer !== null) {
     window.clearInterval(pollTimer);
     pollTimer = null;
+  }
+}
+
+async function pollRun(runId: string) {
+  try {
+    currentRun.value = await getRun(runId);
+    if (currentRun.value.status === "completed" || currentRun.value.status === "failed") {
+      isRunning.value = false;
+      stopPolling();
+      await refreshAll();
+    }
+  } catch (err) {
+    error.value = formatError(err);
+    isRunning.value = false;
+    stopPolling();
   }
 }
 
@@ -342,22 +382,39 @@ function organismStyle(item: CandidateRow, index: number) {
 }
 
 function buildScoreChart(items: Array<{ generation: number; best_total_score: number | null; mean_total_score: number | null }>) {
-  if (!items.length) return { best: "", mean: "", labels: [] as Array<{ x: number; text: string }> };
+  if (!items.length) {
+    return {
+      best: "",
+      mean: "",
+      labels: [] as Array<{ x: number; text: string }>,
+      yTicks: [] as Array<{ y: number; text: string }>,
+    };
+  }
   const width = 720;
   const height = 220;
-  const pad = 34;
-  const maxScore = Math.max(
+  const padLeft = 58;
+  const padRight = 34;
+  const padY = 34;
+  const maxScoreRaw = Math.max(
     100,
     ...items.flatMap((item) => [item.best_total_score ?? 0, item.mean_total_score ?? 0]),
   );
-  const xFor = (index: number) => pad + (index / Math.max(1, items.length - 1)) * (width - pad * 2);
-  const yFor = (value: number | null) => height - pad - (((value ?? 0) / maxScore) * (height - pad * 2));
+  const maxScore = Math.ceil(maxScoreRaw / 10) * 10;
+  const xFor = (index: number) => padLeft + (index / Math.max(1, items.length - 1)) * (width - padLeft - padRight);
+  const yFor = (value: number | null) => height - padY - (((value ?? 0) / maxScore) * (height - padY * 2));
   const best = items.map((item, index) => `${xFor(index).toFixed(2)},${yFor(item.best_total_score).toFixed(2)}`).join(" ");
   const mean = items.map((item, index) => `${xFor(index).toFixed(2)},${yFor(item.mean_total_score).toFixed(2)}`).join(" ");
   const labels = items
     .filter((_, index) => index === 0 || index === items.length - 1 || index % Math.ceil(items.length / 4) === 0)
     .map((item, index) => ({ x: xFor(index), text: String(item.generation) }));
-  return { best, mean, labels };
+  const yTicks = Array.from({ length: 5 }, (_, index) => {
+    const value = (maxScore / 4) * index;
+    return {
+      y: yFor(value),
+      text: value.toFixed(0),
+    };
+  }).reverse();
+  return { best, mean, labels, yTicks };
 }
 </script>
 
@@ -457,12 +514,54 @@ function buildScoreChart(items: Array<{ generation: number; best_total_score: nu
             </label>
             <label><span>{{ t.classCode }}</span><input v-model="settings.class_code" type="text" /></label>
             <label><span>{{ t.testSize }}</span><input v-model.number="settings.test_size" min="0.05" max="0.8" step="0.01" type="number" /></label>
-            <label><span>{{ t.numGenerations }}</span><input v-model.number="settings.num_generations" min="1" max="100" type="number" /></label>
-            <label><span>{{ t.solPerPop }}</span><input v-model.number="settings.sol_per_pop" min="2" max="80" type="number" /></label>
-            <label><span>{{ t.parents }}</span><input v-model.number="settings.num_parents_mating" min="1" max="80" type="number" /></label>
-            <label><span>{{ t.mutation }}</span><input v-model.number="settings.mutation_probability" min="0" max="1" step="0.01" type="number" /></label>
             <label>
-              <span>{{ t.selection }}</span>
+              <span class="field-label">
+                {{ t.numGenerations }}
+                <span class="help-hint" tabindex="0" :aria-label="`${t.help}: ${t.numGenerations}`">
+                  <CircleHelp :size="14" />
+                  <span class="help-tooltip">{{ help.numGenerations }}</span>
+                </span>
+              </span>
+              <input v-model.number="settings.num_generations" min="1" max="100" type="number" />
+            </label>
+            <label>
+              <span class="field-label">
+                {{ t.solPerPop }}
+                <span class="help-hint" tabindex="0" :aria-label="`${t.help}: ${t.solPerPop}`">
+                  <CircleHelp :size="14" />
+                  <span class="help-tooltip">{{ help.solPerPop }}</span>
+                </span>
+              </span>
+              <input v-model.number="settings.sol_per_pop" min="2" max="80" type="number" />
+            </label>
+            <label>
+              <span class="field-label">
+                {{ t.parents }}
+                <span class="help-hint" tabindex="0" :aria-label="`${t.help}: ${t.parents}`">
+                  <CircleHelp :size="14" />
+                  <span class="help-tooltip">{{ help.parents }}</span>
+                </span>
+              </span>
+              <input v-model.number="settings.num_parents_mating" min="1" max="80" type="number" />
+            </label>
+            <label>
+              <span class="field-label">
+                {{ t.mutation }}
+                <span class="help-hint" tabindex="0" :aria-label="`${t.help}: ${t.mutation}`">
+                  <CircleHelp :size="14" />
+                  <span class="help-tooltip">{{ help.mutation }}</span>
+                </span>
+              </span>
+              <input v-model.number="settings.mutation_probability" min="0" max="1" step="0.01" type="number" />
+            </label>
+            <label>
+              <span class="field-label">
+                {{ t.selection }}
+                <span class="help-hint" tabindex="0" :aria-label="`${t.help}: ${t.selection}`">
+                  <CircleHelp :size="14" />
+                  <span class="help-tooltip">{{ help.selection }}</span>
+                </span>
+              </span>
               <select v-model="settings.parent_selection_type">
                 <option value="tournament">tournament</option>
                 <option value="sss">sss</option>
@@ -470,25 +569,76 @@ function buildScoreChart(items: Array<{ generation: number; best_total_score: nu
                 <option value="rws">rws</option>
               </select>
             </label>
-            <label><span>{{ t.tournament }}</span><input v-model.number="settings.k_tournament" min="2" max="20" type="number" /></label>
-            <label><span>{{ t.keepParents }}</span><input v-model.number="settings.keep_parents" min="-1" max="20" type="number" /></label>
-            <label><span>{{ t.elitism }}</span><input v-model.number="settings.keep_elitism" min="0" max="20" type="number" /></label>
             <label>
-              <span>{{ t.crossover }}</span>
+              <span class="field-label">
+                {{ t.tournament }}
+                <span class="help-hint" tabindex="0" :aria-label="`${t.help}: ${t.tournament}`">
+                  <CircleHelp :size="14" />
+                  <span class="help-tooltip">{{ help.tournament }}</span>
+                </span>
+              </span>
+              <input v-model.number="settings.k_tournament" min="2" max="20" type="number" />
+            </label>
+            <label>
+              <span class="field-label">
+                {{ t.keepParents }}
+                <span class="help-hint" tabindex="0" :aria-label="`${t.help}: ${t.keepParents}`">
+                  <CircleHelp :size="14" />
+                  <span class="help-tooltip">{{ help.keepParents }}</span>
+                </span>
+              </span>
+              <input v-model.number="settings.keep_parents" min="-1" max="20" type="number" />
+            </label>
+            <label>
+              <span class="field-label">
+                {{ t.elitism }}
+                <span class="help-hint" tabindex="0" :aria-label="`${t.help}: ${t.elitism}`">
+                  <CircleHelp :size="14" />
+                  <span class="help-tooltip">{{ help.elitism }}</span>
+                </span>
+              </span>
+              <input v-model.number="settings.keep_elitism" min="0" max="20" type="number" />
+            </label>
+            <label>
+              <span class="field-label">
+                {{ t.crossover }}
+                <span class="help-hint" tabindex="0" :aria-label="`${t.help}: ${t.crossover}`">
+                  <CircleHelp :size="14" />
+                  <span class="help-tooltip">{{ help.crossover }}</span>
+                </span>
+              </span>
               <select v-model="settings.crossover_type">
                 <option value="uniform">uniform</option>
                 <option value="single_point">single_point</option>
                 <option value="two_points">two_points</option>
               </select>
             </label>
-            <label><span>{{ t.stopCriteria }}</span><input v-model="settings.stop_criteria" type="text" /></label>
+            <label>
+              <span class="field-label">
+                {{ t.stopCriteria }}
+                <span class="help-hint" tabindex="0" :aria-label="`${t.help}: ${t.stopCriteria}`">
+                  <CircleHelp :size="14" />
+                  <span class="help-tooltip">{{ help.stopCriteria }}</span>
+                </span>
+              </span>
+              <input v-model="settings.stop_criteria" type="text" />
+            </label>
             <label><span>{{ t.randomSeed }}</span><input v-model.number="settings.random_seed" type="number" /></label>
             <label><span>{{ t.cpcvFolds }}</span><input v-model.number="settings.cpcv_n_folds" min="3" max="30" type="number" /></label>
             <label><span>{{ t.cpcvTestFolds }}</span><input v-model.number="settings.cpcv_n_test_folds" min="2" max="29" type="number" /></label>
             <label><span>{{ t.wfTrain }}</span><input v-model.number="settings.wf_train_size" min="2" max="1000" type="number" /></label>
             <label><span>{{ t.wfTest }}</span><input v-model.number="settings.wf_test_size" min="1" max="500" type="number" /></label>
             <label><span>{{ t.wfPurge }}</span><input v-model.number="settings.wf_purged_size" min="0" max="250" type="number" /></label>
-            <label><span>{{ t.topN }}</span><input v-model.number="settings.top_n" min="1" max="10" type="number" /></label>
+            <label>
+              <span class="field-label">
+                {{ t.topN }}
+                <span class="help-hint" tabindex="0" :aria-label="`${t.help}: ${t.topN}`">
+                  <CircleHelp :size="14" />
+                  <span class="help-tooltip">{{ help.topN }}</span>
+                </span>
+              </span>
+              <input v-model.number="settings.top_n" min="1" max="10" type="number" />
+            </label>
           </div>
           <label class="checkbox-row">
             <input v-model="settings.materialize_top" type="checkbox" />
@@ -519,9 +669,27 @@ function buildScoreChart(items: Array<{ generation: number; best_total_score: nu
               :style="organismStyle(item, index)"
             >
               <div class="organism-core"></div>
-              <strong>{{ formatScore(item.TOTAL_SCORE) }}</strong>
+              <strong>{{ item.strategy_name }}</strong>
               <span>{{ item.selector_name }}</span>
               <small>{{ item.signal_name }} / {{ item.allocation_name }}</small>
+              <dl class="organism-metrics">
+                <div>
+                  <dt>{{ t.totalScore }}</dt>
+                  <dd>{{ formatScore(item.TOTAL_SCORE) }}</dd>
+                </div>
+                <div>
+                  <dt>{{ t.wfReturn }}</dt>
+                  <dd>{{ formatPercent(item.WF_Return) }}</dd>
+                </div>
+                <div>
+                  <dt>{{ t.calmar }}</dt>
+                  <dd>{{ formatScore(item.WF_Calmar) }}</dd>
+                </div>
+                <div>
+                  <dt>{{ t.drawdown }}</dt>
+                  <dd>{{ formatPercent(item.WF_Max_Drawdown_Abs) }}</dd>
+                </div>
+              </dl>
             </article>
             <div v-if="!currentGeneration" class="empty-state">{{ t.empty }}</div>
           </div>
@@ -536,8 +704,13 @@ function buildScoreChart(items: Array<{ generation: number; best_total_score: nu
             <Activity :size="18" />
           </div>
           <svg class="score-chart" viewBox="0 0 720 220" role="img">
-            <line x1="34" y1="186" x2="686" y2="186" />
-            <line x1="34" y1="24" x2="34" y2="186" />
+            <text class="axis-title" x="18" y="105" text-anchor="middle" transform="rotate(-90 18 105)">Score</text>
+            <g v-for="tick in chartLines.yTicks" :key="tick.text">
+              <line class="grid-line" x1="58" :y1="tick.y" x2="686" :y2="tick.y" />
+              <text class="y-label" x="48" :y="tick.y + 4" text-anchor="end">{{ tick.text }}</text>
+            </g>
+            <line x1="58" y1="186" x2="686" y2="186" />
+            <line x1="58" y1="34" x2="58" y2="186" />
             <polyline :points="chartLines.mean" class="mean-line" />
             <polyline :points="chartLines.best" class="best-line" />
             <text v-for="label in chartLines.labels" :key="label.text" :x="label.x" y="208" text-anchor="middle">{{ label.text }}</text>

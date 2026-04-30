@@ -59,7 +59,7 @@ def generate_walk_forward_report(
             detail="Not enough test rows for WalkForward.",
         )
 
-    strategy = model_cls(prices).build()
+    strategy = model_cls(prices, pd.DataFrame(stocks)).build()
     strategy.pipeline.fit(x_train)
 
     train_size_months = settings.get("train_size_months", 3)

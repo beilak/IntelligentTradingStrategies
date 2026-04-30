@@ -294,6 +294,70 @@ code {
   gap: 7px;
 }
 
+.field-label {
+  align-items: center;
+  display: inline-flex;
+  gap: 5px;
+  min-width: 0;
+}
+
+.help-hint {
+  align-items: center;
+  border-radius: 50%;
+  color: #aee9d1;
+  cursor: help;
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 18px;
+  justify-content: center;
+  outline: none;
+  position: relative;
+  width: 18px;
+}
+
+.form-grid .help-hint {
+  color: #aee9d1;
+}
+
+.help-hint:focus-visible {
+  box-shadow: 0 0 0 2px rgba(102, 217, 239, 0.55);
+}
+
+.help-tooltip {
+  background: #e9edf5;
+  border: 1px solid #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.35);
+  color: #11151d;
+  font-size: 12px;
+  font-weight: 600;
+  left: 50%;
+  line-height: 1.45;
+  max-width: min(320px, 72vw);
+  opacity: 0;
+  padding: 10px 12px;
+  pointer-events: none;
+  position: absolute;
+  top: 24px;
+  transform: translateX(-16px) translateY(-4px);
+  transition: opacity 140ms ease, transform 140ms ease;
+  visibility: hidden;
+  width: max-content;
+  z-index: 30;
+}
+
+.form-grid .help-tooltip {
+  color: #11151d;
+  font-size: 12px;
+}
+
+.help-hint:hover .help-tooltip,
+.help-hint:focus-visible .help-tooltip {
+  opacity: 1;
+  transform: translateX(-16px) translateY(0);
+  visibility: visible;
+}
+
 input,
 select {
   background: #0b0e14;
@@ -349,7 +413,7 @@ select {
     #0b0e14;
   border: 1px solid #2b3342;
   border-radius: 8px;
-  min-height: 132px;
+  min-height: 198px;
   overflow: hidden;
   padding: 12px;
   position: relative;
@@ -365,7 +429,7 @@ select {
 }
 
 .organism-core {
-  animation: breathe 1.4s ease-in-out infinite;
+  animation: organismPulse 900ms ease both;
   background: radial-gradient(circle, #aee9d1 0%, #66d9ef 42%, transparent 70%);
   border-radius: 50%;
   height: 34px;
@@ -388,6 +452,39 @@ td strong {
   overflow-wrap: anywhere;
 }
 
+.organism-metrics {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 12px 0 0;
+}
+
+.organism-metrics div {
+  background: #151821;
+  border: 1px solid #252b36;
+  border-radius: 6px;
+  min-width: 0;
+  padding: 7px;
+}
+
+.organism-metrics dt,
+.organism-metrics dd {
+  margin: 0;
+}
+
+.organism-metrics dt {
+  color: #8992a3;
+  font-size: 11px;
+}
+
+.organism-metrics dd {
+  color: #f4f6fb;
+  font-size: 13px;
+  font-weight: 800;
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+}
+
 .score-chart {
   display: block;
   min-height: 280px;
@@ -400,6 +497,10 @@ td strong {
   stroke-width: 1;
 }
 
+.score-chart .grid-line {
+  stroke: rgba(137, 146, 163, 0.18);
+}
+
 .score-chart polyline {
   fill: none;
   stroke-linecap: round;
@@ -410,6 +511,17 @@ td strong {
 .score-chart text {
   fill: #8992a3;
   font-size: 11px;
+}
+
+.score-chart .axis-title {
+  fill: #c8ceda;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.score-chart .y-label {
+  fill: #c8ceda;
+  font-variant-numeric: tabular-nums;
 }
 
 .best-line {
@@ -547,15 +659,19 @@ td small {
   }
 }
 
-@keyframes breathe {
+@keyframes organismPulse {
   0%,
   100% {
-    opacity: 0.72;
-    transform: scale(0.9);
+    opacity: 0.88;
+    transform: scale(1);
   }
-  50% {
+  35% {
     opacity: 1;
-    transform: scale(1.08);
+    transform: scale(1.16);
+  }
+  65% {
+    opacity: 0.78;
+    transform: scale(0.9);
   }
 }
 

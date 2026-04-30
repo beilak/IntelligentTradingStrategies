@@ -27,27 +27,32 @@ class ComponentRender:
 def build_strategy_from_gene_ids(
     asset_universe_prices,
     *,
+    assets_info=None,
     selector_id: str,
     signal_id: str,
     allocation_id: str,
     strategy_name: str,
     description: str,
 ) -> Strategy:
+    runtime_context = build_runtime_context(
+        asset_universe_prices=asset_universe_prices,
+        assets_info=assets_info,
+    )
     selector = get_gene("pre_selection", selector_id)
     signal = get_gene("signal", signal_id)
     allocation = get_gene("allocation", allocation_id)
     steps = [
         (
             "pre_selection",
-            build_component(selector, asset_universe_prices=asset_universe_prices),
+            build_component(selector, runtime_context=runtime_context),
         ),
         (
             "signal",
-            build_component(signal, asset_universe_prices=asset_universe_prices),
+            build_component(signal, runtime_context=runtime_context),
         ),
         (
             "allocation",
-            build_component(allocation, asset_universe_prices=asset_universe_prices),
+            build_component(allocation, runtime_context=runtime_context),
         ),
     ]
     return Strategy(
@@ -173,6 +178,7 @@ def render_declarative_component(
         component_name,
         kwargs=gene.component_kwargs,
         asset_universe_arg=gene.asset_universe_arg,
+        runtime_args=gene.runtime_args,
     )
     imports = [import_line(component_path)]
 
@@ -276,11 +282,14 @@ def render_constructor(
     *,
     kwargs: dict[str, Any],
     asset_universe_arg: str | None = None,
+    runtime_args: dict[str, str] | None = None,
     positional_args: tuple[str, ...] = (),
 ) -> str:
     named_args = []
     if asset_universe_arg:
         named_args.append((asset_universe_arg, "self._asset_universe_prices"))
+    for param_name, context_key in (runtime_args or {}).items():
+        named_args.append((param_name, render_runtime_attr(context_key)))
     named_args.extend((key, format_literal(value)) for key, value in kwargs.items())
     if not positional_args and not named_args:
         return f"{name}()"
@@ -328,6 +337,20 @@ def format_literal(value: Any) -> str:
     if isinstance(value, int) and abs(value) >= 1000:
         return f"{value:_}"
     return repr(value)
+
+
+def build_runtime_context(*, asset_universe_prices, assets_info=None) -> dict[str, Any]:
+    return {
+        "asset_universe_prices": asset_universe_prices,
+        "assets_info": assets_info,
+    }
+
+
+def render_runtime_attr(context_key: str) -> str:
+    return {
+        "asset_universe_prices": "self._asset_universe_prices",
+        "assets_info": "self._assets_info",
+    }.get(context_key, f"self._runtime_context[{context_key!r}]")
 
 
 PASS_THROUGH_SELECTOR_CODE = '''class _KeepAllSelector(skb.BaseEstimator, skf.SelectorMixin):

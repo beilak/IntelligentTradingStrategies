@@ -55,6 +55,9 @@ export const messages = {
     paymentsCount: "Выплат",
     closePrice: "Цена закрытия",
     yieldPercent: "Доходность",
+    customGoldBar: "custom gold-bar",
+    count: "Количество",
+    barType: "Тип бара",
   },
   en: {
     appTitle: "ITS Data Hub",
@@ -110,5 +113,8 @@ export const messages = {
     paymentsCount: "Payments",
     closePrice: "Close price",
     yieldPercent: "Yield",
+    customGoldBar: "custom gold-bar",
+    count: "Count",
+    barType: "Bar type",
   },
 } satisfies Record<Locale, Record<string, string>>;

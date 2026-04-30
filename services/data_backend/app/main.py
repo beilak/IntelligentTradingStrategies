@@ -11,6 +11,11 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from t_tech.invest import CandleInterval
 
+from its.data_loader.custom_bar.gold_bar import (
+    build_custom_gold_bars,
+    build_gold_bar_types,
+    parse_gold_bar_type as parse_gold_bar_type_name,
+)
 from its.data_loader.t_invest_data_readers.prices_reader import get_prices
 from its.data_loader.t_invest_data_readers.dividents_reader import get_dividends
 from its.data_loader.t_invest_data_readers.stock_info import (
@@ -22,6 +27,9 @@ API_PREFIX = "/api/v1"
 DEFAULT_CLASS_CODE = "TQBR"
 DEFAULT_INTERVAL = "CANDLE_INTERVAL_DAY"
 DEFAULT_DIVIDEND_START_YEAR = 2010
+DEFAULT_GOLD_TICKER = "GLDRUB_TOM"
+DEFAULT_GOLD_CLASS_CODE = "CETS"
+DEFAULT_INSTRUMENT_TYPE = "stocks"
 
 DIVIDEND_COLUMNS = [
     "dividend_net",
@@ -220,7 +228,8 @@ def create_app() -> FastAPI:
     async def prices(
         figis: Annotated[list[str] | None, Query()] = None,
         tickers: Annotated[list[str] | None, Query()] = None,
-        class_code: str = DEFAULT_CLASS_CODE,
+        class_code: str | None = DEFAULT_CLASS_CODE,
+        instrument_type: str = DEFAULT_INSTRUMENT_TYPE,
         start_date: date | None = None,
         end_date: date | None = None,
         interval: str = DEFAULT_INTERVAL,
@@ -246,9 +255,9 @@ def create_app() -> FastAPI:
                 status_code=422, detail="start_date must be before end_date."
             )
 
-        stocks_df = await gateway.get_stocks(token)
+        instruments_df = await get_instruments_frame(gateway, token, instrument_type)
         resolved_figis, figi_ticker_map = resolve_instruments(
-            stocks_df=stocks_df,
+            instruments_df=instruments_df,
             figis=requested_figis,
             tickers=requested_tickers,
             class_code=class_code,
@@ -300,6 +309,119 @@ def create_app() -> FastAPI:
             "summary": build_price_summary(prices_df),
         }
 
+    @app.get(f"{API_PREFIX}/custom-gold-bars")
+    async def custom_gold_bars(
+        figis: Annotated[list[str] | None, Query()] = None,
+        tickers: Annotated[list[str] | None, Query()] = None,
+        class_code: str | None = DEFAULT_CLASS_CODE,
+        instrument_type: str = DEFAULT_INSTRUMENT_TYPE,
+        gold_ticker: str = DEFAULT_GOLD_TICKER,
+        gold_class_code: str | None = DEFAULT_GOLD_CLASS_CODE,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        interval: str = DEFAULT_INTERVAL,
+        is_complete: bool = True,
+        count: Annotated[int, Query(ge=1, le=1_000_000)] = 1,
+        bar_type: str = "T_OUNCE_400",
+    ) -> dict[str, object]:
+        token = get_tinvest_token()
+        parsed_interval = parse_interval(interval)
+        requested_figis = split_query_list(figis)
+        requested_tickers = split_query_list(tickers)
+        gold_bar_type = parse_gold_bar_type(bar_type)
+
+        if not requested_figis and not requested_tickers:
+            raise HTTPException(
+                status_code=422,
+                detail="Pass at least one figi or ticker.",
+            )
+
+        current_end = pd.Timestamp(end_date or datetime.utcnow().date())
+        current_start = pd.Timestamp(
+            start_date or (current_end - pd.Timedelta(days=180)).date()
+        )
+        if current_start > current_end:
+            raise HTTPException(
+                status_code=422, detail="start_date must be before end_date."
+            )
+
+        instruments_df = await get_instruments_frame(gateway, token, instrument_type)
+        resolved_figis, figi_ticker_map = resolve_instruments(
+            instruments_df=instruments_df,
+            figis=requested_figis,
+            tickers=requested_tickers,
+            class_code=class_code,
+        )
+        if not resolved_figis:
+            raise HTTPException(
+                status_code=404, detail="No instruments found for request."
+            )
+
+        currencies_df = await gateway.get_currencies(token)
+        gold_figis, gold_figi_ticker_map = resolve_instruments(
+            instruments_df=currencies_df,
+            figis=[],
+            tickers=[gold_ticker],
+            class_code=gold_class_code,
+        )
+        if not gold_figis:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Gold instrument {gold_ticker} was not found.",
+            )
+
+        prices_df, gold_prices_df = await asyncio.gather(
+            get_prices(
+                figis=resolved_figis,
+                start_date=current_start,
+                end_date=current_end,
+                interval=parsed_interval,
+                token=token,
+                is_complete=is_complete,
+            ),
+            get_prices(
+                figis=gold_figis,
+                start_date=current_start,
+                end_date=current_end,
+                interval=parsed_interval,
+                token=token,
+                is_complete=is_complete,
+            ),
+        )
+
+        custom_bars_df = build_custom_gold_bars(
+            prices_df=prices_df,
+            gold_prices_df=gold_prices_df,
+            count=count,
+            bar_type=gold_bar_type,
+        )
+
+        if not custom_bars_df.empty and "ticker" not in custom_bars_df.columns:
+            custom_bars_df["ticker"] = custom_bars_df["figi"].map(figi_ticker_map)
+        if not custom_bars_df.empty:
+            custom_bars_df = custom_bars_df.sort_values(["ticker", "time"])
+
+        return {
+            "items": dataframe_to_records(custom_bars_df, PRICE_COLUMNS),
+            "meta": {
+                **build_prices_meta(
+                    resolved_figis,
+                    figi_ticker_map,
+                    current_start,
+                    current_end,
+                    interval,
+                    is_complete,
+                ),
+                "instrument_type": instrument_type,
+                "gold_figi": gold_figis[0],
+                "gold_ticker": gold_figi_ticker_map.get(gold_figis[0], gold_ticker),
+                "count": count,
+                "bar_type": gold_bar_type.name,
+                "gold_bar_types": build_gold_bar_types(),
+            },
+            "summary": build_price_summary(custom_bars_df),
+        }
+
     @app.get(f"{API_PREFIX}/dividends")
     async def dividends(
         figis: Annotated[list[str] | None, Query()] = None,
@@ -329,7 +451,7 @@ def create_app() -> FastAPI:
 
         stocks_df = await gateway.get_stocks(token)
         resolved_figis, figi_ticker_map = resolve_instruments(
-            stocks_df=stocks_df,
+            instruments_df=stocks_df,
             figis=requested_figis,
             tickers=requested_tickers,
             class_code=class_code,
@@ -453,6 +575,38 @@ def parse_interval(interval: str) -> CandleInterval:
             detail=f"Unsupported interval. Use one of: {', '.join(SUPPORTED_INTERVALS)}.",
         )
     return SUPPORTED_INTERVALS[interval_key]
+
+
+def parse_instrument_type(instrument_type: str) -> str:
+    normalized = instrument_type.strip().lower()
+    if normalized not in {"stocks", "currencies"}:
+        raise HTTPException(
+            status_code=422,
+            detail="Unsupported instrument_type. Use stocks or currencies.",
+        )
+    return normalized
+
+
+async def get_instruments_frame(
+    gateway: TInvestGateway,
+    token: str,
+    instrument_type: str,
+) -> pd.DataFrame:
+    normalized = parse_instrument_type(instrument_type)
+    if normalized == "currencies":
+        return await gateway.get_currencies(token)
+    return await gateway.get_stocks(token)
+
+
+def parse_gold_bar_type(bar_type: str):
+    try:
+        return parse_gold_bar_type_name(bar_type)
+    except KeyError as error:
+        supported = ", ".join(item["name"] for item in build_gold_bar_types())
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported gold bar type. Use one of: {supported}.",
+        ) from error
 
 
 def split_query_list(values: list[str] | None) -> list[str]:
@@ -579,12 +733,12 @@ def filter_currencies(
 
 
 def resolve_instruments(
-    stocks_df: pd.DataFrame,
+    instruments_df: pd.DataFrame,
     figis: list[str],
     tickers: list[str],
-    class_code: str,
+    class_code: str | None,
 ) -> tuple[list[str], dict[str, str]]:
-    filtered = stocks_df.copy()
+    filtered = instruments_df.copy()
     if class_code:
         filtered = filtered.loc[
             filtered["class_code"].astype(str).str.upper() == class_code.upper()

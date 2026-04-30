@@ -1,4 +1,10 @@
-import type { CurrenciesResponse, DividendsResponse, PricesResponse, StocksResponse } from "./types";
+import type {
+  CurrenciesResponse,
+  CustomGoldBarsResponse,
+  DividendsResponse,
+  PricesResponse,
+  StocksResponse,
+} from "./types";
 
 const API_BASE = import.meta.env.VITE_DATA_API_BASE ?? "/api/data";
 
@@ -20,10 +26,18 @@ interface PriceParams {
   figis?: string[];
   tickers?: string[];
   class_code?: string;
+  instrument_type?: "stocks" | "currencies";
   start_date?: string;
   end_date?: string;
   interval?: string;
   is_complete?: boolean;
+}
+
+interface CustomGoldBarParams extends PriceParams {
+  count?: number;
+  bar_type?: string;
+  gold_ticker?: string;
+  gold_class_code?: string;
 }
 
 interface DividendParams {
@@ -46,13 +60,17 @@ export async function getPrices(params: PriceParams): Promise<PricesResponse> {
   return request<PricesResponse>("/prices", params);
 }
 
+export async function getCustomGoldBars(params: CustomGoldBarParams): Promise<CustomGoldBarsResponse> {
+  return request<CustomGoldBarsResponse>("/custom-gold-bars", params);
+}
+
 export async function getDividends(params: DividendParams): Promise<DividendsResponse> {
   return request<DividendsResponse>("/dividends", params);
 }
 
 async function request<T>(
   path: string,
-  params: StockParams | CurrencyParams | PriceParams | DividendParams,
+  params: StockParams | CurrencyParams | PriceParams | CustomGoldBarParams | DividendParams,
 ): Promise<T> {
   const url = new URL(`${API_BASE}${path}`, window.location.origin);
   appendParams(url, params as Record<string, unknown>);

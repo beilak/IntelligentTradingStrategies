@@ -57,6 +57,11 @@ export interface Candle {
   ticker?: string | null;
 }
 
+export interface GoldBarType {
+  name: string;
+  grams: number;
+}
+
 export interface StockFilters {
   class_codes: string[];
   exchanges: string[];
@@ -102,6 +107,17 @@ export interface PricesResponse {
     is_complete: boolean;
   };
   summary: PriceSummary[];
+}
+
+export interface CustomGoldBarsResponse extends PricesResponse {
+  meta: PricesResponse["meta"] & {
+    instrument_type: string;
+    gold_figi: string;
+    gold_ticker: string;
+    count: number;
+    bar_type: string;
+    gold_bar_types: GoldBarType[];
+  };
 }
 
 export interface Dividend {

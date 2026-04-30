@@ -11,10 +11,10 @@ import {
   TrendingUp,
 } from "lucide-vue-next";
 import { computed, onMounted, ref, watch } from "vue";
-import { getCurrencies, getDividends, getPrices, getStocks } from "./api";
+import { getCurrencies, getCustomGoldBars, getDividends, getPrices, getStocks } from "./api";
 import CandlestickChartPanel from "./components/CandlestickChart.vue";
 import { messages } from "./i18n";
-import type { Candle, Currency, Dividend, DividendSummary, Locale, Stock, StockFilters } from "./types";
+import type { Candle, Currency, Dividend, DividendSummary, GoldBarType, Locale, Stock, StockFilters } from "./types";
 
 const savedLocale = localStorage.getItem("its-data-locale") as Locale | null;
 const locale = ref<Locale>(savedLocale === "en" ? "en" : "ru");
@@ -42,6 +42,8 @@ const currencyFilters = ref<StockFilters>({
   intervals: ["CANDLE_INTERVAL_DAY"],
 });
 const candles = ref<Candle[]>([]);
+const currencyCandles = ref<Candle[]>([]);
+const customGoldBars = ref<Candle[]>([]);
 const dividends = ref<Dividend[]>([]);
 const dividendsSummary = ref<DividendSummary[]>([]);
 
@@ -50,10 +52,22 @@ const classCode = ref("TQBR");
 const currencyClassCode = ref("");
 const interval = ref("CANDLE_INTERVAL_DAY");
 const selectedFigi = ref("");
+const selectedCurrencyFigi = ref("");
 const startDate = ref(formatDate(addDays(new Date(), -180)));
 const endDate = ref(formatDate(new Date()));
+const goldBarCount = ref(1);
+const goldBarType = ref("T_OUNCE_400");
+const goldBarTypes = ref<GoldBarType[]>([
+  { name: "GRAM", grams: 1 },
+  { name: "T_OUNCE", grams: 31.1034768 },
+  { name: "KG", grams: 1000 },
+  { name: "KG_11", grams: 11000 },
+  { name: "T_OUNCE_400", grams: 12441.39072 },
+]);
 const isLoadingStocks = ref(false);
 const isLoadingPrices = ref(false);
+const isLoadingCurrencyPrices = ref(false);
+const isLoadingCustomGoldBars = ref(false);
 const isLoadingDividends = ref(false);
 const isLoadingCurrencies = ref(false);
 const error = ref("");
@@ -61,11 +75,22 @@ const error = ref("");
 const orderedCandles = computed(() =>
   [...candles.value].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime()),
 );
+const orderedCurrencyCandles = computed(() =>
+  [...currencyCandles.value].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime()),
+);
+const orderedCustomGoldBars = computed(() =>
+  [...customGoldBars.value].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime()),
+);
 const selectedStock = computed(() => stocks.value.find((stock) => stock.figi === selectedFigi.value));
+const selectedCurrency = computed(() => currencies.value.find((currencyItem) => currencyItem.figi === selectedCurrencyFigi.value));
 const lastCandle = computed(() => orderedCandles.value[orderedCandles.value.length - 1]);
 const firstCandle = computed(() => orderedCandles.value[0]);
+const lastCurrencyCandle = computed(() => orderedCurrencyCandles.value[orderedCurrencyCandles.value.length - 1]);
 const selectedTicker = computed(
   () => selectedStock.value?.ticker ?? lastCandle.value?.ticker ?? t.value.empty,
+);
+const selectedCurrencyTicker = computed(
+  () => selectedCurrency.value?.ticker ?? lastCurrencyCandle.value?.ticker ?? t.value.empty,
 );
 const selectedClassCode = computed({
   get: () => (activeTab.value === "currencies" ? currencyClassCode.value : classCode.value),
@@ -84,6 +109,8 @@ const isBusy = computed(
   () =>
     isLoadingStocks.value ||
     isLoadingPrices.value ||
+    isLoadingCurrencyPrices.value ||
+    isLoadingCustomGoldBars.value ||
     isLoadingDividends.value ||
     isLoadingCurrencies.value,
 );
@@ -162,6 +189,19 @@ async function loadCurrencies() {
       ...response.filters,
       sectors: [],
     };
+
+    if (!currencies.value.some((currencyItem) => currencyItem.figi === selectedCurrencyFigi.value)) {
+      selectedCurrencyFigi.value =
+        currencies.value.find((currencyItem) => currencyItem.ticker === "GLDRUB_TOM")?.figi ??
+        currencies.value[0]?.figi ??
+        "";
+    }
+
+    if (selectedCurrencyFigi.value) {
+      await loadCurrencyPrices();
+    } else {
+      currencyCandles.value = [];
+    }
   } catch (err) {
     error.value = formatError(err);
     currencies.value = [];
@@ -183,17 +223,80 @@ async function loadPrices() {
     const response = await getPrices({
       figis: [selectedFigi.value],
       class_code: classCode.value,
+      instrument_type: "stocks",
       start_date: startDate.value,
       end_date: endDate.value,
       interval: interval.value,
       is_complete: true,
     });
     candles.value = response.items;
+    await loadCustomGoldBars();
   } catch (err) {
     error.value = formatError(err);
     candles.value = [];
+    customGoldBars.value = [];
   } finally {
     isLoadingPrices.value = false;
+  }
+}
+
+async function loadCurrencyPrices() {
+  if (!selectedCurrencyFigi.value) {
+    currencyCandles.value = [];
+    return;
+  }
+
+  isLoadingCurrencyPrices.value = true;
+  error.value = "";
+  try {
+    const response = await getPrices({
+      figis: [selectedCurrencyFigi.value],
+      class_code: currencyClassCode.value,
+      instrument_type: "currencies",
+      start_date: startDate.value,
+      end_date: endDate.value,
+      interval: interval.value,
+      is_complete: true,
+    });
+    currencyCandles.value = response.items;
+  } catch (err) {
+    error.value = formatError(err);
+    currencyCandles.value = [];
+  } finally {
+    isLoadingCurrencyPrices.value = false;
+  }
+}
+
+async function loadCustomGoldBars() {
+  if (!selectedFigi.value) {
+    customGoldBars.value = [];
+    return;
+  }
+
+  isLoadingCustomGoldBars.value = true;
+  try {
+    const response = await getCustomGoldBars({
+      figis: [selectedFigi.value],
+      class_code: classCode.value,
+      instrument_type: "stocks",
+      start_date: startDate.value,
+      end_date: endDate.value,
+      interval: interval.value,
+      is_complete: true,
+      count: goldBarCount.value,
+      bar_type: goldBarType.value,
+      gold_ticker: "GLDRUB_TOM",
+      gold_class_code: "CETS",
+    });
+    customGoldBars.value = response.items;
+    if (response.meta.gold_bar_types.length) {
+      goldBarTypes.value = response.meta.gold_bar_types;
+    }
+  } catch (err) {
+    error.value = formatError(err);
+    customGoldBars.value = [];
+  } finally {
+    isLoadingCustomGoldBars.value = false;
   }
 }
 
@@ -203,7 +306,7 @@ function onToolbarChange() {
   } else if (activeTab.value === "dividends") {
     void loadDividends();
   } else if (activeTab.value === "currencies") {
-    void loadCurrencies();
+    void loadCurrencyPrices();
   }
 }
 
@@ -230,6 +333,11 @@ function selectStock(stock: Stock) {
   } else if (activeTab.value === "dividends") {
     void loadDividends();
   }
+}
+
+function selectCurrency(currencyItem: Currency) {
+  selectedCurrencyFigi.value = currencyItem.figi;
+  void loadCurrencyPrices();
 }
 
 function addDays(date: Date, days: number) {
@@ -400,7 +508,7 @@ function setActiveTab(tab: ViewTab) {
             </select>
           </label>
 
-          <label v-if="activeTab === 'quotes' || activeTab === 'dividends'" class="control compact">
+          <label v-if="activeTab === 'quotes' || activeTab === 'dividends' || activeTab === 'currencies'" class="control compact">
             <span>{{ t.interval }}</span>
             <select v-model="interval" @change="onToolbarChange">
               <option v-for="item in filters.intervals" :key="item" :value="item">
@@ -409,12 +517,12 @@ function setActiveTab(tab: ViewTab) {
             </select>
           </label>
 
-          <label v-if="activeTab === 'quotes' || activeTab === 'dividends'" class="control date-control">
+          <label v-if="activeTab === 'quotes' || activeTab === 'dividends' || activeTab === 'currencies'" class="control date-control">
             <span>{{ t.from }}</span>
             <input v-model="startDate" type="date" @change="onToolbarChange" />
           </label>
 
-          <label v-if="activeTab === 'quotes' || activeTab === 'dividends'" class="control date-control">
+          <label v-if="activeTab === 'quotes' || activeTab === 'dividends' || activeTab === 'currencies'" class="control date-control">
             <span>{{ t.to }}</span>
             <input v-model="endDate" type="date" @change="onToolbarChange" />
           </label>
@@ -486,19 +594,54 @@ function setActiveTab(tab: ViewTab) {
 
         <section class="visual-grid" :class="{ 'full-width': activeTab === 'instruments' || activeTab === 'currencies' }">
           <template v-if="activeTab === 'quotes'">
-            <div class="chart-panel">
-              <div class="panel-head">
-                <div>
-                  <span>{{ t.quotes }}</span>
-                  <strong>{{ selectedStock?.name ?? selectedTicker }}</strong>
+            <div class="quote-chart-stack">
+              <div class="chart-panel">
+                <div class="panel-head">
+                  <div>
+                    <span>{{ t.quotes }}</span>
+                    <strong>{{ selectedStock?.name ?? selectedTicker }}</strong>
+                  </div>
+                  <Activity :size="18" />
                 </div>
-                <Activity :size="18" />
+                <CandlestickChartPanel
+                  :candles="orderedCandles"
+                  :interval="interval"
+                  :locale="locale"
+                />
               </div>
-              <CandlestickChartPanel
-                :candles="orderedCandles"
-                :interval="interval"
-                :locale="locale"
-              />
+
+              <div class="chart-panel">
+                <div class="panel-head custom-panel-head">
+                  <div>
+                    <span>{{ t.customGoldBar }}</span>
+                    <strong>{{ selectedStock?.name ?? selectedTicker }} - GOLD BAR</strong>
+                  </div>
+                  <div class="custom-controls">
+                    <label class="control compact">
+                      <span>{{ t.count }}</span>
+                      <input v-model.number="goldBarCount" min="1" type="number" @change="loadCustomGoldBars" />
+                    </label>
+                    <label class="control compact">
+                      <span>{{ t.barType }}</span>
+                      <select v-model="goldBarType" @change="loadCustomGoldBars">
+                        <option v-for="item in goldBarTypes" :key="item.name" :value="item.name">
+                          {{ item.name }}
+                        </option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+                <div v-if="isLoadingCustomGoldBars" class="loading-state">
+                  <RefreshCw :class="{ spin: true }" :size="24" />
+                  <span>{{ t.loading }}</span>
+                </div>
+                <CandlestickChartPanel
+                  v-else
+                  :candles="orderedCustomGoldBars"
+                  :interval="interval"
+                  :locale="locale"
+                />
+              </div>
             </div>
           </template>
 
@@ -643,7 +786,12 @@ function setActiveTab(tab: ViewTab) {
                     </tr>
                   </thead>
                   <tbody>
-                    <tr v-for="currencyItem in currencies" :key="currencyItem.figi">
+                    <tr
+                      v-for="currencyItem in currencies"
+                      :key="currencyItem.figi"
+                      :class="{ selected: currencyItem.figi === selectedCurrencyFigi }"
+                      @click="selectCurrency(currencyItem)"
+                    >
                       <td>
                         <strong>{{ currencyItem.ticker }}</strong>
                         <small>{{ currencyItem.currency }}</small>
@@ -665,6 +813,26 @@ function setActiveTab(tab: ViewTab) {
                   </tbody>
                 </table>
               </div>
+            </div>
+
+            <div class="chart-panel">
+              <div class="panel-head">
+                <div>
+                  <span>{{ t.quotes }}</span>
+                  <strong>{{ selectedCurrency?.name ?? selectedCurrencyTicker }}</strong>
+                </div>
+                <Activity :size="18" />
+              </div>
+              <div v-if="isLoadingCurrencyPrices" class="loading-state">
+                <RefreshCw :class="{ spin: true }" :size="24" />
+                <span>{{ t.loading }}</span>
+              </div>
+              <CandlestickChartPanel
+                v-else
+                :candles="orderedCurrencyCandles"
+                :interval="interval"
+                :locale="locale"
+              />
             </div>
           </template>
 

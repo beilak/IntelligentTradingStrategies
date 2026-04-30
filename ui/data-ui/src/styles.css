@@ -318,6 +318,13 @@ td small {
   grid-template-columns: 1fr;
 }
 
+.quote-chart-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
 .chart-panel,
 .instrument-panel {
   background: #11141b;
@@ -341,6 +348,17 @@ td small {
 
 .panel-head svg {
   color: #ffcc66;
+}
+
+.custom-panel-head {
+  align-items: flex-end;
+  gap: 14px;
+}
+
+.custom-controls {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 110px minmax(160px, 220px);
 }
 
 .table-scroll {
@@ -437,6 +455,11 @@ tbody tr.selected {
   .visual-grid {
     grid-template-columns: 1fr;
   }
+
+  .custom-panel-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
 }
 
 @media (max-width: 780px) {
@@ -466,5 +489,9 @@ tbody tr.selected {
 
   .metric strong {
     font-size: 19px;
+  }
+
+  .custom-controls {
+    grid-template-columns: 1fr;
   }
 }

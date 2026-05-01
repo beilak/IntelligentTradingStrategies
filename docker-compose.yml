@@ -60,7 +60,7 @@ services:
       GA_RUN_CACHE_DIR: /app/its/data/ga_runs
     volumes:
       - ./its/ga:/app/its/ga:ro
-      - ./its/strategies:/app/its/strategies
+      - ./its/strategies:/app/its/strategies:ro
       - ga-cache:/app/its/data/ga_runs
     depends_on:
       - data-backend

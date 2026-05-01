@@ -1,5 +1,9 @@
 from its.ga.types import GeneDefinition
-from its.strategies.core.optimization import EqualWeighted, InverseVolatility
+from its.strategies.core.optimization import (
+    EqualWeighted,
+    HierarchicalRiskParity,
+    InverseVolatility,
+)
 
 GENES = [
     GeneDefinition(
@@ -15,6 +19,14 @@ GENES = [
         description="Allocate more weight to lower-volatility assets.",
         group="allocation",
         component=InverseVolatility,
+        component_kwargs={"raise_on_failure": False},
+    ),
+    GeneDefinition(
+        id="HierarchicalRiskParity",
+        title="HRP",
+        description="Allocate weight hierarchical risk parity",
+        group="allocation",
+        component=HierarchicalRiskParity,
         component_kwargs={"raise_on_failure": False},
     ),
 ]

@@ -5,6 +5,7 @@ import {
   BarChart3,
   Boxes,
   CandlestickChart,
+  CircleHelp,
   DatabaseZap,
   Dna,
   Globe2,
@@ -24,6 +25,7 @@ const messages = {
   ru: {
     appTitle: "ITS Launchpad",
     appSubtitle: "Единая точка запуска рабочих интерфейсов",
+    documentation: "Документация",
     language: "Язык",
     open: "Открыть",
     ready: "Готово",
@@ -49,6 +51,7 @@ const messages = {
   en: {
     appTitle: "ITS Launchpad",
     appSubtitle: "One place to open every working interface",
+    documentation: "Documentation",
     language: "Language",
     open: "Open",
     ready: "Ready",
@@ -74,6 +77,7 @@ const messages = {
 } satisfies Record<Locale, Record<string, string>>;
 
 const t = computed(() => messages[locale.value]);
+const docsHref = computed(() => `/docs/?lang=${locale.value}`);
 
 const tiles = computed(() => [
   {
@@ -145,6 +149,16 @@ watch(locale, (value) => localStorage.setItem("its-launchpad-locale", value));
       </div>
 
       <div class="top-actions" :aria-label="t.language">
+        <a
+          class="icon-button"
+          :href="docsHref"
+          target="_blank"
+          rel="noreferrer"
+          :title="t.documentation"
+          :aria-label="t.documentation"
+        >
+          <CircleHelp :size="18" />
+        </a>
         <Globe2 :size="18" />
         <div class="segmented">
           <button type="button" :class="{ active: locale === 'ru' }" @click="locale = 'ru'">RU</button>

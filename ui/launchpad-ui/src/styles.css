@@ -67,6 +67,7 @@ button {
 }
 
 .brand-mark,
+.icon-button,
 .tile-icon {
   align-items: center;
   background: #151821;
@@ -77,6 +78,14 @@ button {
   height: 44px;
   place-items: center;
   width: 44px;
+}
+
+.icon-button {
+  color: #c8ceda;
+  cursor: pointer;
+  height: 38px;
+  text-decoration: none;
+  width: 38px;
 }
 
 .brand strong {

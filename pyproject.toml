@@ -33,6 +33,7 @@ async-lru = "^2.3.0"
 skfolio = "^0.20.1"
 vectorbt = "^1.0.0"
 pygad = "^3.6.0"
+reportlab = "^4.5.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.1"

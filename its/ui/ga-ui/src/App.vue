@@ -81,6 +81,7 @@ const messages = {
     status: "Статус",
     file: "Файл",
     empty: "Пусто",
+    documentation: "Документация",
     wrapper: "Обертка",
     totalScore: "TOTAL",
     wfReturn: "WF Return",
@@ -140,6 +141,7 @@ const messages = {
     status: "Status",
     file: "File",
     empty: "Empty",
+    documentation: "Documentation",
     wrapper: "Wrapper",
     totalScore: "TOTAL",
     wfReturn: "WF Return",
@@ -181,6 +183,7 @@ const helpMessages = {
 const savedLocale = localStorage.getItem("its-ga-locale") as Locale | null;
 const locale = ref<Locale>(savedLocale === "en" ? "en" : "ru");
 const t = computed(() => messages[locale.value]);
+const docsHref = computed(() => `/docs/?lang=${locale.value}`);
 const help = computed(() => helpMessages[locale.value]);
 const alphabets = ref<AlphabetResponse | null>(null);
 const activeGroupId = ref("pre_selection");
@@ -432,6 +435,16 @@ function buildScoreChart(items: Array<{ generation: number; best_total_score: nu
         </div>
       </div>
       <div class="top-actions" :aria-label="t.language">
+        <a
+          class="icon-button"
+          :href="docsHref"
+          target="_blank"
+          rel="noreferrer"
+          :title="t.documentation"
+          :aria-label="t.documentation"
+        >
+          <CircleHelp :size="18" />
+        </a>
         <Globe2 :size="18" />
         <div class="segmented">
           <button type="button" :class="{ active: locale === 'ru' }" @click="locale = 'ru'">RU</button>

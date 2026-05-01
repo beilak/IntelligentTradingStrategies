@@ -50,3 +50,9 @@ ui/strategy-ui/          # Vue UI сервиса торговых стратег
 infra/nginx/             # gateway nginx
 docker-compose.yml       # общая оркестрация
 ```
+
+
+Генерация pdf документации
+```bash
+poetry run python scripts/build_docs_pdf.py
+```

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ITS Documentation</title>
+    <link rel="stylesheet" href="/docs/viewer.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar" aria-label="Разделы документации">
+        <a class="brand" href="/docs/" aria-label="Открыть оглавление">
+          <span class="brand-mark">?</span>
+          <span>
+            <strong>ITS Docs</strong>
+            <small>Документация системы</small>
+          </span>
+        </a>
+        <nav id="docs-nav" class="nav"></nav>
+      </aside>
+
+      <main class="content-shell">
+        <div class="toolbar">
+          <button id="sidebar-toggle" class="icon-button" type="button" aria-label="Разделы">☰</button>
+          <div class="toolbar-actions">
+            <div class="lang-switch" aria-label="Documentation language">
+              <button id="lang-ru" type="button">RU</button>
+              <button id="lang-en" type="button">EN</button>
+            </div>
+            <a id="pdf-link" class="raw-link" href="/docs/pdf/its_documentation_ru.pdf" download>PDF</a>
+            <a class="raw-link" id="raw-link" href="/docs/raw/README.md">Markdown</a>
+          </div>
+        </div>
+        <article id="content" class="document" aria-live="polite"></article>
+      </main>
+    </div>
+
+    <script src="/docs/viewer.js"></script>
+  </body>
+</html>

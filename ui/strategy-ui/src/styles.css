@@ -130,6 +130,7 @@ button {
 .icon-button {
   cursor: pointer;
   height: 38px;
+  text-decoration: none;
   width: 38px;
 }
 

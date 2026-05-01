@@ -3,6 +3,7 @@ import {
     BarChart3,
     Boxes,
     BrainCircuit,
+    CircleHelp,
     DatabaseZap,
     FolderOpen,
     GitBranch,
@@ -58,6 +59,7 @@ const savedLocale = localStorage.getItem(
 ) as Locale | null;
 const locale = ref<Locale>(savedLocale === "en" ? "en" : "ru");
 const t = computed(() => messages[locale.value]);
+const docsHref = computed(() => `/docs/?lang=${locale.value}`);
 
 const registry = ref<RegistryResponse | null>(null);
 const selectedGroupId = ref("strategy_model");
@@ -977,6 +979,16 @@ function polarPoint(cx: number, cy: number, radius: number, ratio: number) {
             </div>
 
             <div class="top-actions" :aria-label="t.language">
+                <a
+                    class="icon-button"
+                    :href="docsHref"
+                    target="_blank"
+                    rel="noreferrer"
+                    :title="t.documentation"
+                    :aria-label="t.documentation"
+                >
+                    <CircleHelp :size="18" />
+                </a>
                 <Globe2 :size="18" />
                 <div class="segmented">
                     <button

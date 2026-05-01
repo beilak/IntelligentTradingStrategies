@@ -3,6 +3,7 @@ import {
   Activity,
   BarChart3,
   CandlestickChart as CandleIcon,
+  CircleHelp,
   Coins,
   Database,
   Globe2,
@@ -19,6 +20,7 @@ import type { Candle, Currency, Dividend, DividendSummary, GoldBarType, Locale, 
 const savedLocale = localStorage.getItem("its-data-locale") as Locale | null;
 const locale = ref<Locale>(savedLocale === "en" ? "en" : "ru");
 const t = computed(() => messages[locale.value]);
+const docsHref = computed(() => `/docs/?lang=${locale.value}`);
 
 type ViewTab = "quotes" | "dividends" | "instruments" | "currencies";
 const activeTab = ref<ViewTab>("quotes");
@@ -439,6 +441,16 @@ function setActiveTab(tab: ViewTab) {
       </div>
 
       <div class="top-actions" :aria-label="t.language">
+        <a
+          class="icon-button"
+          :href="docsHref"
+          target="_blank"
+          rel="noreferrer"
+          :title="t.documentation"
+          :aria-label="t.documentation"
+        >
+          <CircleHelp :size="18" />
+        </a>
         <Globe2 :size="18" />
         <div class="segmented">
           <button type="button" :class="{ active: locale === 'ru' }" @click="locale = 'ru'">RU</button>

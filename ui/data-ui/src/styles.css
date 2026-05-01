@@ -60,6 +60,7 @@ button {
 .top-actions,
 .source-item,
 .refresh-button,
+.icon-button,
 .input-shell,
 .panel-head,
 .metric {
@@ -81,6 +82,20 @@ button {
   height: 44px;
   place-items: center;
   width: 44px;
+}
+
+.icon-button {
+  align-items: center;
+  background: #151821;
+  border: 1px solid #2b3342;
+  border-radius: 8px;
+  color: #c8ceda;
+  cursor: pointer;
+  display: inline-flex;
+  height: 38px;
+  justify-content: center;
+  text-decoration: none;
+  width: 38px;
 }
 
 .brand strong {

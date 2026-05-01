@@ -15,6 +15,7 @@ from typing import (
 import numpy as np
 import pandas as pd
 import vectorbt as vbt
+from pandas.tseries.frequencies import to_offset
 
 from its.strategies_model.core.trading_strategy import PositionContext
 
@@ -203,6 +204,8 @@ def _build_order_plan(
 def _make_schedule(index: pd.Index, freq: Union[str, int, None], on: str) -> pd.Index:
     if freq is None:
         return pd.Index([])
+    if index.empty:
+        return pd.Index([])
 
     if isinstance(freq, int):
         if freq <= 0:
@@ -214,15 +217,34 @@ def _make_schedule(index: pd.Index, freq: Union[str, int, None], on: str) -> pd.
     if on not in {"first", "last"}:
         raise ValueError("on must be 'first' or 'last'.")
 
-    series = pd.Series(index=index, data=index)
-    grouped = series.groupby(pd.Grouper(freq=freq))
-    if on == "last":
-        schedule = grouped.last()
-    else:
-        schedule = grouped.first()
+    offset = _schedule_offset(freq)
+    start = index[0]
+    end = index[-1]
+    schedule = [start]
+    period_start = start
 
-    schedule = schedule.dropna()
-    return pd.Index(schedule.values)
+    while period_start <= end:
+        period_end = period_start + offset
+        period_index = index[(index >= period_start) & (index < period_end)]
+        if len(period_index) > 0:
+            rebalance_date = period_index[-1] if on == "last" else period_index[0]
+            if rebalance_date != schedule[-1]:
+                schedule.append(rebalance_date)
+        period_start = period_end
+
+    if schedule[-1] != end and on == "last":
+        schedule.append(end)
+
+    return pd.Index(schedule)
+
+
+def _schedule_offset(freq: str) -> pd.DateOffset:
+    normalized = freq.upper()
+    if normalized.endswith("ME"):
+        value = normalized.removesuffix("ME")
+        months = int(value) if value else 1
+        return pd.DateOffset(months=months)
+    return to_offset(freq)
 
 
 def _resolve_train_start(
@@ -269,26 +291,46 @@ def _build_weights(
         if train_prices.empty:
             continue
 
+        train_prices = _filter_trainable_prices(
+            train_prices,
+            prices.loc[rebalance_date],
+        )
+        if train_prices.empty:
+            continue
+
         train_end = train_prices.index[-1]
         _limit_pipeline_price_context(strategy, train_end)
-        prices_close_returns_for_fit = train_prices.pct_change(fill_method=None).fillna(
-            0
-        )
+        prices_close_returns_for_fit = _build_train_returns(train_prices)
+
         strategy.pipeline.fit(prices_close_returns_for_fit)
 
-        prices_close_returns_for_test = train_prices.pct_change(
-            fill_method=None
-        ).fillna(0)
-        ptf_stat = strategy.pipeline.predict(prices_close_returns_for_test)
+        ptf_stat = strategy.pipeline.predict(prices_close_returns_for_fit)
         weights_dict = getattr(ptf_stat, "weights_dict", None)
+        if not weights_dict:
+            continue
 
         row = pd.Series(0.0, index=prices.columns)
         for ticker, weight in weights_dict.items():
-            if ticker in row.index:
+            if ticker in row.index and np.isfinite(weight):
                 row.loc[ticker] = float(weight)
         weights.loc[rebalance_date] = row
 
     return weights
+
+
+def _filter_trainable_prices(
+    train_prices: pd.DataFrame,
+    rebalance_prices: pd.Series,
+) -> pd.DataFrame:
+    tradable = rebalance_prices.replace([np.inf, -np.inf], np.nan).dropna()
+    tradable = tradable[tradable > 0]
+    filtered = train_prices.loc[:, train_prices.columns.intersection(tradable.index)]
+    return filtered.dropna(axis=1, how="all")
+
+
+def _build_train_returns(train_prices: pd.DataFrame) -> pd.DataFrame:
+    returns = train_prices.pct_change(fill_method=None).replace([np.inf, -np.inf], np.nan)
+    return returns.fillna(0)
 
 
 def _apply_position_exit_policy(

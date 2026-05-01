@@ -124,6 +124,7 @@ export interface GAResult {
     module_name: string;
     file_path: string;
   }>;
+  materialization_error: string | null;
 }
 
 export interface GARunSummary {

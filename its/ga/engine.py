@@ -127,12 +127,16 @@ class GASearchRunner:
         all_scores = self.rank_all_evaluated()
         top_rows = rows_from_frame(all_scores.head(int(self.settings.get("top_n", 3))))
         materialized = []
+        materialization_error = None
         if self.settings.get("materialize_top", True) and top_rows:
-            materialized = materialize_top_strategies(
-                run_id=str(self.settings.get("run_id", "ga")),
-                top_rows=top_rows,
-                top_n=int(self.settings.get("top_n", 3)),
-            )
+            try:
+                materialized = materialize_top_strategies(
+                    run_id=str(self.settings.get("run_id", "ga")),
+                    top_rows=top_rows,
+                    top_n=int(self.settings.get("top_n", 3)),
+                )
+            except OSError as exc:
+                materialization_error = repr(exc)
 
         result = {
             "metadata": {
@@ -166,6 +170,7 @@ class GASearchRunner:
             "all_evaluated": rows_from_frame(all_scores.head(50)),
             "top_strategies": top_rows,
             "materialized": materialized,
+            "materialization_error": materialization_error,
             "score_config": DEFAULT_SCORE_CONFIG,
             "penalty_config": DEFAULT_PENALTY_CONFIG,
         }

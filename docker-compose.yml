@@ -58,9 +58,11 @@ services:
     environment:
       DATA_BACKEND_BASE_URL: http://data-backend:8000/api/v1
       GA_RUN_CACHE_DIR: /app/its/data/ga_runs
+      GA_MODELS_DIR: /app/its/strategies/models
     volumes:
       - ./its/ga:/app/its/ga:ro
       - ./its/strategies:/app/its/strategies:ro
+      - ./its/strategies/models:/app/its/strategies/models
       - ga-cache:/app/its/data/ga_runs
     depends_on:
       - data-backend

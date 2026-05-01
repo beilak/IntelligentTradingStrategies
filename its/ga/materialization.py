@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import os
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -11,7 +12,7 @@ from its.ga.registry import build_component, get_gene
 from its.ga.types import GeneDefinition
 from its.strategies.core.types.strategy_types import Pipeline, Strategy
 
-MODELS_DIR = Path("its/strategies/models")
+MODELS_DIR = Path(os.getenv("GA_MODELS_DIR", "its/strategies/models"))
 MODELS_INIT = MODELS_DIR / "__init__.py"
 
 

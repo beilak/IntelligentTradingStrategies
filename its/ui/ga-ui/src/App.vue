@@ -218,6 +218,7 @@ const generationSummaries = computed(() =>
 );
 const topStrategies = computed(() => currentRun.value?.result?.top_strategies ?? []);
 const materialized = computed(() => currentRun.value?.result?.materialized ?? []);
+const materializationError = computed(() => currentRun.value?.result?.materialization_error ?? "");
 const chartLines = computed(() => buildScoreChart(generationSummaries.value));
 const isRunActive = computed(() =>
   currentRun.value?.status === "queued" || currentRun.value?.status === "running" || isRunning.value,
@@ -776,6 +777,7 @@ function buildScoreChart(items: Array<{ generation: number; best_total_score: nu
                 <strong>{{ item.class_name }}</strong>
                 <small>{{ item.file_path }}</small>
               </article>
+              <div v-if="materializationError" class="small-state">{{ materializationError }}</div>
               <div v-if="!materialized.length" class="small-state">{{ t.empty }}</div>
             </div>
           </section>

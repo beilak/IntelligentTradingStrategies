@@ -14,9 +14,9 @@ GENES = [
         runtime_args={"assets_info": "assets_info"},
     ),
     GeneDefinition(
-        id="sector_energy",
-        title="Sector: energy",
-        description="Select assets from energy",
+        id="sector_energy_telecom",
+        title="Sector: energy_telecom",
+        description="Select assets from energy and telecom",
         group="pre_selection",
         component=SectorSelector,
         component_kwargs={

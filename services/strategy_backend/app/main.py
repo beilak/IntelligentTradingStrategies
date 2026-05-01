@@ -11,6 +11,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from services.strategy_backend.app.backtest import router as backtest_router
 from services.strategy_backend.app.comparison import router as comparison_router
 from services.strategy_backend.app.cpcv import router as cpcv_router
+from services.strategy_backend.app.trading_strategy_backtest import (
+    router as trading_strategy_backtest_router,
+)
 from services.strategy_backend.app.walk_forward import router as walk_forward_router
 
 
@@ -41,6 +44,12 @@ REGISTRIES = [
         "module": "its.strategies.models",
         "role": "Complete model builders registered for modelers.",
     },
+    {
+        "id": "trading_strategy_model",
+        "title": "Trading Strategies",
+        "module": "its.strategies_model.model",
+        "role": "Full trading strategies: portfolio core plus execution rules such as stop loss and take profit.",
+    },
 ]
 
 
@@ -62,6 +71,7 @@ def create_app() -> FastAPI:
     app.include_router(backtest_router, prefix=API_PREFIX)
     app.include_router(comparison_router, prefix=API_PREFIX)
     app.include_router(cpcv_router, prefix=API_PREFIX)
+    app.include_router(trading_strategy_backtest_router, prefix=API_PREFIX)
     app.include_router(walk_forward_router, prefix=API_PREFIX)
 
     @app.get(f"{API_PREFIX}/health")
@@ -75,6 +85,11 @@ def create_app() -> FastAPI:
             "groups": groups,
             "models": next(
                 group["items"] for group in groups if group["id"] == "strategy_model"
+            ),
+            "trading_strategies": next(
+                group["items"]
+                for group in groups
+                if group["id"] == "trading_strategy_model"
             ),
             "strategy_type": describe_strategy_type(),
         }
@@ -107,6 +122,45 @@ def create_app() -> FastAPI:
             "future_reports": [
                 {"id": "cpcv", "title": "CPCV", "status": "available"},
                 {"id": "walk_forward", "title": "WalkForward", "status": "available"},
+                {"id": "backtesting", "title": "Backtesting", "status": "available"},
+            ],
+        }
+
+    @app.get(f"{API_PREFIX}/trading-strategies")
+    async def trading_strategies() -> dict[str, Any]:
+        group = load_registry_group(get_registry_info("trading_strategy_model"))
+        return {"items": group["items"]}
+
+    @app.get(f"{API_PREFIX}/trading-strategies/{{strategy_name}}")
+    async def trading_strategy_detail(strategy_name: str) -> dict[str, Any]:
+        strategy_group = load_registry_group(get_registry_info("trading_strategy_model"))
+        strategy_item = next(
+            (item for item in strategy_group["items"] if item["name"] == strategy_name),
+            None,
+        )
+        if strategy_item is None:
+            raise HTTPException(status_code=404, detail="Trading strategy is not registered.")
+
+        component_groups = [
+            load_registry_group(get_registry_info("strategy_model")),
+            load_registry_group(
+                {
+                    "id": "trading_policy",
+                    "title": "Trading Policies",
+                    "module": "its.strategies_model.core",
+                    "role": "Position lifecycle policies used by full trading strategies.",
+                }
+            ),
+        ]
+        strategy_obj = import_object(strategy_item["module"], strategy_item["name"])
+        return {
+            **strategy_item,
+            "composition": inspect_trading_strategy_composition(
+                strategy_obj,
+                component_groups,
+            ),
+            "component_groups": component_groups,
+            "future_reports": [
                 {"id": "backtesting", "title": "Backtesting", "status": "available"},
             ],
         }
@@ -253,6 +307,65 @@ def inspect_model_composition(
         "registered_components": registered_components,
         "source_excerpt": source,
     }
+
+
+def inspect_trading_strategy_composition(
+    strategy_obj: Any,
+    component_groups: list[dict[str, Any]],
+) -> dict[str, Any]:
+    source = get_source(strategy_obj)
+    helper_names = {
+        "PositionContext",
+        "PositionExitDecision",
+        "PositionExitPolicy",
+        "TradingStrategy",
+        "TradingStrategyBuilder",
+        "TradingStrategyProtocol",
+    }
+    registered_components = [
+        item
+        for group in component_groups
+        for item in group["items"]
+        if item["status"] == "registered"
+        and item["name"] != getattr(strategy_obj, "__name__", "")
+        and item["name"] not in helper_names
+        and item["name"] in source
+    ]
+
+    return {
+        "steps": [
+            {
+                "step": step_name_for_component(item, component_groups),
+                "component": item["name"],
+                "category": group_id_for_component(item, component_groups),
+            }
+            for item in registered_components
+        ],
+        "registered_components": registered_components,
+        "source_excerpt": source,
+    }
+
+
+def group_id_for_component(
+    component: dict[str, Any],
+    component_groups: list[dict[str, Any]],
+) -> str:
+    for group in component_groups:
+        if any(item["name"] == component["name"] for item in group["items"]):
+            return group["id"]
+    return "unknown"
+
+
+def step_name_for_component(
+    component: dict[str, Any],
+    component_groups: list[dict[str, Any]],
+) -> str:
+    group_id = group_id_for_component(component, component_groups)
+    if group_id == "strategy_model":
+        return "core_strategy"
+    if group_id == "trading_policy":
+        return "exit_policy"
+    return group_id
 
 
 def get_source(obj: Any) -> str:

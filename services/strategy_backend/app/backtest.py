@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -12,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from its.strategies.testing.backtest import (
     cache_path,
+    enrich_backtest_payload_with_stocks,
     generate_backtest_report,
     list_test_paths,
     read_json,
@@ -53,13 +55,28 @@ async def get_backtest_test(model_name: str, test_name: str) -> dict[str, Any]:
     path = cache_path(model_name, test_name)
     if not path.exists():
         raise HTTPException(status_code=404, detail="Backtest cache was not found.")
-    return read_json(path)
+    return await enrich_cached_backtest(read_json(path))
 
 
 @router.post("/run")
 async def run_backtest_test(
     model_name: str,
     request: BacktestRunRequest,
+) -> dict[str, Any]:
+    return await run_backtest_flow(
+        subject_name=model_name,
+        request=request,
+        output_path=cache_path(model_name, request.test_name),
+        report_factory=generate_backtest_report,
+    )
+
+
+async def run_backtest_flow(
+    *,
+    subject_name: str,
+    request: BacktestRunRequest,
+    output_path: Path,
+    report_factory: Any,
 ) -> dict[str, Any]:
     if request.start_date >= request.end_date:
         raise HTTPException(
@@ -72,7 +89,6 @@ async def run_backtest_test(
             detail="trading_start_date must be inside the loaded date range.",
         )
 
-    path = cache_path(model_name, request.test_name)
     stocks = await fetch_stocks(request)
     figis = [item["figi"] for item in stocks if item.get("figi")]
     if not figis:
@@ -85,21 +101,49 @@ async def run_backtest_test(
     settings = request.model_dump(mode="json")
     if settings.get("trading_start_date") is None:
         settings["trading_start_date"] = settings["start_date"]
-    result = generate_backtest_report(model_name, stocks, prices, settings)
+    result = report_factory(subject_name, stocks, prices, settings)
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps(result, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
     return result
 
 
 async def fetch_stocks(request: BacktestRunRequest) -> list[dict[str, Any]]:
+    return await fetch_stocks_by_class_code(request.class_code)
+
+
+async def fetch_stocks_by_class_code(class_code: str) -> list[dict[str, Any]]:
     async with httpx.AsyncClient(timeout=60) as client:
         response = await client.get(
             f"{DATA_BACKEND_BASE_URL}/stocks",
-            params={"class_code": request.class_code},
+            params={"class_code": class_code},
         )
     payload = handle_data_response(response)
     return payload.get("items", [])
+
+
+async def enrich_cached_backtest(payload: dict[str, Any]) -> dict[str, Any]:
+    if backtest_payload_has_sectors(payload):
+        return payload
+
+    class_code = (
+        payload.get("metadata", {})
+        .get("settings", {})
+        .get("class_code", "TQBR")
+    )
+    stocks = await fetch_stocks_by_class_code(str(class_code))
+    return enrich_backtest_payload_with_stocks(payload, stocks)
+
+
+def backtest_payload_has_sectors(payload: dict[str, Any]) -> bool:
+    for record in payload.get("rebalance_weights", []):
+        for weight in record.get("weights", []):
+            if weight.get("sector"):
+                return True
+    return False
 
 
 async def fetch_prices(

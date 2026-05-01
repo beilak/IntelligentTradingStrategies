@@ -22,12 +22,16 @@ import {
   getLatestStrategyComparison,
   getModelDetail,
   getRegistry,
+  getTradingStrategyBacktestTest,
+  getTradingStrategyDetail,
   getWalkForwardTest,
   listBacktestTests,
   listCpcvTests,
+  listTradingStrategyBacktestTests,
   listWalkForwardTests,
   runBacktestTest,
   runCpcvTest,
+  runTradingStrategyBacktestTest,
   runWalkForwardTest,
 } from "./api";
 import { messages, cpcvMetricTranslations } from "./i18n";
@@ -111,6 +115,8 @@ const selectedGroup = computed<RegistryGroup | undefined>(() =>
 );
 const selectedItems = computed<RegistryItem[]>(() => selectedGroup.value?.items ?? []);
 const isCoreStrategyTab = computed(() => selectedGroupId.value === "strategy_model");
+const isTradingStrategyTab = computed(() => selectedGroupId.value === "trading_strategy_model");
+const isTestableStrategyTab = computed(() => isCoreStrategyTab.value || isTradingStrategyTab.value);
 const chartLines = computed(() => buildChartLines(cpcvResult.value));
 const walkForwardChartLines = computed(() =>
   buildChartLines(walkForwardResult.value, wfXAxisLabels, wfYAxisLabels),
@@ -154,6 +160,8 @@ const activeAssetCount = computed(() =>
     : (cpcvResult.value?.metadata.asset_count ?? 0),
 );
 const pieSegments = computed(() => buildPieSegments(selectedWeightRecord.value));
+const sectorRows = computed(() => buildSectorRows(selectedWeightRecord.value, backtestResult.value));
+const sectorPieSegments = computed(() => buildSectorPieSegments(sectorRows.value));
 const comparisonExplanations = computed(() =>
   Array.isArray(t.value.comparisonExplanations) ? t.value.comparisonExplanations : [],
 );
@@ -206,6 +214,29 @@ async function loadModel(modelName: string) {
   }
 }
 
+async function loadTradingStrategy(strategyName: string) {
+  selectedModelName.value = strategyName;
+  isModelLoading.value = true;
+  error.value = "";
+  try {
+    modelDetail.value = await getTradingStrategyDetail(strategyName);
+    cpcvResult.value = null;
+    walkForwardResult.value = null;
+    backtestResult.value = null;
+    cpcvError.value = "";
+    walkForwardError.value = "";
+    backtestError.value = "";
+    comparisonError.value = "";
+    savedCpcvTests.value = [];
+    savedWalkForwardTests.value = [];
+    await loadSavedBacktestTests(strategyName);
+  } catch (err) {
+    error.value = formatError(err);
+  } finally {
+    isModelLoading.value = false;
+  }
+}
+
 async function openComparison() {
   showComparisonModal.value = true;
   await loadComparison();
@@ -223,8 +254,23 @@ async function loadComparison() {
   }
 }
 
-function setGroup(groupId: string) {
+async function setGroup(groupId: string) {
   selectedGroupId.value = groupId;
+  const firstItem = registry.value?.groups.find((group) => group.id === groupId)?.items[0];
+  if (!firstItem) return;
+  if (groupId === "strategy_model") {
+    await loadModel(firstItem.name);
+  } else if (groupId === "trading_strategy_model") {
+    await loadTradingStrategy(firstItem.name);
+  }
+}
+
+async function selectRegistryItem(itemName: string) {
+  if (selectedGroupId.value === "strategy_model") {
+    await loadModel(itemName);
+  } else if (selectedGroupId.value === "trading_strategy_model") {
+    await loadTradingStrategy(itemName);
+  }
 }
 
 function iconFor(groupId: string) {
@@ -233,6 +279,7 @@ function iconFor(groupId: string) {
     signal_model: BrainCircuit,
     allocation: Scale,
     strategy_model: Boxes,
+    trading_strategy_model: PlayCircle,
   }[groupId] ?? Layers3;
 }
 
@@ -335,7 +382,9 @@ async function loadSavedBacktestTests(modelName = selectedModelName.value) {
   if (!modelName) return;
   isBacktestLoading.value = true;
   try {
-    savedBacktestTests.value = (await listBacktestTests(modelName)).items;
+    savedBacktestTests.value = isTradingStrategyTab.value
+      ? (await listTradingStrategyBacktestTests(modelName)).items
+      : (await listBacktestTests(modelName)).items;
   } catch (err) {
     backtestError.value = formatError(err);
   } finally {
@@ -348,7 +397,9 @@ async function openBacktestTest(testName: string) {
   isBacktestLoading.value = true;
   backtestError.value = "";
   try {
-    backtestResult.value = await getBacktestTest(selectedModelName.value, testName);
+    backtestResult.value = isTradingStrategyTab.value
+      ? await getTradingStrategyBacktestTest(selectedModelName.value, testName)
+      : await getBacktestTest(selectedModelName.value, testName);
     backtestSettings.value = {
       ...backtestSettings.value,
       ...backtestResult.value.metadata.settings,
@@ -367,7 +418,9 @@ async function runBacktest() {
   isBacktestRunning.value = true;
   backtestError.value = "";
   try {
-    backtestResult.value = await runBacktestTest(selectedModelName.value, backendBacktestSettings());
+    backtestResult.value = isTradingStrategyTab.value
+      ? await runTradingStrategyBacktestTest(selectedModelName.value, backendBacktestSettings())
+      : await runBacktestTest(selectedModelName.value, backendBacktestSettings());
     await loadSavedBacktestTests(selectedModelName.value);
   } catch (err) {
     backtestError.value = formatError(err);
@@ -492,6 +545,20 @@ function formatPercent(value: number) {
 
 function formatWeight(value: number) {
   return `${(value * 100).toFixed(2)}%`;
+}
+
+function formatPrice(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+  return value.toLocaleString(locale.value === "ru" ? "ru-RU" : "en-US", {
+    maximumFractionDigits: 4,
+  });
+}
+
+function formatEventReason(reason: string) {
+  return {
+    stop_loss: t.value.stopLoss,
+    take_profit: t.value.takeProfit,
+  }[reason] ?? reason;
 }
 
 function formatScore(value: number | null | undefined) {
@@ -644,8 +711,71 @@ function buildPieSegments(record: BacktestResult["rebalance_weights"][number] | 
   });
 }
 
+function buildSectorRows(
+  record: BacktestResult["rebalance_weights"][number] | null,
+  result: BacktestResult | null,
+) {
+  if (!record) return [];
+  const tickerSector = new Map(
+    (result?.metadata.assets ?? []).map((asset) => [
+      asset.ticker,
+      normalizeSector(asset.sector),
+    ]),
+  );
+  const sectors = new Map<string, { sector: string; weight: number; asset_count: number }>();
+
+  record.weights.forEach((item) => {
+    const sector = normalizeSector(item.sector ?? tickerSector.get(item.ticker));
+    const current = sectors.get(sector) ?? { sector, weight: 0, asset_count: 0 };
+    current.weight += item.weight;
+    current.asset_count += 1;
+    sectors.set(sector, current);
+  });
+
+  return [...sectors.values()].sort((a, b) => b.weight - a.weight);
+}
+
+function buildSectorPieSegments(rows: Array<{ sector: string; weight: number; asset_count: number }>) {
+  const colors = ["#7dd3fc", "#f9a8d4", "#aee9d1", "#ffcc66", "#b48cf2", "#fca5a5", "#86efac", "#93c5fd", "#ff6b8a", "#66d9ef"];
+  const total = rows.reduce((sum, item) => sum + Math.max(item.weight, 0), 0) || 1;
+  let cursor = 0;
+  return rows.map((item, index) => {
+    const start = cursor / total;
+    cursor += Math.max(item.weight, 0);
+    const end = cursor / total;
+    const middle = (start + end) / 2;
+    const labelPosition = polarPoint(112, 112, 92, middle);
+    return {
+      ...item,
+      color: colors[index % colors.length],
+      d: piePath(112, 112, 86, start, end),
+      labelX: labelPosition.x,
+      labelY: labelPosition.y,
+      showLabel: item.weight / total >= 0.04,
+    };
+  });
+}
+
+function normalizeSector(sector?: string | null) {
+  const value = String(sector ?? "").trim();
+  return value || t.value.unknownSector;
+}
+
 function colorForWeightItem(ticker: string) {
   return pieSegments.value.find((segment) => segment.ticker === ticker)?.color ?? "#8992a3";
+}
+
+function colorForSector(sector: string) {
+  return sectorPieSegments.value.find((segment) => segment.sector === sector)?.color ?? "#8992a3";
+}
+
+function sectorForTicker(ticker: string) {
+  const weight = selectedWeightRecord.value?.weights.find((item) => item.ticker === ticker);
+  if (weight?.sector) {
+    return normalizeSector(weight.sector);
+  }
+  const asset = backtestResult.value?.metadata.assets.find((item) => item.ticker === ticker);
+  return normalizeSector(asset?.sector);
 }
 
 function piePath(cx: number, cy: number, radius: number, startRatio: number, endRatio: number) {
@@ -721,7 +851,7 @@ function polarPoint(cx: number, cy: number, radius: number, ratio: number) {
           <p>{{ selectedGroup?.role }}</p>
         </section>
 
-        <section class="main-grid" :class="{ 'single-column': !isCoreStrategyTab }">
+        <section class="main-grid" :class="{ 'single-column': !isTestableStrategyTab }">
           <div class="registry-panel">
             <div class="panel-head">
               <div>
@@ -746,7 +876,7 @@ function polarPoint(cx: number, cy: number, radius: number, ratio: number) {
                 :key="`${item.module}.${item.name}`"
                 class="component-card"
                 :class="{ selected: item.name === selectedModelName }"
-                @click="selectedGroupId === 'strategy_model' && loadModel(item.name)"
+                @click="selectRegistryItem(item.name)"
               >
                 <div class="card-title">
                   <strong>{{ item.name }}</strong>
@@ -758,7 +888,7 @@ function polarPoint(cx: number, cy: number, radius: number, ratio: number) {
             </div>
           </div>
 
-          <div v-if="isCoreStrategyTab" class="detail-panel">
+          <div v-if="isTestableStrategyTab" class="detail-panel">
             <div class="panel-head">
               <div>
                 <span>{{ t.models }}</span>
@@ -793,10 +923,10 @@ function polarPoint(cx: number, cy: number, radius: number, ratio: number) {
               <section class="detail-section">
                 <span>{{ t.testing }}</span>
                 <div class="report-grid">
-                  <button class="report-btn" type="button" @click="showCpcvModal = true">
+                  <button v-if="isCoreStrategyTab" class="report-btn" type="button" @click="showCpcvModal = true">
                     <strong>CPCV</strong>
                   </button>
-                  <button class="report-btn" type="button" @click="showWalkForwardModal = true">
+                  <button v-if="isCoreStrategyTab" class="report-btn" type="button" @click="showWalkForwardModal = true">
                     <strong>WalkForward</strong>
                   </button>
                   <button class="report-btn" type="button" @click="showBacktestModal = true">
@@ -807,7 +937,7 @@ function polarPoint(cx: number, cy: number, radius: number, ratio: number) {
                     <small>{{ t.planned }}</small>
                   </article>
                 </div>
-                <button class="report-btn featured comparison-wide-btn" type="button" @click="openComparison">
+                <button v-if="isCoreStrategyTab" class="report-btn featured comparison-wide-btn" type="button" @click="openComparison">
                   <BarChart3 :size="18" />
                   <div>
                     <strong>{{ t.strategyComparison }}</strong>
@@ -1583,6 +1713,39 @@ function polarPoint(cx: number, cy: number, radius: number, ratio: number) {
               </div>
             </div>
 
+            <div v-if="backtestResult.execution_events?.length" class="chart-panel">
+              <div class="section-title">
+                <span>{{ t.executionEvents }}</span>
+                <strong>{{ backtestResult.execution_events?.length ?? 0 }}</strong>
+              </div>
+              <div class="table-scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>{{ t.time }}</th>
+                      <th>Ticker</th>
+                      <th>{{ t.reason }}</th>
+                      <th>{{ t.entryPrice }}</th>
+                      <th>{{ t.executionPrice }}</th>
+                      <th>{{ t.returnPct }}</th>
+                      <th>{{ t.weight }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="event in (backtestResult.execution_events ?? []).slice(0, 80)" :key="`${event.time}-${event.ticker}-${event.reason}`">
+                      <td>{{ formatDateTime(event.time) }}</td>
+                      <td><strong>{{ event.ticker }}</strong></td>
+                      <td>{{ formatEventReason(event.reason) }}</td>
+                      <td>{{ formatPrice(event.entry_price) }}</td>
+                      <td>{{ formatPrice(event.execution_price) }}</td>
+                      <td>{{ formatMetricValue(event.return_pct, "percent") }}</td>
+                      <td>{{ formatMetricValue(event.weight, "percent") }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
             <div class="chart-panel">
               <div class="section-title">
                 <span>{{ t.rebalanceWeights }}</span>
@@ -1657,6 +1820,33 @@ function polarPoint(cx: number, cy: number, radius: number, ratio: number) {
                   {{ segment.ticker }} {{ formatWeight(segment.weight) }}
                 </text>
               </svg>
+
+              <div class="section-title sector-title">
+                <span>{{ t.sectorAllocation }}</span>
+                <strong>{{ sectorRows.length }}</strong>
+              </div>
+              <svg class="pie-chart" viewBox="0 0 224 224" role="img">
+                <path
+                  v-for="segment in sectorPieSegments"
+                  :key="segment.sector"
+                  :d="segment.d"
+                  :fill="segment.color"
+                  stroke="#11141b"
+                  stroke-width="0.8"
+                />
+                <text
+                  v-for="segment in sectorPieSegments.filter((item) => item.showLabel)"
+                  :key="`${segment.sector}-label`"
+                  :x="segment.labelX"
+                  :y="segment.labelY"
+                  fill="#f4f6fb"
+                  font-size="5"
+                  text-anchor="middle"
+                  dominant-baseline="middle"
+                >
+                  {{ segment.sector }} {{ formatWeight(segment.weight) }}
+                </text>
+              </svg>
             </section>
 
             <section class="weights-table-panel">
@@ -1665,6 +1855,7 @@ function polarPoint(cx: number, cy: number, radius: number, ratio: number) {
                   <thead>
                     <tr>
                       <th>Ticker</th>
+                      <th>{{ t.sector }}</th>
                       <th>Weight</th>
                     </tr>
                   </thead>
@@ -1676,6 +1867,35 @@ function polarPoint(cx: number, cy: number, radius: number, ratio: number) {
                           <strong>{{ item.ticker }}</strong>
                         </span>
                       </td>
+                      <td>{{ sectorForTicker(item.ticker) }}</td>
+                      <td>{{ formatWeight(item.weight) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="section-title sector-table-title">
+                <span>{{ t.sectorAllocation }}</span>
+                <strong>{{ sectorRows.length }}</strong>
+              </div>
+              <div class="table-scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>{{ t.sector }}</th>
+                      <th>{{ t.assets }}</th>
+                      <th>{{ t.weight }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="item in sectorRows" :key="item.sector">
+                      <td>
+                        <span class="legend-ticker">
+                          <span class="legend-dot" :style="{ backgroundColor: colorForSector(item.sector) }"></span>
+                          <strong>{{ item.sector }}</strong>
+                        </span>
+                      </td>
+                      <td>{{ item.asset_count }}</td>
                       <td>{{ formatWeight(item.weight) }}</td>
                     </tr>
                   </tbody>

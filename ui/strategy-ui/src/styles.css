@@ -668,6 +668,13 @@ select {
   width: min(100%, 620px);
 }
 
+.sector-title,
+.sector-table-title {
+  border-top: 1px solid #252b36;
+  margin-top: 18px;
+  padding-top: 14px;
+}
+
 .legend-ticker {
   align-items: center;
   display: inline-flex;

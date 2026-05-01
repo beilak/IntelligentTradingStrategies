@@ -7,7 +7,6 @@ from typing import (
     Iterable,
     List,
     Mapping,
-    MutableMapping,
     Optional,
     Tuple,
     Union,
@@ -17,12 +16,16 @@ import numpy as np
 import pandas as pd
 import vectorbt as vbt
 
+from its.strategies_model.core.trading_strategy import PositionContext
+
 
 @dataclass(frozen=True)
 class BacktestResult:
     portfolio: "vbt.Portfolio"
     weights: pd.DataFrame
+    order_prices: pd.DataFrame
     rebalance_dates: pd.Index
+    execution_events: pd.DataFrame
     # refit_dates: pd.Index
 
 
@@ -31,6 +34,8 @@ def backtest_strategies_vectorbt(
     strategies: Union[Any, Iterable[Any], Mapping[str, Any]],
     prices: pd.DataFrame,
     rebalance_freq: Union[str, int],
+    high: Optional[pd.DataFrame] = None,
+    low: Optional[pd.DataFrame] = None,
     trading_start_date: str = None,
     # refit_freq: Optional[Union[str, int]] = None,
     # train_window: Optional[Union[str, int]] = None,
@@ -91,19 +96,22 @@ def backtest_strategies_vectorbt(
     results: Dict[str, BacktestResult] = {}
 
     for name, strat in strategy_map.items():
-        weights = _build_weights(
+        weights, order_prices, execution_events = _build_order_plan(
             strat,
             prices,
             rebalance_dates,
             # refit_dates,
             # train_window=train_window,
             trading_start_date=trading_start_date,
+            high=high,
+            low=low,
         )
 
         pf = vbt.Portfolio.from_orders(
             prices.loc[trading_start_date:],
             size=weights,
             size_type="targetpercent",
+            price=order_prices.loc[trading_start_date:],
             init_cash=init_cash,
             fees=fees,
             slippage=slippage,
@@ -116,7 +124,9 @@ def backtest_strategies_vectorbt(
         results[name] = BacktestResult(
             portfolio=pf,
             weights=weights,
+            order_prices=order_prices,
             rebalance_dates=rebalance_dates,
+            execution_events=execution_events,
             # refit_dates=refit_dates,
         )
 
@@ -150,6 +160,38 @@ def _validate_prices(prices: pd.DataFrame) -> pd.DataFrame:
     if prices.columns.duplicated().any():
         raise ValueError("prices has duplicated column names.")
     return prices
+
+
+def _build_order_plan(
+    strategy: Any,
+    prices: pd.DataFrame,
+    rebalance_dates: pd.Index,
+    *,
+    trading_start_date: str,
+    high: Optional[pd.DataFrame] = None,
+    low: Optional[pd.DataFrame] = None,
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    core_strategy = getattr(strategy, "core", None)
+    strategy_for_weights = core_strategy if core_strategy is not None else strategy
+    weights = _build_weights(
+        strategy_for_weights,
+        prices,
+        rebalance_dates,
+        trading_start_date=trading_start_date,
+    )
+
+    if core_strategy is None or not hasattr(strategy, "evaluate_position"):
+        return weights, prices.copy(), empty_execution_events()
+
+    return _apply_position_exit_policy(
+        strategy,
+        weights,
+        prices,
+        rebalance_dates,
+        trading_start_date=trading_start_date,
+        high=high,
+        low=low,
+    )
 
 
 # def _infer_freq(index: pd.Index) -> Optional[str]:
@@ -219,8 +261,6 @@ def _build_weights(
         data=np.nan,
         dtype=float,
     )
-    last_fit_date: Optional[pd.Timestamp] = None
-
     for rebalance_date in rebalance_dates:
         if trading_start_date > rebalance_date:
             continue
@@ -245,6 +285,121 @@ def _build_weights(
         weights.loc[rebalance_date] = row
 
     return weights
+
+
+def _apply_position_exit_policy(
+    strategy: Any,
+    weights: pd.DataFrame,
+    prices: pd.DataFrame,
+    rebalance_dates: pd.Index,
+    *,
+    trading_start_date: str,
+    high: Optional[pd.DataFrame] = None,
+    low: Optional[pd.DataFrame] = None,
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    managed_weights = weights.copy()
+    order_prices = prices.copy()
+    events: List[Dict[str, Any]] = []
+    trading_index = prices.loc[trading_start_date:].index
+
+    for index, rebalance_date in enumerate(rebalance_dates):
+        if rebalance_date not in managed_weights.index:
+            continue
+
+        current_weights = managed_weights.loc[rebalance_date].fillna(0.0)
+        if current_weights.empty:
+            continue
+
+        next_rebalance = (
+            rebalance_dates[index + 1] if index + 1 < len(rebalance_dates) else None
+        )
+        period_index = trading_index[trading_index > rebalance_date]
+        if next_rebalance is not None:
+            period_index = period_index[period_index < next_rebalance]
+
+        for ticker, weight in current_weights.items():
+            if not np.isfinite(weight) or weight <= 1e-12:
+                continue
+            if ticker not in prices.columns:
+                continue
+
+            entry_price = _matrix_value(prices, rebalance_date, ticker)
+            if not _is_finite_positive(entry_price):
+                continue
+
+            for current_date in period_index:
+                current_price = _matrix_value(prices, current_date, ticker)
+                if not _is_finite_positive(current_price):
+                    continue
+
+                context = PositionContext(
+                    ticker=str(ticker),
+                    entry_time=pd.Timestamp(rebalance_date),
+                    current_time=pd.Timestamp(current_date),
+                    entry_price=float(entry_price),
+                    current_price=float(current_price),
+                    high_price=_matrix_value(high, current_date, ticker),
+                    low_price=_matrix_value(low, current_date, ticker),
+                    weight=float(weight),
+                )
+                decision = strategy.evaluate_position(context)
+                if decision is None:
+                    continue
+
+                managed_weights.loc[current_date, ticker] = 0.0
+                order_prices.loc[current_date, ticker] = decision.execution_price
+                events.append(
+                    {
+                        "time": current_date,
+                        "ticker": str(ticker),
+                        "reason": decision.reason,
+                        "entry_time": rebalance_date,
+                        "entry_price": float(entry_price),
+                        "execution_price": float(decision.execution_price),
+                        "threshold_price": float(decision.threshold_price),
+                        "return_pct": float(decision.return_pct),
+                        "weight": float(weight),
+                    }
+                )
+                break
+
+    if not events:
+        return managed_weights, order_prices, empty_execution_events()
+
+    return managed_weights, order_prices, pd.DataFrame(events)
+
+
+def empty_execution_events() -> pd.DataFrame:
+    return pd.DataFrame(
+        columns=[
+            "time",
+            "ticker",
+            "reason",
+            "entry_time",
+            "entry_price",
+            "execution_price",
+            "threshold_price",
+            "return_pct",
+            "weight",
+        ]
+    )
+
+
+def _matrix_value(
+    matrix: Optional[pd.DataFrame],
+    index: Any,
+    column: Any,
+) -> float | None:
+    if matrix is None or column not in matrix.columns or index not in matrix.index:
+        return None
+    value = matrix.loc[index, column]
+    if pd.isna(value):
+        return None
+    return float(value)
+
+
+def _is_finite_positive(value: float | None) -> bool:
+    return value is not None and np.isfinite(value) and value > 0
 
 
 def _limit_pipeline_price_context(strategy: Any, train_end: pd.Timestamp) -> None:

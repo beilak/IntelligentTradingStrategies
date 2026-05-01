@@ -18,6 +18,7 @@ from its.strategies.testing.cpcv import (
     safe_float,
     timestamp_to_string,
 )
+from its.strategies_model.core.trading_strategy import TradingStrategy
 
 CACHE_DIR = Path(
     os.getenv("STRATEGY_BACKTEST_CACHE_DIR", "/app/its/data/strategy_tests/backtest")
@@ -59,7 +60,88 @@ def generate_backtest_report(
         freq=settings.get("freq", "1D"),
         init_cash=settings.get("init_cash", 1_000_000.0),
     )
-    backtest_result = results[strategy.name]
+    return build_backtest_payload(
+        model_name=model_name,
+        strategy_name=strategy.name,
+        strategy_description=strategy.description,
+        stocks=stocks,
+        close=close,
+        settings=settings,
+        backtest_result=results[strategy.name],
+    )
+
+
+def generate_trading_strategy_backtest_report(
+    strategy_name: str,
+    stocks: list[dict[str, Any]],
+    prices: pd.DataFrame,
+    settings: dict[str, Any],
+) -> dict[str, Any]:
+    strategy_cls = load_registered_trading_strategy(strategy_name)
+    if prices.empty:
+        raise HTTPException(status_code=404, detail="No prices found for Backtesting.")
+
+    close = build_close_prices(prices)
+    high = build_price_matrix(prices, "high", close)
+    low = build_price_matrix(prices, "low", close)
+    trading_strategy: TradingStrategy = strategy_cls(prices, pd.DataFrame(stocks)).build()
+    trading_start_date = pd.Timestamp(
+        settings.get("trading_start_date") or settings.get("start_date")
+    )
+    if trading_start_date < close.index.min():
+        trading_start_date = close.index.min()
+        settings["trading_start_date"] = timestamp_to_string(trading_start_date)
+    if trading_start_date > close.index.max():
+        raise HTTPException(
+            status_code=422,
+            detail="trading_start_date must be inside the loaded price period.",
+        )
+
+    results = backtest_strategies_vectorbt(
+        strategies={trading_strategy.name: trading_strategy},
+        prices=close,
+        high=high,
+        low=low,
+        rebalance_freq=settings.get("rebalance_freq", "3ME"),
+        rebalance_on=settings.get("rebalance_on", "last"),
+        trading_start_date=trading_start_date,
+        fees=settings.get("fees", 0.0008),
+        slippage=settings.get("slippage", 0.0),
+        freq=settings.get("freq", "1D"),
+        init_cash=settings.get("init_cash", 1_000_000.0),
+    )
+    return build_backtest_payload(
+        model_name=strategy_name,
+        strategy_name=trading_strategy.name,
+        strategy_description=trading_strategy.description,
+        stocks=stocks,
+        close=close,
+        settings=settings,
+        backtest_result=results[trading_strategy.name],
+        extra_metadata={
+            "entity_type": "trading_strategy",
+            "core_strategy_name": trading_strategy.core.name,
+            "core_strategy_description": trading_strategy.core.description,
+            "exit_policy": {
+                "name": trading_strategy.exit_policy.name,
+                "description": trading_strategy.exit_policy.description,
+            },
+            "strategy_metadata": dict(trading_strategy.metadata),
+        },
+    )
+
+
+def build_backtest_payload(
+    *,
+    model_name: str,
+    strategy_name: str,
+    strategy_description: str,
+    stocks: list[dict[str, Any]],
+    close: pd.DataFrame,
+    settings: dict[str, Any],
+    backtest_result: Any,
+    extra_metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     portfolio = backtest_result.portfolio
     value = portfolio.value()
     returns = portfolio.returns()
@@ -68,12 +150,13 @@ def generate_backtest_report(
     rolling_sharpe = build_rolling_sharpe(returns, rolling_window)
     total_return = safe_float(portfolio.total_return())
     tax_rate = float(settings.get("tax_rate", 0.13))
+    execution_events = execution_events_to_records(backtest_result.execution_events)
 
-    return {
+    result = {
         "metadata": {
             "model_name": model_name,
-            "strategy_name": strategy.name,
-            "strategy_description": strategy.description,
+            "strategy_name": strategy_name,
+            "strategy_description": strategy_description,
             "test_name": settings.get("test_name", ""),
             "test_type": "Backtesting",
             "generated_at": datetime.now(UTC).isoformat(),
@@ -93,11 +176,13 @@ def generate_backtest_report(
                     "figi": item.get("figi"),
                     "ticker": item.get("ticker"),
                     "name": item.get("name"),
+                    "sector": item.get("sector"),
                 }
                 for item in stocks
                 if item.get("ticker") in set(close.columns)
             ],
             "asset_count": len(close.columns),
+            **(extra_metadata or {}),
         },
         "report": backtest_stats_to_rows(portfolio.stats()),
         "summary": [
@@ -117,12 +202,19 @@ def generate_backtest_report(
                 "value": str(portfolio.drawdowns.duration.max()),
                 "numeric_value": safe_float(portfolio.drawdowns.duration.max()),
             },
+            {
+                "metric": "Stop/Take Exits",
+                "value": str(len(execution_events)),
+                "numeric_value": float(len(execution_events)),
+            },
         ],
         "equity_curve": series_to_curve("Equity Curve", value),
         "drawdown_curve": series_to_curve("Drawdown", drawdown),
         "rolling_sharpe": series_to_curve("Rolling Sharpe", rolling_sharpe),
-        "rebalance_weights": weights_to_records(backtest_result.weights),
+        "rebalance_weights": weights_to_records(backtest_result.weights, stocks),
+        "execution_events": execution_events,
     }
+    return enrich_backtest_payload_with_stocks(result, stocks)
 
 
 def build_close_prices(prices: pd.DataFrame) -> pd.DataFrame:
@@ -150,6 +242,32 @@ def build_close_prices(prices: pd.DataFrame) -> pd.DataFrame:
     return close
 
 
+def build_price_matrix(
+    prices: pd.DataFrame,
+    price_column: str,
+    base: pd.DataFrame,
+) -> pd.DataFrame:
+    if price_column not in prices.columns:
+        return base.copy()
+
+    prices = prices.copy()
+    prices["time"] = pd.to_datetime(prices["time"], errors="coerce")
+    prices[price_column] = pd.to_numeric(prices[price_column], errors="coerce")
+    prices = prices.dropna(subset=["time", "ticker", price_column])
+    matrix = (
+        prices.pivot_table(
+            index="time",
+            columns="ticker",
+            values=price_column,
+            aggfunc="last",
+        )
+        .sort_index()
+        .replace(0, pd.NA)
+    )
+    matrix = matrix.reindex(index=base.index, columns=base.columns)
+    return matrix.where(matrix.notna(), base)
+
+
 def build_rolling_sharpe(returns: pd.Series, window: int) -> pd.Series:
     if window <= 1:
         window = 2
@@ -171,20 +289,83 @@ def series_to_curve(name: str, series: pd.Series) -> dict[str, Any]:
     }
 
 
-def weights_to_records(weights: pd.DataFrame) -> list[dict[str, Any]]:
+def weights_to_records(
+    weights: pd.DataFrame,
+    stocks: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    stock_by_ticker = {
+        str(item.get("ticker")): item
+        for item in stocks or []
+        if item.get("ticker")
+    }
     records = []
     clean = weights.dropna(how="all").fillna(0)
     for index, row in clean.iterrows():
         non_zero = row[row.abs() > 1e-12].sort_values(ascending=False)
+        if non_zero.empty:
+            continue
         records.append(
             {
                 "time": timestamp_to_string(index),
                 "total_weight": float(non_zero.sum()),
                 "asset_count": int(len(non_zero)),
                 "weights": [
-                    {"ticker": ticker, "weight": float(weight)}
+                    {
+                        "ticker": ticker,
+                        "weight": float(weight),
+                        "sector": stock_by_ticker.get(str(ticker), {}).get("sector"),
+                    }
                     for ticker, weight in non_zero.items()
                 ],
+            }
+        )
+    return records
+
+
+def enrich_backtest_payload_with_stocks(
+    payload: dict[str, Any],
+    stocks: list[dict[str, Any]],
+) -> dict[str, Any]:
+    stock_by_ticker = {
+        str(item.get("ticker")): item
+        for item in stocks
+        if item.get("ticker")
+    }
+    metadata = payload.get("metadata", {})
+
+    for asset in metadata.get("assets", []):
+        ticker = str(asset.get("ticker") or "")
+        stock = stock_by_ticker.get(ticker)
+        if stock and not asset.get("sector"):
+            asset["sector"] = stock.get("sector")
+
+    for record in payload.get("rebalance_weights", []):
+        for weight in record.get("weights", []):
+            ticker = str(weight.get("ticker") or "")
+            stock = stock_by_ticker.get(ticker)
+            if stock and not weight.get("sector"):
+                weight["sector"] = stock.get("sector")
+
+    return payload
+
+
+def execution_events_to_records(events: pd.DataFrame) -> list[dict[str, Any]]:
+    if events is None or events.empty:
+        return []
+
+    records = []
+    for _, row in events.sort_values(["time", "ticker"]).iterrows():
+        records.append(
+            {
+                "time": timestamp_to_string(row["time"]),
+                "ticker": str(row["ticker"]),
+                "reason": str(row["reason"]),
+                "entry_time": timestamp_to_string(row["entry_time"]),
+                "entry_price": safe_float(row["entry_price"]),
+                "execution_price": safe_float(row["execution_price"]),
+                "threshold_price": safe_float(row["threshold_price"]),
+                "return_pct": safe_float(row["return_pct"]),
+                "weight": safe_float(row["weight"]),
             }
         )
     return records
@@ -267,3 +448,21 @@ def cache_path(model_name: str, test_name: str) -> Path:
 def safe_name(value: str) -> str:
     normalized = re.sub(r"[^A-Za-z0-9_.-]+", "_", value.strip())
     return normalized.strip("._") or "unnamed"
+
+
+def load_registered_trading_strategy(strategy_name: str) -> type[Any]:
+    import importlib
+    import sys
+
+    module_name = "its.strategies_model.model"
+    for name in sorted(sys.modules, reverse=True):
+        if name == module_name or name.startswith(f"{module_name}."):
+            del sys.modules[name]
+    module = importlib.import_module(module_name)
+    registered_names = set(getattr(module, "__all__", []))
+    if strategy_name not in registered_names:
+        raise HTTPException(status_code=404, detail="Trading strategy is not registered.")
+    strategy_cls = getattr(module, strategy_name, None)
+    if strategy_cls is None:
+        raise HTTPException(status_code=404, detail="Trading strategy is not available.")
+    return strategy_cls

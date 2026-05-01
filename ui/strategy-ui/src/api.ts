@@ -27,6 +27,10 @@ export async function getModelDetail(modelName: string): Promise<ModelDetail> {
   return request<ModelDetail>(`/models/${encodeURIComponent(modelName)}`);
 }
 
+export async function getTradingStrategyDetail(strategyName: string): Promise<ModelDetail> {
+  return request<ModelDetail>(`/trading-strategies/${encodeURIComponent(strategyName)}`);
+}
+
 export async function listCpcvTests(modelName: string): Promise<{ items: CpcvSavedTest[] }> {
   return request<{ items: CpcvSavedTest[] }>(`/models/${encodeURIComponent(modelName)}/cpcv/tests`);
 }
@@ -83,6 +87,33 @@ export async function runBacktestTest(
   settings: BacktestSettings,
 ): Promise<BacktestResult> {
   return request<BacktestResult>(`/models/${encodeURIComponent(modelName)}/backtest/run`, {
+    method: "POST",
+    body: JSON.stringify(settings),
+  });
+}
+
+export async function listTradingStrategyBacktestTests(
+  strategyName: string,
+): Promise<{ items: BacktestSavedTest[] }> {
+  return request<{ items: BacktestSavedTest[] }>(
+    `/trading-strategies/${encodeURIComponent(strategyName)}/backtest/tests`,
+  );
+}
+
+export async function getTradingStrategyBacktestTest(
+  strategyName: string,
+  testName: string,
+): Promise<BacktestResult> {
+  return request<BacktestResult>(
+    `/trading-strategies/${encodeURIComponent(strategyName)}/backtest/tests/${encodeURIComponent(testName)}`,
+  );
+}
+
+export async function runTradingStrategyBacktestTest(
+  strategyName: string,
+  settings: BacktestSettings,
+): Promise<BacktestResult> {
+  return request<BacktestResult>(`/trading-strategies/${encodeURIComponent(strategyName)}/backtest/run`, {
     method: "POST",
     body: JSON.stringify(settings),
   });

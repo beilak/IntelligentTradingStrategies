@@ -39,6 +39,7 @@ export interface StrategyType {
 export interface RegistryResponse {
   groups: RegistryGroup[];
   models: RegistryItem[];
+  trading_strategies: RegistryItem[];
   strategy_type: StrategyType;
 }
 
@@ -105,6 +106,7 @@ export interface CpcvResult {
       figi: string;
       ticker: string;
       name: string;
+      sector?: string | null;
     }>;
     asset_count: number;
   };
@@ -167,6 +169,7 @@ export interface WalkForwardResult {
       figi: string;
       ticker: string;
       name: string;
+      sector?: string | null;
     }>;
     asset_count: number;
   };
@@ -257,10 +260,19 @@ export interface BacktestResult {
     settings: BacktestSettings;
     price_period: CpcvPeriod;
     trading_period: CpcvPeriod;
+    entity_type?: string;
+    core_strategy_name?: string;
+    core_strategy_description?: string;
+    exit_policy?: {
+      name: string;
+      description: string;
+    };
+    strategy_metadata?: Record<string, unknown>;
     assets: Array<{
       figi: string;
       ticker: string;
       name: string;
+      sector?: string | null;
     }>;
     asset_count: number;
   };
@@ -296,7 +308,19 @@ export interface BacktestResult {
     weights: Array<{
       ticker: string;
       weight: number;
+      sector?: string | null;
     }>;
+  }>;
+  execution_events: Array<{
+    time: string;
+    ticker: string;
+    reason: string;
+    entry_time: string;
+    entry_price: number | null;
+    execution_price: number | null;
+    threshold_price: number | null;
+    return_pct: number | null;
+    weight: number | null;
   }>;
 }
 

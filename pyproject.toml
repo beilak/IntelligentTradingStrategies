@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "intelligenttradingstrategies"
-version = "0.1.0"
+version = "1.0.0"
 description = "Intelligent Trading Strategies"
 authors = ["Beilak <beylak@yandex.ru>"]
 license = "MIT"

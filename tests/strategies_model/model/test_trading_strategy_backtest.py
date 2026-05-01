@@ -2,7 +2,9 @@ import pandas as pd
 import pytest
 
 from its.strategies.core.types.strategy_types import Strategy as CoreStrategy
-from its.strategies.testing.backtest.vectorbt_backtest import backtest_strategies_vectorbt
+from its.strategies.testing.backtest.vectorbt_backtest import (
+    backtest_strategies_vectorbt,
+)
 from its.strategies_model.core.trading_strategy import (
     FixedStopTakeProfitPolicy,
     PositionContext,

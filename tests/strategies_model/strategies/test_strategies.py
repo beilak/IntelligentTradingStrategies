@@ -1,4 +1,5 @@
 """Test main strat class"""
+
 from its.strategies_model.prediction.ma.ma import MA
 from its.strategies_model.strategies.strat import Strategies
 from tests.strategies_model.common.ohlc_provider import OhlcProviderForTest

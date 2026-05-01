@@ -12,25 +12,19 @@ class Generated2026043022110423ffc06dTop2Builder(StrategyBuilder):
     @override
     def build(self) -> Strategy:
         return Strategy(
-            name='[GA][sector_energy][pass_signal][equal_weighted]',
-            description='GA materialized strategy. Selector=sector_energy; Signal=pass_signal; Allocation=equal_weighted; TOTAL_SCORE=18.766235378769935.',
+            name="[GA][sector_energy][pass_signal][equal_weighted]",
+            description="GA materialized strategy. Selector=sector_energy; Signal=pass_signal; Allocation=equal_weighted; TOTAL_SCORE=18.766235378769935.",
             pipeline=Pipeline(
                 steps=[
                     (
-                        'pre_selection',
+                        "pre_selection",
                         SectorSelector(
                             assets_info=self._assets_info,
-                            sectors=['energy', 'telecom'],
-                        )
+                            sectors=["energy", "telecom"],
+                        ),
                     ),
-                    (
-                        'signal',
-                        KeepAllSignal()
-                    ),
-                    (
-                        'allocation',
-                        EqualWeighted()
-                    )
+                    ("signal", KeepAllSignal()),
+                    ("allocation", EqualWeighted()),
                 ]
             ),
         )

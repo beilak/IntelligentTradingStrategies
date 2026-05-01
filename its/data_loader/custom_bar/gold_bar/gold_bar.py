@@ -26,7 +26,9 @@ def build_custom_gold_bars(
     gold_bar_converter = BarConverter(bar_divider=bar_divider)
 
     converted: list[pd.DataFrame] = []
-    for figi, figi_prices in prices_df.sort_values("time").groupby("figi", dropna=False):
+    for figi, figi_prices in prices_df.sort_values("time").groupby(
+        "figi", dropna=False
+    ):
         converter_prices = prepare_converter_prices(figi_prices)
         if converter_prices.empty:
             continue

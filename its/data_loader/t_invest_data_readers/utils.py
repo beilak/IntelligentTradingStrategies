@@ -18,7 +18,7 @@ import types
 from decimal import Decimal
 from dataclasses import fields, is_dataclass
 import datetime
-from t_tech.invest.schemas import(
+from t_tech.invest.schemas import (
     IndicativesRequest,
     IndicativeResponse,
 )
@@ -41,40 +41,52 @@ async def get_max_requests_per_second(token: str) -> float:
 
 
 async def find_figi(
-        tiker: str,
-        token: str,
-        class_code: str | None = None, 
-        instrument_kind: InstrumentType | None = None,
-        exchange: str | None = None,
-    ) -> IndicativeResponse:
+    tiker: str,
+    token: str,
+    class_code: str | None = None,
+    instrument_kind: InstrumentType | None = None,
+    exchange: str | None = None,
+) -> IndicativeResponse:
     async with AsyncClient(token) as client:
-        for asset in (await client.instruments.get_assets(        
-            request=AssetsRequest(
-                instrument_type=InstrumentType.INSTRUMENT_TYPE_SHARE,
-                instrument_status=InstrumentStatus.INSTRUMENT_STATUS_BASE,
-        ))).assets:
+        for asset in (
+            await client.instruments.get_assets(
+                request=AssetsRequest(
+                    instrument_type=InstrumentType.INSTRUMENT_TYPE_SHARE,
+                    instrument_status=InstrumentStatus.INSTRUMENT_STATUS_BASE,
+                )
+            )
+        ).assets:
             for inst in asset.instruments:
                 if inst.ticker == tiker:
                     return inst
-                
+
+
 async def find_figis(
-        tikers: set[str],
-        token: str,
-        class_code: str = "TQBR", 
-        instrument_kind: InstrumentType = InstrumentType.INSTRUMENT_TYPE_SHARE,
-        # exchange: str | None = None,
-    ) -> dict[str, IndicativeResponse]:
+    tikers: set[str],
+    token: str,
+    class_code: str = "TQBR",
+    instrument_kind: InstrumentType = InstrumentType.INSTRUMENT_TYPE_SHARE,
+    # exchange: str | None = None,
+) -> dict[str, IndicativeResponse]:
     figis: dict[str, IndicativeResponse] = dict()
     async with AsyncClient(token) as client:
-        for asset in (await client.instruments.get_assets(        
-            request=AssetsRequest(
-                instrument_type=InstrumentType.INSTRUMENT_TYPE_SHARE,
-                instrument_status=InstrumentStatus.INSTRUMENT_STATUS_ALL,
-        ))).assets:
+        for asset in (
+            await client.instruments.get_assets(
+                request=AssetsRequest(
+                    instrument_type=InstrumentType.INSTRUMENT_TYPE_SHARE,
+                    instrument_status=InstrumentStatus.INSTRUMENT_STATUS_ALL,
+                )
+            )
+        ).assets:
             for inst in asset.instruments:
-                if inst.ticker in tikers and inst.class_code == class_code and inst.instrument_kind == instrument_kind:
+                if (
+                    inst.ticker in tikers
+                    and inst.class_code == class_code
+                    and inst.instrument_kind == instrument_kind
+                ):
                     figis[inst.ticker] = inst
     return figis
+
 
 def dataclasses_to_dict(obj: any, dict_factory=dict) -> any:
     if isinstance(obj, types.GeneratorType):
@@ -102,6 +114,7 @@ def dataclasses_to_dict(obj: any, dict_factory=dict) -> any:
 
     return obj
 
+
 def _dataclass_to_dict(dataclass, dict_factory=dict) -> dict:
     result = []
     for field in fields(dataclass):
@@ -112,6 +125,7 @@ def _dataclass_to_dict(dataclass, dict_factory=dict) -> dict:
         result.append((field.name, value))
 
     return dict_factory(result)
+
 
 def _datetime_to_timestamp(datetime_: datetime.datetime):
     if datetime_.hour == 0 and datetime_.minute == 0:
@@ -131,8 +145,6 @@ def _quotation_to_float(quotation: Quotation) -> float:
 
 def _float_to_quotation(float_: float):
     return utils.decimal_to_quotation(Decimal(float_))
-
-
 
 
 def _get_additively_adjusted_prices(
@@ -155,7 +167,6 @@ def _get_additively_adjusted_prices(
     )
 
     return prices.subtract(cumulative_dividends).dropna(how="all")
-
 
 
 def _get_multiplicatively_adjusted_prices(

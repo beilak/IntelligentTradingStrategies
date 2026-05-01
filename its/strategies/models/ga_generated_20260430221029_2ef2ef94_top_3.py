@@ -12,27 +12,21 @@ class Generated202604302210292ef2ef94Top3Builder(StrategyBuilder):
     @override
     def build(self) -> Strategy:
         return Strategy(
-            name='[GA][turnover_1m_10][pass_signal][equal_weighted]',
-            description='GA materialized strategy. Selector=turnover_1m_10; Signal=pass_signal; Allocation=equal_weighted; TOTAL_SCORE=13.099181021682575.',
+            name="[GA][turnover_1m_10][pass_signal][equal_weighted]",
+            description="GA materialized strategy. Selector=turnover_1m_10; Signal=pass_signal; Allocation=equal_weighted; TOTAL_SCORE=13.099181021682575.",
             pipeline=Pipeline(
                 steps=[
                     (
-                        'pre_selection',
+                        "pre_selection",
                         IntradayTurnoverSelector(
                             asset_universe_prices=self._asset_universe_prices,
                             lookback_bars=10,
                             min_turnover=1_000_000,
                             allow_empty_selection=False,
-                        )
+                        ),
                     ),
-                    (
-                        'signal',
-                        KeepAllSignal()
-                    ),
-                    (
-                        'allocation',
-                        EqualWeighted()
-                    )
+                    ("signal", KeepAllSignal()),
+                    ("allocation", EqualWeighted()),
                 ]
             ),
         )

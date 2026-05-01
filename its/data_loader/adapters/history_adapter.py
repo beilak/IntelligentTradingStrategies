@@ -1,4 +1,5 @@
 """Adapter connect to Broker and provide History of instruments"""
+
 import asyncio
 from datetime import datetime
 from functools import lru_cache

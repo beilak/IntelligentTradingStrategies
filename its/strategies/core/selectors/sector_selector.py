@@ -1,12 +1,10 @@
 import numpy as np
 import pandas as pd
-import sklearn.base as skb
-import sklearn.feature_selection as skf
 
-from its.strategies.core.types.dataframe_selector_mixin import DataFrameSelectorMixin
+from its.strategies.core.types.selectors_types import Selectros
 
 
-class SectorSelector(DataFrameSelectorMixin, skf.SelectorMixin, skb.BaseEstimator):
+class SectorSelector(Selectros):
     """
     Селектор бумаг по сектору.
 
@@ -42,7 +40,3 @@ class SectorSelector(DataFrameSelectorMixin, skf.SelectorMixin, skb.BaseEstimato
         self.to_keep_ = sectors_in_data.isin(self.sectors).fillna(False).values
 
         return self
-
-    def _get_support_mask(self):
-        skb.check_is_fitted(self)
-        return self.to_keep_

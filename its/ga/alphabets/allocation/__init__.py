@@ -1,2 +1,1 @@
 """Allocation chromosome alphabet."""
-

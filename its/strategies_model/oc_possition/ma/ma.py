@@ -1,4 +1,5 @@
 """Predict price with MA"""
+
 # import pandas as pd
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -113,8 +114,7 @@ class MaOpen(MA, OpenPositionProtocol):
         *,
         ticker: str,
         prediction: PredictResponse,
-    ) -> EntryPointResponse:
-        ...
+    ) -> EntryPointResponse: ...
 
 
 class MaClose(MA, ClosePositionProtocol):
@@ -123,5 +123,4 @@ class MaClose(MA, ClosePositionProtocol):
         *,
         ticker: str,
         prediction: PredictResponse,
-    ) -> ExitPointResponse:
-        ...
+    ) -> ExitPointResponse: ...

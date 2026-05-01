@@ -133,7 +133,9 @@ def create_app() -> FastAPI:
 
 def validate_request(request: GARunRequest) -> None:
     if request.start_date >= request.end_date:
-        raise HTTPException(status_code=422, detail="start_date must be before end_date.")
+        raise HTTPException(
+            status_code=422, detail="start_date must be before end_date."
+        )
     if request.cpcv_n_test_folds >= request.cpcv_n_folds:
         raise HTTPException(
             status_code=422,
@@ -201,7 +203,9 @@ def handle_data_response(response: httpx.Response) -> dict[str, Any]:
         detail = response.json().get("detail", response.text)
     except ValueError:
         detail = response.text
-    raise HTTPException(status_code=502, detail=f"Data backend request failed: {detail}")
+    raise HTTPException(
+        status_code=502, detail=f"Data backend request failed: {detail}"
+    )
 
 
 def append_event(run_id: str, event: dict[str, Any]) -> None:

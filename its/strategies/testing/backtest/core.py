@@ -84,7 +84,9 @@ def generate_trading_strategy_backtest_report(
     close = build_close_prices(prices)
     high = build_price_matrix(prices, "high", close)
     low = build_price_matrix(prices, "low", close)
-    trading_strategy: TradingStrategy = strategy_cls(prices, pd.DataFrame(stocks)).build()
+    trading_strategy: TradingStrategy = strategy_cls(
+        prices, pd.DataFrame(stocks)
+    ).build()
     trading_start_date = pd.Timestamp(
         settings.get("trading_start_date") or settings.get("start_date")
     )
@@ -186,11 +188,19 @@ def build_backtest_payload(
         },
         "report": backtest_stats_to_rows(portfolio.stats()),
         "summary": [
-            {"metric": "Total Return", "value": format_percent(total_return), "numeric_value": total_return},
+            {
+                "metric": "Total Return",
+                "value": format_percent(total_return),
+                "numeric_value": total_return,
+            },
             {
                 "metric": "After Tax Return",
-                "value": format_percent(total_return * (1 - tax_rate) if total_return is not None else None),
-                "numeric_value": total_return * (1 - tax_rate) if total_return is not None else None,
+                "value": format_percent(
+                    total_return * (1 - tax_rate) if total_return is not None else None
+                ),
+                "numeric_value": total_return * (1 - tax_rate)
+                if total_return is not None
+                else None,
             },
             {
                 "metric": "Max Drawdown",
@@ -230,7 +240,9 @@ def build_close_prices(prices: pd.DataFrame) -> pd.DataFrame:
     prices["close"] = pd.to_numeric(prices["close"], errors="coerce")
     prices = prices.dropna(subset=["time", "ticker", "close"])
     close = (
-        prices.pivot_table(index="time", columns="ticker", values="close", aggfunc="last")
+        prices.pivot_table(
+            index="time", columns="ticker", values="close", aggfunc="last"
+        )
         .sort_index()
         .replace(0, pd.NA)
         .ffill()
@@ -294,9 +306,7 @@ def weights_to_records(
     stocks: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     stock_by_ticker = {
-        str(item.get("ticker")): item
-        for item in stocks or []
-        if item.get("ticker")
+        str(item.get("ticker")): item for item in stocks or [] if item.get("ticker")
     }
     records = []
     clean = weights.dropna(how="all").fillna(0)
@@ -327,9 +337,7 @@ def enrich_backtest_payload_with_stocks(
     stocks: list[dict[str, Any]],
 ) -> dict[str, Any]:
     stock_by_ticker = {
-        str(item.get("ticker")): item
-        for item in stocks
-        if item.get("ticker")
+        str(item.get("ticker")): item for item in stocks if item.get("ticker")
     }
     metadata = payload.get("metadata", {})
 
@@ -393,7 +401,10 @@ def format_stat_value(metric: str, value: Any) -> str:
     if "[%]" in metric:
         return f"{numeric:.2f}%"
     lower_metric = metric.lower()
-    if any(word in lower_metric for word in ("value", "cash", "fees", "paid", "profit", "loss")):
+    if any(
+        word in lower_metric
+        for word in ("value", "cash", "fees", "paid", "profit", "loss")
+    ):
         return f"{numeric:,.2f}".replace(",", " ")
     if any(word in lower_metric for word in ("return", "rate", "drawdown")):
         return f"{numeric:.2%}"
@@ -461,8 +472,12 @@ def load_registered_trading_strategy(strategy_name: str) -> type[Any]:
     module = importlib.import_module(module_name)
     registered_names = set(getattr(module, "__all__", []))
     if strategy_name not in registered_names:
-        raise HTTPException(status_code=404, detail="Trading strategy is not registered.")
+        raise HTTPException(
+            status_code=404, detail="Trading strategy is not registered."
+        )
     strategy_cls = getattr(module, strategy_name, None)
     if strategy_cls is None:
-        raise HTTPException(status_code=404, detail="Trading strategy is not available.")
+        raise HTTPException(
+            status_code=404, detail="Trading strategy is not available."
+        )
     return strategy_cls

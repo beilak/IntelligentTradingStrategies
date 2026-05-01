@@ -12,29 +12,26 @@ class Generated20260429213858C37a6b6dTop3Builder(StrategyBuilder):
     @override
     def build(self) -> Strategy:
         return Strategy(
-            name='[GA][turnover_1m_10][pass_signal][inverse_volatility]',
-            description='GA materialized strategy. Selector=turnover_1m_10; Signal=pass_signal; Allocation=inverse_volatility; TOTAL_SCORE=0.0.',
+            name="[GA][turnover_1m_10][pass_signal][inverse_volatility]",
+            description="GA materialized strategy. Selector=turnover_1m_10; Signal=pass_signal; Allocation=inverse_volatility; TOTAL_SCORE=0.0.",
             pipeline=Pipeline(
                 steps=[
                     (
-                        'pre_selection',
+                        "pre_selection",
                         IntradayTurnoverSelector(
                             asset_universe_prices=self._asset_universe_prices,
                             lookback_bars=10,
                             min_turnover=1_000_000,
                             allow_empty_selection=False,
-                        )
+                        ),
                     ),
+                    ("signal", KeepAllSignal()),
                     (
-                        'signal',
-                        KeepAllSignal()
-                    ),
-                    (
-                        'allocation',
+                        "allocation",
                         InverseVolatility(
                             raise_on_failure=False,
-                        )
-                    )
+                        ),
+                    ),
                 ]
             ),
         )

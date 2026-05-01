@@ -271,10 +271,14 @@ def _build_weights(
 
         train_end = train_prices.index[-1]
         _limit_pipeline_price_context(strategy, train_end)
-        prices_close_returns_for_fit = train_prices.pct_change(fill_method=None).fillna(0)
+        prices_close_returns_for_fit = train_prices.pct_change(fill_method=None).fillna(
+            0
+        )
         strategy.pipeline.fit(prices_close_returns_for_fit)
 
-        prices_close_returns_for_test = train_prices.pct_change(fill_method=None).fillna(0)
+        prices_close_returns_for_test = train_prices.pct_change(
+            fill_method=None
+        ).fillna(0)
         ptf_stat = strategy.pipeline.predict(prices_close_returns_for_test)
         weights_dict = getattr(ptf_stat, "weights_dict", None)
 
@@ -410,4 +414,6 @@ def _limit_pipeline_price_context(strategy: Any, train_end: pd.Timestamp) -> Non
         if isinstance(prices, pd.DataFrame) and "time" in prices.columns:
             limited = prices.copy()
             limited["time"] = pd.to_datetime(limited["time"], errors="coerce")
-            step.asset_universe_prices = limited.loc[limited["time"] <= train_end].copy()
+            step.asset_universe_prices = limited.loc[
+                limited["time"] <= train_end
+            ].copy()

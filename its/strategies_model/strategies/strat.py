@@ -1,4 +1,5 @@
 """Main Strategies class."""
+
 from stsp import PredictionProtocol
 
 

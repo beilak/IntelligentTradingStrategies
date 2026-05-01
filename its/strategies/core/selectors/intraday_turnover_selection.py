@@ -4,17 +4,14 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-import sklearn.base as skb
-import sklearn.feature_selection as skf
 import sklearn.utils.validation as skv
-from skfolio.typing import ArrayLike, BoolArray
+from skfolio.typing import ArrayLike
 
 from its.strategies.core.types.dataframe_selector_mixin import DataFrameSelectorMixin
+from its.strategies.core.types.selectors_types import Selectros
 
 
-class IntradayTurnoverSelector(
-    DataFrameSelectorMixin, skf.SelectorMixin, skb.BaseEstimator
-):
+class IntradayTurnoverSelector(Selectros):
     """Select assets by recent intraday ruble turnover.
 
     The selector is fitted on a wide returns/prices matrix where columns are asset
@@ -24,7 +21,7 @@ class IntradayTurnoverSelector(
 
     turnover_summary_: pd.DataFrame
     selected_assets_: np.ndarray
-    to_keep_: BoolArray
+    # to_keep_: BoolArray
 
     def __init__(
         self,
@@ -86,25 +83,6 @@ class IntradayTurnoverSelector(
             )
 
         return self
-
-    # def transform(self, X: ArrayLike) -> ArrayLike:
-    #     """Reduce X to selected assets while preserving DataFrame column names."""
-    #     skv.check_is_fitted(self)
-    #     if hasattr(X, "iloc"):
-    #         skv.validate_data(self, X, ensure_all_finite="allow-nan", reset=False)
-    #         return X.iloc[:, self.to_keep_]
-
-    #     X = skv.validate_data(self, X, ensure_all_finite="allow-nan", reset=False)
-    #     return X[:, self.to_keep_]
-
-    def _get_support_mask(self) -> BoolArray:
-        skv.check_is_fitted(self)
-        return self.to_keep_
-
-    def __sklearn_tags__(self):
-        tags = super().__sklearn_tags__()
-        tags.input_tags.allow_nan = True
-        return tags
 
     def _build_turnover_summary(self, prices: pd.DataFrame) -> pd.DataFrame:
         required_columns = {
@@ -188,6 +166,3 @@ class IntradayTurnoverSelector(
         if hasattr(self, "feature_names_in_"):
             return self.feature_names_in_
         return np.arange(X.shape[1]).astype(str)
-
-
-__all__ = ["IntradayTurnoverSelector"]

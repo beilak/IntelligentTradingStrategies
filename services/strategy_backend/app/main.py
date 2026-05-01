@@ -133,13 +133,17 @@ def create_app() -> FastAPI:
 
     @app.get(f"{API_PREFIX}/trading-strategies/{{strategy_name}}")
     async def trading_strategy_detail(strategy_name: str) -> dict[str, Any]:
-        strategy_group = load_registry_group(get_registry_info("trading_strategy_model"))
+        strategy_group = load_registry_group(
+            get_registry_info("trading_strategy_model")
+        )
         strategy_item = next(
             (item for item in strategy_group["items"] if item["name"] == strategy_name),
             None,
         )
         if strategy_item is None:
-            raise HTTPException(status_code=404, detail="Trading strategy is not registered.")
+            raise HTTPException(
+                status_code=404, detail="Trading strategy is not registered."
+            )
 
         component_groups = [
             load_registry_group(get_registry_info("strategy_model")),
@@ -264,7 +268,9 @@ def get_parameters(obj: Any) -> list[dict[str, str]]:
         result.append(
             {
                 "name": parameter.name,
-                "default": "" if parameter.default is inspect._empty else repr(parameter.default),
+                "default": ""
+                if parameter.default is inspect._empty
+                else repr(parameter.default),
                 "annotation": annotation_to_string(parameter.annotation),
                 "kind": str(parameter.kind),
             }
@@ -397,7 +403,9 @@ def inspect_pipeline_steps(
     for node in ast.walk(tree):
         if not isinstance(node, ast.Tuple) or len(node.elts) != 2:
             continue
-        if not isinstance(node.elts[0], ast.Constant) or not isinstance(node.elts[0].value, str):
+        if not isinstance(node.elts[0], ast.Constant) or not isinstance(
+            node.elts[0].value, str
+        ):
             continue
         component_name = call_name(node.elts[1])
         if not component_name:
@@ -432,7 +440,9 @@ def describe_strategy_type() -> dict[str, Any]:
             {
                 "name": field.name,
                 "type": annotation_to_string(field.type),
-                "default": "" if field.default is dataclasses.MISSING else repr(field.default),
+                "default": ""
+                if field.default is dataclasses.MISSING
+                else repr(field.default),
             }
             for field in dataclasses.fields(Strategy)
         ]

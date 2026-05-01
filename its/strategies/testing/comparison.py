@@ -147,7 +147,8 @@ def latest_payload(
     return max(
         candidates,
         key=lambda item: (
-            item["generated_at"] or datetime.fromtimestamp(item["path"].stat().st_mtime, UTC)
+            item["generated_at"]
+            or datetime.fromtimestamp(item["path"].stat().st_mtime, UTC)
         ),
     )
 
@@ -252,9 +253,9 @@ def score_rows(
     frame["Rank_Stability"] = frame["Sharpe_Stability"].rank(ascending=True)
 
     backtest_wins, backtest_winners = compare_backtests(backtest_payloads)
-    frame["Backtest_Metric_Wins"] = pd.Series(backtest_wins, dtype="float64").reindex(
-        frame.index
-    ).fillna(0)
+    frame["Backtest_Metric_Wins"] = (
+        pd.Series(backtest_wins, dtype="float64").reindex(frame.index).fillna(0)
+    )
     frame["TOTAL_SCORE"] = (
         (n - frame["Rank_Efficiency"] + 1)
         + (n - frame["Rank_WF_Return"] + 1)
@@ -288,7 +289,9 @@ def compare_backtests(
     wins = {model_name: 0 for model_name in payloads}
     winners = []
     metrics_by_model = {
-        model_name: rows_to_metrics(payload.get("summary", []), payload.get("report", []))
+        model_name: rows_to_metrics(
+            payload.get("summary", []), payload.get("report", [])
+        )
         for model_name, payload in payloads.items()
     }
 

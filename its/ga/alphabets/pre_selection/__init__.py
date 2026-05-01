@@ -1,2 +1,1 @@
 """Pre-selection chromosome alphabet."""
-

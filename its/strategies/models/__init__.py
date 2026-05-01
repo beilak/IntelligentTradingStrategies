@@ -6,52 +6,94 @@ from its.strategies.models.top_turnover_inverse_volatility import (
     ModelTurnoverWithInverseVolatilityBuilder,
     ModelHighTurnoverWithInverseVolatilityBuilder,
 )
-from its.strategies.models.ga_generated_20260429213858_c37a6b6d_top_1 import Generated20260429213858C37a6b6dTop1Builder
-from its.strategies.models.ga_generated_20260429213858_c37a6b6d_top_2 import Generated20260429213858C37a6b6dTop2Builder
-from its.strategies.models.ga_generated_20260429213858_c37a6b6d_top_3 import Generated20260429213858C37a6b6dTop3Builder
-from its.strategies.models.ga_generated_20260429230120_9b7c1038_top_1 import Generated202604292301209b7c1038Top1Builder
-from its.strategies.models.ga_generated_20260429230120_9b7c1038_top_2 import Generated202604292301209b7c1038Top2Builder
-from its.strategies.models.ga_generated_20260429230120_9b7c1038_top_3 import Generated202604292301209b7c1038Top3Builder
-from its.strategies.models.ga_generated_20260429230432_6435459c_top_1 import Generated202604292304326435459cTop1Builder
-from its.strategies.models.ga_generated_20260429230432_6435459c_top_2 import Generated202604292304326435459cTop2Builder
-from its.strategies.models.ga_generated_20260429230432_6435459c_top_3 import Generated202604292304326435459cTop3Builder
-from its.strategies.models.ga_generated_20260430213958_11cc1c77_top_1 import Generated2026043021395811cc1c77Top1Builder
-from its.strategies.models.ga_generated_20260430213958_11cc1c77_top_2 import Generated2026043021395811cc1c77Top2Builder
-from its.strategies.models.ga_generated_20260430213958_11cc1c77_top_3 import Generated2026043021395811cc1c77Top3Builder
-from its.strategies.models.ga_generated_20260430221029_2ef2ef94_top_1 import Generated202604302210292ef2ef94Top1Builder
-from its.strategies.models.ga_generated_20260430221029_2ef2ef94_top_2 import Generated202604302210292ef2ef94Top2Builder
-from its.strategies.models.ga_generated_20260430221029_2ef2ef94_top_3 import Generated202604302210292ef2ef94Top3Builder
-from its.strategies.models.ga_generated_20260430221104_23ffc06d_top_1 import Generated2026043022110423ffc06dTop1Builder
-from its.strategies.models.ga_generated_20260430221104_23ffc06d_top_2 import Generated2026043022110423ffc06dTop2Builder
-from its.strategies.models.ga_generated_20260430221104_23ffc06d_top_3 import Generated2026043022110423ffc06dTop3Builder
-from its.strategies.models.ga_generated_20260430221430_efbfe0d1_top_1 import Generated20260430221430Efbfe0d1Top1Builder
-from its.strategies.models.ga_generated_20260430221430_efbfe0d1_top_2 import Generated20260430221430Efbfe0d1Top2Builder
-from its.strategies.models.ga_generated_20260430221430_efbfe0d1_top_3 import Generated20260430221430Efbfe0d1Top3Builder
+from its.strategies.models.ga_generated_20260429213858_c37a6b6d_top_1 import (
+    Generated20260429213858C37a6b6dTop1Builder,
+)
+from its.strategies.models.ga_generated_20260429213858_c37a6b6d_top_2 import (
+    Generated20260429213858C37a6b6dTop2Builder,
+)
+from its.strategies.models.ga_generated_20260429213858_c37a6b6d_top_3 import (
+    Generated20260429213858C37a6b6dTop3Builder,
+)
+from its.strategies.models.ga_generated_20260429230120_9b7c1038_top_1 import (
+    Generated202604292301209b7c1038Top1Builder,
+)
+from its.strategies.models.ga_generated_20260429230120_9b7c1038_top_2 import (
+    Generated202604292301209b7c1038Top2Builder,
+)
+from its.strategies.models.ga_generated_20260429230120_9b7c1038_top_3 import (
+    Generated202604292301209b7c1038Top3Builder,
+)
+from its.strategies.models.ga_generated_20260429230432_6435459c_top_1 import (
+    Generated202604292304326435459cTop1Builder,
+)
+from its.strategies.models.ga_generated_20260429230432_6435459c_top_2 import (
+    Generated202604292304326435459cTop2Builder,
+)
+from its.strategies.models.ga_generated_20260429230432_6435459c_top_3 import (
+    Generated202604292304326435459cTop3Builder,
+)
+from its.strategies.models.ga_generated_20260430213958_11cc1c77_top_1 import (
+    Generated2026043021395811cc1c77Top1Builder,
+)
+from its.strategies.models.ga_generated_20260430213958_11cc1c77_top_2 import (
+    Generated2026043021395811cc1c77Top2Builder,
+)
+from its.strategies.models.ga_generated_20260430213958_11cc1c77_top_3 import (
+    Generated2026043021395811cc1c77Top3Builder,
+)
+from its.strategies.models.ga_generated_20260430221029_2ef2ef94_top_1 import (
+    Generated202604302210292ef2ef94Top1Builder,
+)
+from its.strategies.models.ga_generated_20260430221029_2ef2ef94_top_2 import (
+    Generated202604302210292ef2ef94Top2Builder,
+)
+from its.strategies.models.ga_generated_20260430221029_2ef2ef94_top_3 import (
+    Generated202604302210292ef2ef94Top3Builder,
+)
+from its.strategies.models.ga_generated_20260430221104_23ffc06d_top_1 import (
+    Generated2026043022110423ffc06dTop1Builder,
+)
+from its.strategies.models.ga_generated_20260430221104_23ffc06d_top_2 import (
+    Generated2026043022110423ffc06dTop2Builder,
+)
+from its.strategies.models.ga_generated_20260430221104_23ffc06d_top_3 import (
+    Generated2026043022110423ffc06dTop3Builder,
+)
+from its.strategies.models.ga_generated_20260430221430_efbfe0d1_top_1 import (
+    Generated20260430221430Efbfe0d1Top1Builder,
+)
+from its.strategies.models.ga_generated_20260430221430_efbfe0d1_top_2 import (
+    Generated20260430221430Efbfe0d1Top2Builder,
+)
+from its.strategies.models.ga_generated_20260430221430_efbfe0d1_top_3 import (
+    Generated20260430221430Efbfe0d1Top3Builder,
+)
 
 __all__ = [
-    'ModelTurnoverWithEQBuilder',
-    'ModelHighTurnoverWithEQBuilder',
-    'ModelTurnoverWithInverseVolatilityBuilder',
-    'ModelHighTurnoverWithInverseVolatilityBuilder',
-    'Generated20260429213858C37a6b6dTop1Builder',
-    'Generated20260429213858C37a6b6dTop2Builder',
-    'Generated20260429213858C37a6b6dTop3Builder',
-    'Generated202604292301209b7c1038Top1Builder',
-    'Generated202604292301209b7c1038Top2Builder',
-    'Generated202604292301209b7c1038Top3Builder',
-    'Generated202604292304326435459cTop1Builder',
-    'Generated202604292304326435459cTop2Builder',
-    'Generated202604292304326435459cTop3Builder',
-    'Generated2026043021395811cc1c77Top1Builder',
-    'Generated2026043021395811cc1c77Top2Builder',
-    'Generated2026043021395811cc1c77Top3Builder',
-    'Generated202604302210292ef2ef94Top1Builder',
-    'Generated202604302210292ef2ef94Top2Builder',
-    'Generated202604302210292ef2ef94Top3Builder',
-    'Generated2026043022110423ffc06dTop1Builder',
-    'Generated2026043022110423ffc06dTop2Builder',
-    'Generated2026043022110423ffc06dTop3Builder',
-    'Generated20260430221430Efbfe0d1Top1Builder',
-    'Generated20260430221430Efbfe0d1Top2Builder',
-    'Generated20260430221430Efbfe0d1Top3Builder',
+    "ModelTurnoverWithEQBuilder",
+    "ModelHighTurnoverWithEQBuilder",
+    "ModelTurnoverWithInverseVolatilityBuilder",
+    "ModelHighTurnoverWithInverseVolatilityBuilder",
+    "Generated20260429213858C37a6b6dTop1Builder",
+    "Generated20260429213858C37a6b6dTop2Builder",
+    "Generated20260429213858C37a6b6dTop3Builder",
+    "Generated202604292301209b7c1038Top1Builder",
+    "Generated202604292301209b7c1038Top2Builder",
+    "Generated202604292301209b7c1038Top3Builder",
+    "Generated202604292304326435459cTop1Builder",
+    "Generated202604292304326435459cTop2Builder",
+    "Generated202604292304326435459cTop3Builder",
+    "Generated2026043021395811cc1c77Top1Builder",
+    "Generated2026043021395811cc1c77Top2Builder",
+    "Generated2026043021395811cc1c77Top3Builder",
+    "Generated202604302210292ef2ef94Top1Builder",
+    "Generated202604302210292ef2ef94Top2Builder",
+    "Generated202604302210292ef2ef94Top3Builder",
+    "Generated2026043022110423ffc06dTop1Builder",
+    "Generated2026043022110423ffc06dTop2Builder",
+    "Generated2026043022110423ffc06dTop3Builder",
+    "Generated20260430221430Efbfe0d1Top1Builder",
+    "Generated20260430221430Efbfe0d1Top2Builder",
+    "Generated20260430221430Efbfe0d1Top3Builder",
 ]

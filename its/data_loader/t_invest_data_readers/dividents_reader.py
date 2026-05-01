@@ -70,7 +70,14 @@ def _read_cache_file(cache_path: Path) -> pd.DataFrame:
 
     cache = _ensure_cache_columns(cache)
 
-    for column in ["payment_date", "declared_date", "last_buy_date", "record_date", CACHE_START_COLUMN, CACHE_END_COLUMN]:
+    for column in [
+        "payment_date",
+        "declared_date",
+        "last_buy_date",
+        "record_date",
+        CACHE_START_COLUMN,
+        CACHE_END_COLUMN,
+    ]:
         if column in cache.columns:
             cache[column] = pd.to_datetime(cache[column], errors="coerce")
 
@@ -92,7 +99,14 @@ def _write_cache(cache_rows: pd.DataFrame, cache_path: Path) -> None:
     )
     combined_cache = _ensure_cache_columns(combined_cache)
 
-    for column in ["payment_date", "declared_date", "last_buy_date", "record_date", CACHE_START_COLUMN, CACHE_END_COLUMN]:
+    for column in [
+        "payment_date",
+        "declared_date",
+        "last_buy_date",
+        "record_date",
+        CACHE_START_COLUMN,
+        CACHE_END_COLUMN,
+    ]:
         if column in combined_cache.columns:
             combined_cache[column] = pd.to_datetime(
                 combined_cache[column], errors="coerce"
@@ -122,7 +136,9 @@ def _write_cache(cache_rows: pd.DataFrame, cache_path: Path) -> None:
             keep="last",
         )
 
-    cache_to_save = pd.concat([dividend_rows, marker_rows], ignore_index=True, sort=False)
+    cache_to_save = pd.concat(
+        [dividend_rows, marker_rows], ignore_index=True, sort=False
+    )
     cache_to_save = cache_to_save.sort_values(
         ["figi", "payment_date"],
         na_position="last",
@@ -205,7 +221,9 @@ def read_dividends_from_cache(
 
     if "payment_date" in cached_dividends.columns:
         cached_dividends = cached_dividends.loc[
-            cached_dividends["payment_date"].between(start_date, end_date, inclusive="both")
+            cached_dividends["payment_date"].between(
+                start_date, end_date, inclusive="both"
+            )
         ].copy()
 
     missing_ranges = _get_missing_ranges(
@@ -242,15 +260,12 @@ async def _get_dividend(
     client: AsyncClient,
 ):
     try:
-        divs: GetDividendsResponse = (await client.instruments.get_dividends(
+        divs: GetDividendsResponse = await client.instruments.get_dividends(
             figi=figi,
             from_=start_date,
             to=end_date,
-        ))
-        response = [
-            dividend
-            for dividend in divs.dividends
-        ]
+        )
+        response = [dividend for dividend in divs.dividends]
     except AioRequestError as error:
         logger.info(f"{error = }")
         if error.code == StatusCode.RESOURCE_EXHAUSTED:
@@ -271,9 +286,9 @@ async def _get_dividend(
 
     if "payment_date" in dividends.columns:
         dividends = dividends.loc[
-            (dividends["payment_date"].notna()) &
-            (dividends["payment_date"] > start_date) &
-            (dividends["payment_date"] < end_date + pd.Timedelta(days=1))
+            (dividends["payment_date"].notna())
+            & (dividends["payment_date"] > start_date)
+            & (dividends["payment_date"] < end_date + pd.Timedelta(days=1))
         ].copy()
 
     return dividends
@@ -322,9 +337,7 @@ async def _download_dividends(
     for (figi, current_from, current_to), dividends in zip(job_specs, raw_dividends):
         if not dividends.empty:
             downloaded_dividends.append(dividends)
-            cache_rows.append(
-                _build_cache_rows(dividends, current_from, current_to)
-            )
+            cache_rows.append(_build_cache_rows(dividends, current_from, current_to))
 
     if downloaded_dividends:
         all_dividends = pd.concat(downloaded_dividends, ignore_index=True)
@@ -379,14 +392,18 @@ async def get_dividends(
         cache_path,
     )
 
-    all_dividends = pd.concat([cached_dividends, downloaded_dividends], ignore_index=True)
+    all_dividends = pd.concat(
+        [cached_dividends, downloaded_dividends], ignore_index=True
+    )
 
     if not all_dividends.empty:
-        all_dividends = all_dividends.sort_values(
-            ["figi", "payment_date"]
-        ).drop_duplicates(
-            subset=["figi", "payment_date"],
-            keep="last",
-        ).reset_index(drop=True)
+        all_dividends = (
+            all_dividends.sort_values(["figi", "payment_date"])
+            .drop_duplicates(
+                subset=["figi", "payment_date"],
+                keep="last",
+            )
+            .reset_index(drop=True)
+        )
 
     return all_dividends

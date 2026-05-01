@@ -1,11 +1,8 @@
-import numpy as np
-import sklearn.base as skb
-import sklearn.feature_selection as skf
-
 from its.strategies.core.types.dataframe_selector_mixin import DataFrameSelectorMixin
+from its.strategies.core.types.selectors_types import Selectros
 
 
-class SafeEmptySelector(DataFrameSelectorMixin, skb.BaseEstimator, skf.SelectorMixin):
+class SafeEmptySelector(Selectros):
     """
     Обёртка для селекторов (например, TrendSelector), чтобы pipeline
     не ломался, если нет выбранных признаков.
@@ -42,6 +39,3 @@ class SafeEmptySelector(DataFrameSelectorMixin, skb.BaseEstimator, skf.SelectorM
         if X_t.shape[1] == 0:
             return self.zero_like_input(X)
         return X_t
-
-    def _get_support_mask(self):
-        return self.selector._get_support_mask()

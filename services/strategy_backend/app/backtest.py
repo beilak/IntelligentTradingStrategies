@@ -130,9 +130,7 @@ async def enrich_cached_backtest(payload: dict[str, Any]) -> dict[str, Any]:
         return payload
 
     class_code = (
-        payload.get("metadata", {})
-        .get("settings", {})
-        .get("class_code", "TQBR")
+        payload.get("metadata", {}).get("settings", {}).get("class_code", "TQBR")
     )
     stocks = await fetch_stocks_by_class_code(str(class_code))
     return enrich_backtest_payload_with_stocks(payload, stocks)

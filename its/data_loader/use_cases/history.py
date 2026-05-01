@@ -1,4 +1,5 @@
 """Use case OHLC history"""
+
 from datetime import datetime
 
 from ..use_cases import interfaces as protocols

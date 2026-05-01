@@ -8,9 +8,10 @@ import sklearn.feature_selection as skf
 import sklearn.utils.validation as skv
 
 from its.strategies.core.types.dataframe_selector_mixin import DataFrameSelectorMixin
+from its.strategies.core.types.signals_types import Siglans
 
 
-class SMACrossSignal(DataFrameSelectorMixin, skb.BaseEstimator, skf.SelectorMixin):
+class SMACrossSignal(Siglans):
     """Select assets where the short-term SMA crosses above the long-term SMA (golden cross)."""
 
     to_keep_: np.ndarray
@@ -46,12 +47,3 @@ class SMACrossSignal(DataFrameSelectorMixin, skb.BaseEstimator, skf.SelectorMixi
             if (short_prev <= long_prev) and (short_last > long_last):
                 self.to_keep_[j] = True
         return self
-
-    def _get_support_mask(self) -> np.ndarray:
-        skv.check_is_fitted(self)
-        return self.to_keep_
-
-    def __sklearn_tags__(self):
-        tags = super().__sklearn_tags__()
-        tags.input_tags.allow_nan = True
-        return tags

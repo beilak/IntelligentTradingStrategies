@@ -105,8 +105,16 @@ class FixedStopTakeProfitPolicy:
         if not is_finite_positive(current_price):
             return None
 
-        low_price = context.low_price if is_finite_positive(context.low_price) else current_price
-        high_price = context.high_price if is_finite_positive(context.high_price) else current_price
+        low_price = (
+            context.low_price
+            if is_finite_positive(context.low_price)
+            else current_price
+        )
+        high_price = (
+            context.high_price
+            if is_finite_positive(context.high_price)
+            else current_price
+        )
 
         stop_decision = self._stop_loss_decision(context, low_price)
         take_decision = self._take_profit_decision(context, high_price)
@@ -161,10 +169,14 @@ class TradingStrategy:
     name: str
     description: str
     core: CoreStrategy
-    exit_policy: PositionExitPolicy = dataclasses.field(default_factory=HoldToRebalancePolicy)
+    exit_policy: PositionExitPolicy = dataclasses.field(
+        default_factory=HoldToRebalancePolicy
+    )
     metadata: tp.Mapping[str, tp.Any] = dataclasses.field(default_factory=dict)
 
-    def evaluate_position(self, context: PositionContext) -> PositionExitDecision | None:
+    def evaluate_position(
+        self, context: PositionContext
+    ) -> PositionExitDecision | None:
         return self.exit_policy.evaluate(context)
 
 
@@ -177,7 +189,9 @@ class TradingStrategyProtocol(tp.Protocol):
     core: CoreStrategy
     exit_policy: PositionExitPolicy
 
-    def evaluate_position(self, context: PositionContext) -> PositionExitDecision | None: ...
+    def evaluate_position(
+        self, context: PositionContext
+    ) -> PositionExitDecision | None: ...
 
 
 class TradingStrategyBuilder(abc.ABC):

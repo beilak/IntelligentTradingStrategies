@@ -442,7 +442,13 @@ def create_app() -> FastAPI:
 
         current_end = pd.Timestamp(end_date or datetime.utcnow().date())
         current_start = pd.Timestamp(
-            start_date or (current_end - pd.Timedelta(days=365 * (datetime.utcnow().year - DEFAULT_DIVIDEND_START_YEAR))).date()
+            start_date
+            or (
+                current_end
+                - pd.Timedelta(
+                    days=365 * (datetime.utcnow().year - DEFAULT_DIVIDEND_START_YEAR)
+                )
+            ).date()
         )
         if current_start > current_end:
             raise HTTPException(
@@ -862,7 +868,9 @@ def build_dividends_summary(dividends_df: pd.DataFrame) -> list[dict[str, object
         return []
 
     summary: list[dict[str, object]] = []
-    for ticker, group in dividends_df.sort_values("payment_date").groupby("ticker", dropna=False):
+    for ticker, group in dividends_df.sort_values("payment_date").groupby(
+        "ticker", dropna=False
+    ):
         total_net = safe_float(group["dividend_net"].sum())
         count = int(len(group))
 

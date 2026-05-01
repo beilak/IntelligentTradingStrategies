@@ -11,5 +11,4 @@ class LastChangePredict:
         self._last_days = dto["last_days"]
         self._devider = dto["devider"]
 
-    async def predict(self, *, ticker) -> list[PredictResponse]:
-        ...
+    async def predict(self, *, ticker) -> list[PredictResponse]: ...

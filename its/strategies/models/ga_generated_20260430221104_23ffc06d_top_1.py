@@ -12,27 +12,24 @@ class Generated2026043022110423ffc06dTop1Builder(StrategyBuilder):
     @override
     def build(self) -> Strategy:
         return Strategy(
-            name='[GA][sector_energy][pass_signal][inverse_volatility]',
-            description='GA materialized strategy. Selector=sector_energy; Signal=pass_signal; Allocation=inverse_volatility; TOTAL_SCORE=19.695202387523338.',
+            name="[GA][sector_energy][pass_signal][inverse_volatility]",
+            description="GA materialized strategy. Selector=sector_energy; Signal=pass_signal; Allocation=inverse_volatility; TOTAL_SCORE=19.695202387523338.",
             pipeline=Pipeline(
                 steps=[
                     (
-                        'pre_selection',
+                        "pre_selection",
                         SectorSelector(
                             assets_info=self._assets_info,
-                            sectors=['energy', 'telecom'],
-                        )
+                            sectors=["energy", "telecom"],
+                        ),
                     ),
+                    ("signal", KeepAllSignal()),
                     (
-                        'signal',
-                        KeepAllSignal()
-                    ),
-                    (
-                        'allocation',
+                        "allocation",
                         InverseVolatility(
                             raise_on_failure=False,
-                        )
-                    )
+                        ),
+                    ),
                 ]
             ),
         )

@@ -170,7 +170,9 @@ def build_stitched_oos_curve(
     splits: list[dict[str, Any]],
 ) -> dict[str, Any]:
     returns_parts = []
-    for window_index, (portfolio, split) in enumerate(zip(population, splits, strict=False)):
+    for window_index, (portfolio, split) in enumerate(
+        zip(population, splits, strict=False)
+    ):
         returns = extract_portfolio_series(
             portfolio,
             "returns_df",
@@ -292,7 +294,9 @@ def population_to_dated_paths(
     splits: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     windows = []
-    for index, (portfolio, split) in enumerate(zip(population, splits, strict=False), start=1):
+    for index, (portfolio, split) in enumerate(
+        zip(population, splits, strict=False), start=1
+    ):
         returns = extract_portfolio_series(
             portfolio,
             "cumulative_returns_df",
@@ -353,9 +357,9 @@ def extract_portfolio_series(
 
     if len(series) != len(target_dates):
         if len(series) > len(target_dates):
-            series = series.iloc[-len(target_dates):]
+            series = series.iloc[-len(target_dates) :]
         else:
-            target_dates = target_dates[-len(series):]
+            target_dates = target_dates[-len(series) :]
 
     series = series.copy()
     series.index = pd.Index(target_dates)

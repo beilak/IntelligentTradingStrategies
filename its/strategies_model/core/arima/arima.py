@@ -1,4 +1,5 @@
 """Main ARIMA container"""
+
 from its.strategies_model.core.arima.arima_fitter import ArimaFitter
 
 

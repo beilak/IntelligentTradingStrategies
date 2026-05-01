@@ -9,4 +9,3 @@ __all__ = [
     "build_gold_bar_types",
     "parse_gold_bar_type",
 ]
-

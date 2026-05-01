@@ -8,7 +8,11 @@ import numpy as np
 import pandas as pd
 import pygad
 from fastapi import HTTPException
-from skfolio.model_selection import CombinatorialPurgedCV, WalkForward, cross_val_predict
+from skfolio.model_selection import (
+    CombinatorialPurgedCV,
+    WalkForward,
+    cross_val_predict,
+)
 
 from its.ga.materialization import materialize_top_strategies
 from its.ga.registry import ALPHABET_GROUPS, build_component, load_gene_group
@@ -32,8 +36,18 @@ METRIC_FALLBACKS = {
 DEFAULT_SCORE_CONFIG = {
     "WF_Return": {"weight": 0.30, "direction": "higher", "bad": -0.10, "good": 0.25},
     "WF_Calmar": {"weight": 0.30, "direction": "higher", "bad": 0.00, "good": 1.50},
-    "Robustness_Delta": {"weight": 0.20, "direction": "lower", "good": 0.00, "bad": 0.15},
-    "Sharpe_Stability": {"weight": 0.20, "direction": "lower", "good": 0.00, "bad": 0.20},
+    "Robustness_Delta": {
+        "weight": 0.20,
+        "direction": "lower",
+        "good": 0.00,
+        "bad": 0.15,
+    },
+    "Sharpe_Stability": {
+        "weight": 0.20,
+        "direction": "lower",
+        "good": 0.00,
+        "bad": 0.20,
+    },
 }
 
 DEFAULT_PENALTY_CONFIG = {
@@ -93,7 +107,9 @@ class GASearchRunner:
                 list(range(len(self.allocation_keys))),
             ],
             gene_type=int,
-            parent_selection_type=self.settings.get("parent_selection_type", "tournament"),
+            parent_selection_type=self.settings.get(
+                "parent_selection_type", "tournament"
+            ),
             K_tournament=int(self.settings.get("k_tournament", 3)),
             keep_parents=int(self.settings.get("keep_parents", 0)),
             keep_elitism=int(self.settings.get("keep_elitism", 1)),
@@ -169,7 +185,9 @@ class GASearchRunner:
         split_index = max(1, int(len(returns) * (1 - test_size)))
         min_test_rows = max(
             int(self.settings.get("cpcv_n_folds", 4)) + 1,
-            int(self.settings.get("wf_train_size", 63)) + int(self.settings.get("wf_test_size", 21)) + 1,
+            int(self.settings.get("wf_train_size", 63))
+            + int(self.settings.get("wf_test_size", 21))
+            + 1,
         )
         if len(returns) - split_index < min_test_rows:
             split_index = max(1, len(returns) - min_test_rows)
@@ -186,7 +204,9 @@ class GASearchRunner:
         batch = np.asarray(solutions, dtype=int)
         if batch.ndim == 1:
             return self.score_for_solution(scored_population, batch)
-        return [self.score_for_solution(scored_population, solution) for solution in batch]
+        return [
+            self.score_for_solution(scored_population, solution) for solution in batch
+        ]
 
     def score_for_solution(self, scored_population: pd.DataFrame, solution) -> float:
         key = solution_key(solution)
@@ -229,11 +249,15 @@ class GASearchRunner:
         population_array = np.asarray(population, dtype=int)
         if population_array.ndim == 1:
             population_array = population_array.reshape(1, -1)
-        unique_keys = list(dict.fromkeys(solution_key(solution) for solution in population_array))
+        unique_keys = list(
+            dict.fromkeys(solution_key(solution) for solution in population_array)
+        )
         for key in unique_keys:
             if key not in self.raw_metric_cache:
                 self.raw_metric_cache[key] = self.evaluate_solution(key)
-        raw_df = pd.DataFrame([self.raw_metric_cache[key] for key in unique_keys]).set_index(
+        raw_df = pd.DataFrame(
+            [self.raw_metric_cache[key] for key in unique_keys]
+        ).set_index(
             "solution_key",
             drop=False,
         )
@@ -382,13 +406,17 @@ class GASearchRunner:
                 "Sharpe_Stability": cpcv_sharpe_std,
                 "Daily_Risk_CVaR": wf_cvar,
                 "CPCV_AnnRet_Median": cpcv_ret_median,
-                "WF_Max_Drawdown_Abs": abs(wf_drawdown) if wf_drawdown is not None else None,
+                "WF_Max_Drawdown_Abs": abs(wf_drawdown)
+                if wf_drawdown is not None
+                else None,
                 **breadth,
             }
         )
 
     def search_space_size(self) -> int:
-        return len(self.selector_keys) * len(self.signal_keys) * len(self.allocation_keys)
+        return (
+            len(self.selector_keys) * len(self.signal_keys) * len(self.allocation_keys)
+        )
 
     def emit(self, payload: dict[str, Any]) -> None:
         if self.progress_callback is not None:
@@ -428,9 +456,9 @@ def compute_total_score(raw_df: pd.DataFrame) -> pd.DataFrame:
     )
     scored["TOTAL_PENALTY"] = scored["DrawdownPenalty"] + scored["BreadthPenalty"]
     scored["TOTAL_SCORE_BASE"] = 100.0 * scored["TOTAL_SCORE_01"]
-    scored["TOTAL_SCORE"] = (
-        scored["TOTAL_SCORE_BASE"] - scored["TOTAL_PENALTY"]
-    ).clip(lower=0.0)
+    scored["TOTAL_SCORE"] = (scored["TOTAL_SCORE_BASE"] - scored["TOTAL_PENALTY"]).clip(
+        lower=0.0
+    )
     return scored.sort_values("TOTAL_SCORE", ascending=False)
 
 

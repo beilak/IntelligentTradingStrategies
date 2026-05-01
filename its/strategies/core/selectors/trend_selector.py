@@ -8,9 +8,10 @@ import sklearn.utils.validation as skv
 from sklearn.utils.validation import validate_data
 
 from its.strategies.core.types.dataframe_selector_mixin import DataFrameSelectorMixin
+from its.strategies.core.types.selectors_types import Selectros
 
 
-class TrendSelector(DataFrameSelectorMixin, skf.SelectorMixin, skb.BaseEstimator):
+class TrendSelector(Selectros):
     """
     Pre-selection по тренду: оставляем бумаги с положительным трендом
     за последние N дат.
@@ -41,14 +42,8 @@ class TrendSelector(DataFrameSelectorMixin, skf.SelectorMixin, skb.BaseEstimator
 
         return self
 
-    def _get_support_mask(self):
-        skv.check_is_fitted(self)
-        return self.to_keep_
 
-
-class TrendThresholdSelector(
-    DataFrameSelectorMixin, skf.SelectorMixin, skb.BaseEstimator
-):
+class TrendThresholdSelector(Selectros):
     """
     Pre-selection по тренду с порогом наклона.
 
@@ -81,7 +76,3 @@ class TrendThresholdSelector(
                 self.to_keep_[i] = True
 
         return self
-
-    def _get_support_mask(self):
-        skv.check_is_fitted(self)
-        return self.to_keep_

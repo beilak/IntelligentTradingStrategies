@@ -7,7 +7,7 @@ import sklearn.linear_model as skl
 import sklearn.utils.validation as skv
 from sklearn.utils.validation import validate_data
 
-from its.strategies.core.dataframe_selector_mixin import DataFrameSelectorMixin
+from its.strategies.core.types.dataframe_selector_mixin import DataFrameSelectorMixin
 
 
 class TrendSelector(DataFrameSelectorMixin, skf.SelectorMixin, skb.BaseEstimator):

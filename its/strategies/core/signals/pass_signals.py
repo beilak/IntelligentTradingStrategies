@@ -7,7 +7,7 @@ import sklearn.base as skb
 import sklearn.feature_selection as skf
 import sklearn.utils.validation as skv
 
-from its.strategies.core.dataframe_selector_mixin import DataFrameSelectorMixin
+from its.strategies.core.types.dataframe_selector_mixin import DataFrameSelectorMixin
 
 
 class KeepAllSignal(DataFrameSelectorMixin, skb.BaseEstimator, skf.SelectorMixin):

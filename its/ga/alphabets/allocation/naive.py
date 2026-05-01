@@ -1,5 +1,7 @@
 from its.ga.types import GeneDefinition
 from its.strategies.core.optimization import (
+    CVaR,
+    CVaRHighRisk,
     EqualWeighted,
     HierarchicalRiskParity,
     InverseVolatility,
@@ -28,5 +30,21 @@ GENES = [
         group="allocation",
         component=HierarchicalRiskParity,
         component_kwargs={"raise_on_failure": False},
+    ),
+    GeneDefinition(
+        id="CVaR",
+        title="CVaR",
+        description="Allocate weight CVaR",
+        group="allocation",
+        component=CVaR,
+        component_kwargs={"beta": 0.95},
+    ),
+    GeneDefinition(
+        id="CVaRHighRisk",
+        title="CVaRHighRisk",
+        description="Allocate weight CVaRHighRisk",
+        group="allocation",
+        component=CVaRHighRisk,
+        component_kwargs={"beta": 0.95},
     ),
 ]

@@ -158,10 +158,12 @@ def run_ga_job(run_id: str, settings: dict[str, Any]) -> None:
         prices = fetch_prices(figis, settings)
         if prices.empty:
             raise HTTPException(status_code=404, detail="No prices found for GA.")
+        dividends_info = fetch_dividends(figis, settings)
 
         result = run_ga_search(
             prices=prices,
             stocks=stocks,
+            dividends_info=dividends_info,
             settings=settings,
             progress_callback=lambda event: append_event(run_id, event),
         )
@@ -192,6 +194,17 @@ def fetch_prices(figis: list[str], settings: dict[str, Any]) -> pd.DataFrame:
     ]
     with httpx.Client(timeout=300) as client:
         response = client.get(f"{DATA_BACKEND_BASE_URL}/prices", params=params)
+    payload = handle_data_response(response)
+    return pd.DataFrame(payload.get("items", []))
+
+
+def fetch_dividends(figis: list[str], settings: dict[str, Any]) -> pd.DataFrame:
+    params: list[tuple[str, str]] = [("figis", figi) for figi in figis] + [
+        ("class_code", settings["class_code"]),
+        ("end_date", settings["end_date"]),
+    ]
+    with httpx.Client(timeout=300) as client:
+        response = client.get(f"{DATA_BACKEND_BASE_URL}/dividends", params=params)
     payload = handle_data_response(response)
     return pd.DataFrame(payload.get("items", []))
 

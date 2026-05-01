@@ -1,4 +1,5 @@
 from its.ga.types import GeneDefinition
+from its.strategies.core.selectors import SafeEmptySelector
 from its.strategies.core.signals import (
     KeepAllSignal,
     PriceBreakoutSignal,
@@ -20,6 +21,7 @@ GENES = [
         description="Select assets where current price breaks above the highest price of the last `lookback_window` candles.",
         group="signal",
         component=PriceBreakoutSignal,
+        wrapper=SafeEmptySelector,
     ),
     GeneDefinition(
         id="SMACrossSignal",
@@ -27,6 +29,7 @@ GENES = [
         description="Select assets where the short-term SMA crosses above the long-term SMA (golden cross).",
         group="signal",
         component=SMACrossSignal,
+        wrapper=SafeEmptySelector,
     ),
     GeneDefinition(
         id="TwoCandlePositiveTrendSignal",
@@ -34,5 +37,6 @@ GENES = [
         description="Select assets where the last `n_candles` have positive returns >= `min_pct_increase`.",
         group="signal",
         component=TwoCandlePositiveTrendSignal,
+        wrapper=SafeEmptySelector,
     ),
 ]

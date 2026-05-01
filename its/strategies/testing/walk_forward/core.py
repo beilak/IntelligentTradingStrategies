@@ -30,6 +30,7 @@ def generate_walk_forward_report(
     stocks: list[dict[str, Any]],
     prices: pd.DataFrame,
     settings: dict[str, Any],
+    dividends_info: pd.DataFrame | None = None,
 ) -> dict[str, Any]:
     model_cls = load_registered_model(model_name)
     figis = [item["figi"] for item in stocks if item.get("figi")]
@@ -59,7 +60,11 @@ def generate_walk_forward_report(
             detail="Not enough test rows for WalkForward.",
         )
 
-    strategy = model_cls(prices, pd.DataFrame(stocks)).build()
+    strategy = model_cls(
+        prices,
+        pd.DataFrame(stocks),
+        _dividends_info=dividends_info,
+    ).build()
     strategy.pipeline.fit(x_train)
 
     train_size_months = settings.get("train_size_months", 3)

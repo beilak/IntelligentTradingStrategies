@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import sklearn.utils.validation as skv
 
 from its.strategies.core.types.selectors_types import Selectros
 
@@ -25,12 +26,13 @@ class SectorSelector(Selectros):
         self.sectors = sectors
 
     def fit(self, X, y=None):
+        X_validated = skv.validate_data(self, X, ensure_all_finite="allow-nan")
         # проверяем, что все колонки X есть в assets_info
 
         tickers = (
             X.columns
             if isinstance(X, pd.DataFrame)
-            else [f"asset_{i}" for i in range(X.shape[1])]
+            else [f"asset_{i}" for i in range(X_validated.shape[1])]
         )
         sectors_in_data = self.assets_info.set_index("ticker").reindex(tickers)[
             "sector"

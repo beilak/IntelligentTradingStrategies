@@ -666,6 +666,8 @@ function setActiveTab(tab: ViewTab) {
                   <thead>
                     <tr>
                       <th>{{ t.paymentDate }}</th>
+                      <th>{{ t.declaredDate }}</th>
+                      <th>{{ t.lastBuyDate }}</th>
                       <th>{{ t.dividendNet }}</th>
                       <th>{{ t.dividendType }}</th>
                       <th>{{ t.closePrice }}</th>
@@ -675,6 +677,8 @@ function setActiveTab(tab: ViewTab) {
                   <tbody>
                     <tr v-for="(div, idx) in dividends" :key="idx">
                       <td>{{ formatDateOnly(div.payment_date) }}</td>
+                      <td>{{ formatDateOnly(div.declared_date) }}</td>
+                      <td>{{ formatDateOnly(div.last_buy_date) }}</td>
                       <td>
                         <strong>{{ formatNumber(div.dividend_net) }}</strong>
                       </td>

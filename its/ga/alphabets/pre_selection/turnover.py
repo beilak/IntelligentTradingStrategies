@@ -1,5 +1,5 @@
 from its.ga.types import GeneDefinition
-from its.strategies.core.selectors import IntradayTurnoverSelector
+from its.strategies.core.selectors import IntradayTurnoverSelector, SafeEmptySelector
 
 GENES = [
     GeneDefinition(
@@ -14,6 +14,7 @@ GENES = [
             "allow_empty_selection": False,
         },
         asset_universe_arg="asset_universe_prices",
+        wrapper=SafeEmptySelector,
     ),
     GeneDefinition(
         id="turnover_25m_20",
@@ -27,5 +28,6 @@ GENES = [
             "allow_empty_selection": False,
         },
         asset_universe_arg="asset_universe_prices",
+        wrapper=SafeEmptySelector,
     ),
 ]

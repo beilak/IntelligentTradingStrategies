@@ -1,6 +1,9 @@
+import warnings
+
 import numpy as np
 import pandas as pd
 
+from its.strategies.core.selectors import SectorSelector
 from its.strategies.core.selectors import (
     CrossSectionalMomentumSelector,
     DividendHistorySelector,
@@ -29,6 +32,32 @@ def test_cross_sectional_momentum_preserves_dataframe_columns() -> None:
     assert selector.to_keep_.dtype == bool
     assert list(transformed.columns) == ["FAST", "SLOW"]
     assert list(selector.get_momentum_scores().index) == ["FAST", "SLOW", "DOWN"]
+
+
+def test_sector_selector_preserves_dataframe_feature_names_without_warning() -> None:
+    prices = pd.DataFrame(
+        {
+            "SBER": [100, 101, 102],
+            "VKCO": [200, 202, 204],
+            "GAZP": [150, 151, 152],
+        }
+    )
+    assets_info = pd.DataFrame(
+        [
+            {"ticker": "SBER", "sector": "finance"},
+            {"ticker": "VKCO", "sector": "it"},
+            {"ticker": "GAZP", "sector": "energy"},
+        ]
+    )
+
+    selector = SectorSelector(assets_info=assets_info, sectors=["it"]).fit(prices)
+
+    with warnings.catch_warnings(record=True) as caught_warnings:
+        warnings.simplefilter("always")
+        transformed = selector.transform(prices)
+
+    assert caught_warnings == []
+    assert list(transformed.columns) == ["VKCO"]
 
 
 def test_dividend_history_preserves_dataframe_columns() -> None:

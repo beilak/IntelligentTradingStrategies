@@ -62,6 +62,7 @@ class GASearchRunner:
         *,
         prices: pd.DataFrame,
         stocks: list[dict[str, Any]],
+        dividends_info: pd.DataFrame | None = None,
         settings: dict[str, Any],
         progress_callback: ProgressCallback | None = None,
     ) -> None:
@@ -70,6 +71,9 @@ class GASearchRunner:
         self.settings = settings
         self.progress_callback = progress_callback
         self.assets_info = pd.DataFrame(stocks)
+        self.dividends_info = (
+            dividends_info.copy() if dividends_info is not None else pd.DataFrame()
+        )
         self.alphabets = {group: load_gene_group(group) for group in ALPHABET_GROUPS}
         self.selector_keys = [gene.id for gene in self.alphabets["pre_selection"]]
         self.signal_keys = [gene.id for gene in self.alphabets["signal"]]
@@ -386,6 +390,7 @@ class GASearchRunner:
         return {
             "asset_universe_prices": self.prices,
             "assets_info": self.assets_info,
+            "dividends_info": self.dividends_info,
         }
 
     def extract_raw_metrics(self, cpcv_population, wf_population) -> dict[str, float]:
@@ -471,12 +476,14 @@ def run_ga_search(
     *,
     prices: pd.DataFrame,
     stocks: list[dict[str, Any]],
+    dividends_info: pd.DataFrame | None = None,
     settings: dict[str, Any],
     progress_callback: ProgressCallback | None = None,
 ) -> dict[str, Any]:
     return GASearchRunner(
         prices=prices,
         stocks=stocks,
+        dividends_info=dividends_info,
         settings=settings,
         progress_callback=progress_callback,
     ).run()

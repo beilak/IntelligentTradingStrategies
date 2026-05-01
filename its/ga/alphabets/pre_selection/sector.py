@@ -1,5 +1,5 @@
 from its.ga.types import GeneDefinition
-from its.strategies.core.selectors import SectorSelector
+from its.strategies.core.selectors import SafeEmptySelector, SectorSelector
 
 GENES = [
     GeneDefinition(
@@ -11,6 +11,7 @@ GENES = [
         component_kwargs={
             "sectors": ["it", "telecom"],
         },
+        wrapper=SafeEmptySelector,
         runtime_args={"assets_info": "assets_info"},
     ),
     GeneDefinition(
@@ -22,6 +23,7 @@ GENES = [
         component_kwargs={
             "sectors": ["energy", "telecom"],
         },
+        wrapper=SafeEmptySelector,
         runtime_args={"assets_info": "assets_info"},
     ),
 ]

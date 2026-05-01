@@ -28,7 +28,18 @@ class TwoCandlePositiveTrendSignal(Siglans):
         self.to_keep_ = np.zeros(n_features, dtype=bool)
         for j in range(n_features):
             prices = X[:, j]
-            returns = (prices[1:] - prices[:-1]) / prices[:-1] * 100
+            previous_prices = prices[:-1]
+            returns = np.full(previous_prices.shape, np.nan, dtype=float)
+            valid_previous_prices = np.isfinite(previous_prices) & (
+                previous_prices > 0
+            )
+            np.divide(
+                prices[1:] - previous_prices,
+                previous_prices,
+                out=returns,
+                where=valid_previous_prices,
+            )
+            returns *= 100
             last_returns = returns[-self.n_candles :]
             if np.all(last_returns >= self.min_pct_increase):
                 self.to_keep_[j] = True

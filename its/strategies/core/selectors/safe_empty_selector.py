@@ -1,4 +1,3 @@
-from its.strategies.core.types.dataframe_selector_mixin import DataFrameSelectorMixin
 from its.strategies.core.types.selectors_types import Selectros
 
 
@@ -23,6 +22,9 @@ class SafeEmptySelector(Selectros):
             or not self.selector._get_support_mask().any()
         )
         return self
+
+    def _get_support_mask(self):
+        return self.selector._get_support_mask()
 
     def transform(self, X):
         mask = self.selector._get_support_mask()

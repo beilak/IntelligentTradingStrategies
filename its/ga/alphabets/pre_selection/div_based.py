@@ -1,5 +1,5 @@
 from its.ga.types import GeneDefinition
-from its.strategies.core.selectors import DividendHistorySelector
+from its.strategies.core.selectors import DividendHistorySelector, SafeEmptySelector
 
 GENES = [
     GeneDefinition(
@@ -11,6 +11,7 @@ GENES = [
         component_kwargs={
             "years": 3,
         },
+        wrapper=SafeEmptySelector,
         runtime_args={"dividends_df": "dividends_info"},
     )
 ]

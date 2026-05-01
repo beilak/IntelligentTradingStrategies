@@ -11,7 +11,6 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from its.strategies.testing.cpcv import (
-    CACHE_DIR,
     cache_path,
     generate_cpcv_report,
     list_test_paths,
@@ -72,9 +71,16 @@ async def run_cpcv_test(model_name: str, request: CpcvRunRequest) -> dict[str, A
     prices = await fetch_prices(figis, request)
     if prices.empty:
         raise HTTPException(status_code=404, detail="No prices found for CPCV.")
+    dividends_info = await fetch_dividends(figis, request)
 
     settings = request.model_dump(mode="json")
-    result = generate_cpcv_report(model_name, stocks, prices, settings)
+    result = generate_cpcv_report(
+        model_name,
+        stocks,
+        prices,
+        settings,
+        dividends_info=dividends_info,
+    )
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -106,6 +112,20 @@ async def fetch_prices(
     ]
     async with httpx.AsyncClient(timeout=300) as client:
         response = await client.get(f"{DATA_BACKEND_BASE_URL}/prices", params=params)
+    payload = handle_data_response(response)
+    return pd.DataFrame(payload.get("items", []))
+
+
+async def fetch_dividends(
+    figis: list[str],
+    request: CpcvRunRequest,
+) -> pd.DataFrame:
+    params: list[tuple[str, str]] = [("figis", figi) for figi in figis] + [
+        ("class_code", request.class_code),
+        ("end_date", request.end_date.isoformat()),
+    ]
+    async with httpx.AsyncClient(timeout=300) as client:
+        response = await client.get(f"{DATA_BACKEND_BASE_URL}/dividends", params=params)
     payload = handle_data_response(response)
     return pd.DataFrame(payload.get("items", []))
 

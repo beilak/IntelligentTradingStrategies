@@ -18,9 +18,11 @@ class StrategyBuilder:
         _asset_universe_prices,
         _assets_info: pd.DataFrame | None = None,
         _runtime_context: dict | None = None,
+        _dividends_info: pd.DataFrame | None = None,
     ) -> None:
         self._asset_universe_prices = _asset_universe_prices
         self._assets_info = _assets_info
         self._runtime_context = _runtime_context or {}
+        self._dividends_info = _dividends_info
 
     def build(self) -> Strategy: ...

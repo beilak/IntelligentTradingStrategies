@@ -473,7 +473,6 @@ def create_app() -> FastAPI:
             start_date=current_start,
             end_date=current_end,
             token=token,
-            use_cache=False,
         )
 
         if dividends_df.empty:

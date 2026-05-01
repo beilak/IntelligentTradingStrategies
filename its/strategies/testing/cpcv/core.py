@@ -26,6 +26,7 @@ def generate_cpcv_report(
     stocks: list[dict[str, Any]],
     prices: pd.DataFrame,
     settings: dict[str, Any],
+    dividends_info: pd.DataFrame | None = None,
 ) -> dict[str, Any]:
     model_cls = load_registered_model(model_name)
     figis = [item["figi"] for item in stocks if item.get("figi")]
@@ -56,7 +57,11 @@ def generate_cpcv_report(
     x_train = returns.iloc[:split_index]
     x_test = returns.iloc[split_index:]
 
-    strategy = model_cls(prices, pd.DataFrame(stocks)).build()
+    strategy = model_cls(
+        prices,
+        pd.DataFrame(stocks),
+        _dividends_info=dividends_info,
+    ).build()
     strategy.pipeline.fit(x_train)
 
     n_test_folds = settings.get("n_test_folds", 6)

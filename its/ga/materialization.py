@@ -29,6 +29,7 @@ def build_strategy_from_gene_ids(
     asset_universe_prices,
     *,
     assets_info=None,
+    dividends_info=None,
     selector_id: str,
     signal_id: str,
     allocation_id: str,
@@ -38,6 +39,7 @@ def build_strategy_from_gene_ids(
     runtime_context = build_runtime_context(
         asset_universe_prices=asset_universe_prices,
         assets_info=assets_info,
+        dividends_info=dividends_info,
     )
     selector = get_gene("pre_selection", selector_id)
     signal = get_gene("signal", signal_id)
@@ -340,10 +342,16 @@ def format_literal(value: Any) -> str:
     return repr(value)
 
 
-def build_runtime_context(*, asset_universe_prices, assets_info=None) -> dict[str, Any]:
+def build_runtime_context(
+    *,
+    asset_universe_prices,
+    assets_info=None,
+    dividends_info=None,
+) -> dict[str, Any]:
     return {
         "asset_universe_prices": asset_universe_prices,
         "assets_info": assets_info,
+        "dividends_info": dividends_info,
     }
 
 
@@ -351,6 +359,7 @@ def render_runtime_attr(context_key: str) -> str:
     return {
         "asset_universe_prices": "self._asset_universe_prices",
         "assets_info": "self._assets_info",
+        "dividends_info": "self._dividends_info",
     }.get(context_key, f"self._runtime_context[{context_key!r}]")
 
 

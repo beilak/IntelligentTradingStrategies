@@ -117,8 +117,9 @@ def _write_cache(cache_rows: pd.DataFrame, cache_path: Path) -> None:
             combined_cache[CACHE_MARKER_COLUMN].fillna(False).astype(bool)
         )
 
-    marker_rows = combined_cache.loc[combined_cache[CACHE_MARKER_COLUMN]].copy()
-    dividend_rows = combined_cache.loc[~combined_cache[CACHE_MARKER_COLUMN]].copy()
+    marker_mask = _is_marker_row(combined_cache)
+    marker_rows = combined_cache.loc[marker_mask].copy()
+    dividend_rows = combined_cache.loc[~marker_mask].copy()
 
     if not dividend_rows.empty:
         dividend_rows = dividend_rows.sort_values(
@@ -139,13 +140,22 @@ def _write_cache(cache_rows: pd.DataFrame, cache_path: Path) -> None:
     cache_to_save = pd.concat(
         [dividend_rows, marker_rows], ignore_index=True, sort=False
     )
-    cache_to_save = cache_to_save.sort_values(
-        ["figi", "payment_date"],
-        na_position="last",
-    )
+    sort_columns = ["figi"]
+    if "payment_date" in cache_to_save.columns:
+        sort_columns.append("payment_date")
+    sort_columns.extend([CACHE_START_COLUMN, CACHE_END_COLUMN])
+    sort_columns = [column for column in sort_columns if column in cache_to_save.columns]
+    cache_to_save = cache_to_save.sort_values(sort_columns, na_position="last")
 
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     cache_to_save.to_csv(cache_path, index=False)
+
+
+def _is_marker_row(cache: pd.DataFrame) -> pd.Series:
+    marker_mask = cache[CACHE_MARKER_COLUMN].fillna(False).astype(bool)
+    if "payment_date" not in cache.columns:
+        return marker_mask
+    return marker_mask & cache["payment_date"].isna()
 
 
 def _get_missing_ranges(
@@ -165,22 +175,33 @@ def _get_missing_ranges(
         if figi_cache.empty:
             continue
 
-        figi_cache = figi_cache.sort_values("payment_date")
+        covered_ranges = figi_cache.loc[
+            figi_cache[CACHE_START_COLUMN].notna()
+            & figi_cache[CACHE_END_COLUMN].notna(),
+            [CACHE_START_COLUMN, CACHE_END_COLUMN],
+        ].drop_duplicates()
+        if covered_ranges.empty:
+            continue
+
+        covered_ranges = covered_ranges.sort_values(CACHE_START_COLUMN)
         figi_ranges: list[tuple[pd.Timestamp, pd.Timestamp]] = []
         current_start = start_date
 
-        for _, row in figi_cache.iterrows():
-            payment_date = row.get("payment_date")
-            if payment_date is None or pd.isna(payment_date):
+        for _, row in covered_ranges.iterrows():
+            covered_start = pd.Timestamp(row[CACHE_START_COLUMN])
+            covered_end = pd.Timestamp(row[CACHE_END_COLUMN])
+            if covered_end < start_date or covered_start > end_date:
                 continue
-            payment_date = pd.Timestamp(payment_date)
-            if payment_date < start_date or payment_date > end_date:
-                continue
-            if payment_date < current_start:
+            covered_start = max(covered_start, start_date)
+            covered_end = min(covered_end, end_date)
+            if covered_end < current_start:
                 continue
 
-            figi_ranges.append((current_start, payment_date - pd.Timedelta(days=1)))
-            current_start = payment_date + pd.Timedelta(days=1)
+            if covered_start > current_start:
+                figi_ranges.append(
+                    (current_start, covered_start - pd.Timedelta(days=1))
+                )
+            current_start = max(current_start, covered_end + pd.Timedelta(days=1))
 
         if current_start <= end_date:
             figi_ranges.append((current_start, end_date))
@@ -216,7 +237,7 @@ def read_dividends_from_cache(
     if filtered_cache.empty:
         return pd.DataFrame(), {figi: [(start_date, end_date)] for figi in unique_figis}
 
-    marker_mask = filtered_cache[CACHE_MARKER_COLUMN]
+    marker_mask = _is_marker_row(filtered_cache)
     cached_dividends = filtered_cache.loc[~marker_mask].copy()
 
     if "payment_date" in cached_dividends.columns:
@@ -237,19 +258,31 @@ def read_dividends_from_cache(
 
 
 def _build_cache_rows(
+    figi: str,
     dividends: pd.DataFrame,
     start_date: pd.Timestamp,
     end_date: pd.Timestamp,
 ) -> pd.DataFrame:
+    marker_row = pd.DataFrame(
+        [
+            {
+                "figi": figi,
+                CACHE_START_COLUMN: start_date,
+                CACHE_END_COLUMN: end_date,
+                CACHE_MARKER_COLUMN: True,
+            }
+        ]
+    )
+
     if dividends.empty:
-        return pd.DataFrame()
+        return marker_row
 
     cache_rows = dividends.copy()
     cache_rows[CACHE_START_COLUMN] = start_date
     cache_rows[CACHE_END_COLUMN] = end_date
-    cache_rows[CACHE_MARKER_COLUMN] = True
+    cache_rows[CACHE_MARKER_COLUMN] = False
 
-    return cache_rows
+    return pd.concat([cache_rows, marker_row], ignore_index=True, sort=False)
 
 
 @alru_cache(ttl=100)
@@ -278,7 +311,7 @@ async def _get_dividend(
     dividends = pd.DataFrame(raw_dividends).assign(figi=figi)
 
     if dividends.empty:
-        logger.warning(f"No dividends for {figi} ({start_date}-{end_date})")
+        logger.debug(f"No dividends for {figi} ({start_date}-{end_date})")
         return dividends
 
     if "dividend_type" in dividends.columns:
@@ -335,9 +368,9 @@ async def _download_dividends(
     cache_rows = []
 
     for (figi, current_from, current_to), dividends in zip(job_specs, raw_dividends):
+        cache_rows.append(_build_cache_rows(figi, dividends, current_from, current_to))
         if not dividends.empty:
             downloaded_dividends.append(dividends)
-            cache_rows.append(_build_cache_rows(dividends, current_from, current_to))
 
     if downloaded_dividends:
         all_dividends = pd.concat(downloaded_dividends, ignore_index=True)
@@ -360,7 +393,6 @@ async def get_dividends(
     end_date: pd.Timestamp,
     token: str,
     max_per_second: float | None = None,
-    use_cache: bool = True,
 ) -> pd.DataFrame:
     start_date = _normalize_timestamp(start_date)
     end_date = _normalize_timestamp(end_date)
@@ -369,18 +401,13 @@ async def get_dividends(
     if not unique_figis:
         return pd.DataFrame()
 
-    cache_path = CACHE_PATH if use_cache else None
-
-    if use_cache:
-        cached_dividends, missing_ranges = read_dividends_from_cache(
-            unique_figis,
-            start_date,
-            end_date,
-            cache_path,
-        )
-    else:
-        cached_dividends = pd.DataFrame()
-        missing_ranges = {figi: [(start_date, end_date)] for figi in unique_figis}
+    cache_path = CACHE_PATH
+    cached_dividends, missing_ranges = read_dividends_from_cache(
+        unique_figis,
+        start_date,
+        end_date,
+        cache_path,
+    )
 
     if all(not ranges for ranges in missing_ranges.values()):
         return cached_dividends

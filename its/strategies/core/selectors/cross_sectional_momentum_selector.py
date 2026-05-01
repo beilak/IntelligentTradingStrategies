@@ -53,35 +53,28 @@ class CrossSectionalMomentumSelector(Selectros):
             if original_columns is not None
             else np.arange(n_assets).astype(str)
         )
+        self.fallback_reason_ = None
 
         # ЗАЩИТА: Проверяем, достаточно ли данных для расчета
         if len(prices) < self.min_periods:
-            print(
-                f"Warning: Not enough data ({len(prices)} rows) for momentum calculation. Keeping all assets."
+            return self._keep_all(
+                n_assets,
+                f"not enough data ({len(prices)} rows) for momentum calculation",
             )
-            self.to_keep_ = np.ones(n_assets, dtype=bool)
-            self.momentum_scores_ = np.zeros(n_assets)
-            return self
 
         # Рассчитываем доходность за период lookback
         returns = prices.pct_change(periods=self.lookback, fill_method=None)
 
         # ЗАЩИТА: Проверяем, есть ли данные после pct_change
         if returns.empty:
-            print("Warning: Returns DataFrame is empty. Keeping all assets.")
-            self.to_keep_ = np.ones(n_assets, dtype=bool)
-            self.momentum_scores_ = np.zeros(n_assets)
-            return self
+            return self._keep_all(n_assets, "returns DataFrame is empty")
 
         # Берем последнюю доходность для каждого актива
         try:
             latest_returns = returns.iloc[-1].fillna(-np.inf)
         except IndexError:
             # Если не можем взять последнюю строку, возвращаем все активы
-            print("Warning: Cannot access last row of returns. Keeping all assets.")
-            self.to_keep_ = np.ones(n_assets, dtype=bool)
-            self.momentum_scores_ = np.zeros(n_assets)
-            return self
+            return self._keep_all(n_assets, "cannot access last row of returns")
 
         # Сохраняем скоры
         self.momentum_scores_ = latest_returns.to_numpy()
@@ -91,9 +84,7 @@ class CrossSectionalMomentumSelector(Selectros):
 
         if len(finite_returns) == 0:
             # Если нет валидных доходностей, оставляем все активы
-            print("Warning: No valid returns found. Keeping all assets.")
-            self.to_keep_ = np.ones(n_assets, dtype=bool)
-            return self
+            return self._keep_all(n_assets, "no valid returns found")
 
         # Определяем порог для отбора
         if len(finite_returns) == 1:
@@ -110,6 +101,12 @@ class CrossSectionalMomentumSelector(Selectros):
         enough_data = valid_counts >= self.min_periods
         self.to_keep_ = (mask & enough_data).to_numpy(dtype=bool)
 
+        return self
+
+    def _keep_all(self, n_assets: int, reason: str):
+        self.fallback_reason_ = reason
+        self.to_keep_ = np.ones(n_assets, dtype=bool)
+        self.momentum_scores_ = np.zeros(n_assets)
         return self
 
     def get_momentum_scores(self):

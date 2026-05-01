@@ -30,13 +30,18 @@ def generate_backtest_report(
     stocks: list[dict[str, Any]],
     prices: pd.DataFrame,
     settings: dict[str, Any],
+    dividends_info: pd.DataFrame | None = None,
 ) -> dict[str, Any]:
     model_cls = load_registered_model(model_name)
     if prices.empty:
         raise HTTPException(status_code=404, detail="No prices found for Backtesting.")
 
     close = build_close_prices(prices)
-    strategy = model_cls(prices, pd.DataFrame(stocks)).build()
+    strategy = model_cls(
+        prices,
+        pd.DataFrame(stocks),
+        _dividends_info=dividends_info,
+    ).build()
     trading_start_date = pd.Timestamp(
         settings.get("trading_start_date") or settings.get("start_date")
     )
@@ -76,6 +81,7 @@ def generate_trading_strategy_backtest_report(
     stocks: list[dict[str, Any]],
     prices: pd.DataFrame,
     settings: dict[str, Any],
+    dividends_info: pd.DataFrame | None = None,
 ) -> dict[str, Any]:
     strategy_cls = load_registered_trading_strategy(strategy_name)
     if prices.empty:
@@ -85,7 +91,9 @@ def generate_trading_strategy_backtest_report(
     high = build_price_matrix(prices, "high", close)
     low = build_price_matrix(prices, "low", close)
     trading_strategy: TradingStrategy = strategy_cls(
-        prices, pd.DataFrame(stocks)
+        prices,
+        pd.DataFrame(stocks),
+        _dividends_info=dividends_info,
     ).build()
     trading_start_date = pd.Timestamp(
         settings.get("trading_start_date") or settings.get("start_date")

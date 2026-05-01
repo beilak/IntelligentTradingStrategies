@@ -97,11 +97,18 @@ async def run_backtest_flow(
     prices = await fetch_prices(figis, request)
     if prices.empty:
         raise HTTPException(status_code=404, detail="No prices found for Backtesting.")
+    dividends_info = await fetch_dividends(figis, request)
 
     settings = request.model_dump(mode="json")
     if settings.get("trading_start_date") is None:
         settings["trading_start_date"] = settings["start_date"]
-    result = report_factory(subject_name, stocks, prices, settings)
+    result = report_factory(
+        subject_name,
+        stocks,
+        prices,
+        settings,
+        dividends_info=dividends_info,
+    )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(
@@ -157,6 +164,20 @@ async def fetch_prices(
     ]
     async with httpx.AsyncClient(timeout=300) as client:
         response = await client.get(f"{DATA_BACKEND_BASE_URL}/prices", params=params)
+    payload = handle_data_response(response)
+    return pd.DataFrame(payload.get("items", []))
+
+
+async def fetch_dividends(
+    figis: list[str],
+    request: BacktestRunRequest,
+) -> pd.DataFrame:
+    params: list[tuple[str, str]] = [("figis", figi) for figi in figis] + [
+        ("class_code", request.class_code),
+        ("end_date", request.end_date.isoformat()),
+    ]
+    async with httpx.AsyncClient(timeout=300) as client:
+        response = await client.get(f"{DATA_BACKEND_BASE_URL}/dividends", params=params)
     payload = handle_data_response(response)
     return pd.DataFrame(payload.get("items", []))
 

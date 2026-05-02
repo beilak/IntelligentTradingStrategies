@@ -1,0 +1,616 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ITS | Intelligent Trading Strategies</title>
+
+    <link rel="stylesheet" href="../../dist/reset.css" />
+    <link rel="stylesheet" href="../../dist/reveal.css" />
+    <link rel="stylesheet" href="theme/its-bank.css" />
+  </head>
+  <body>
+    <div class="reveal">
+      <div class="slides">
+        <section class="cover" data-background-color="#f5f0e6">
+          <div class="cover-mark">ITS</div>
+          <div class="cover-center">
+            <p class="kicker">Product presentation</p>
+            <h1>Intelligent Trading Strategies</h1>
+            <p class="subtitle">
+              платформа для формирования, проверки и эволюционной генерации торговых стратегий
+            </p>
+          </div>
+          <div class="cover-author">Алиев Б. Н.</div>
+        </section>
+
+        <section class="section-title">
+          <p class="kicker">Смысл продукта</p>
+          <h2>Торговая идея должна проходить путь от гипотезы до проверяемого результата</h2>
+          <p class="lead">
+            ITS собирает в одном контуре данные, компоненты стратегий, тестирование, сравнение и
+            автоматический поиск новых комбинаций. Не как брокерский терминал, а как рабочая
+            исследовательская среда для аналитика и квант-модельера.
+          </p>
+        </section>
+
+        <section>
+          <div class="slide-head">
+            <p class="kicker">Проблема</p>
+            <h2>В исследованиях стратегий часто ломается не математика, а процесс</h2>
+          </div>
+          <div class="cards four">
+            <article>
+              <span class="card-index">01</span>
+              <h3>Данные живут отдельно</h3>
+              <p>Источники, справочники, свечи и дивиденды приходится каждый раз сводить заново.</p>
+            </article>
+            <article>
+              <span class="card-index">02</span>
+              <h3>Модели трудно сравнивать</h3>
+              <p>У каждой стратегии свой код, свои параметры и свой формат результата.</p>
+            </article>
+            <article>
+              <span class="card-index">03</span>
+              <h3>Переобучение не видно сразу</h3>
+              <p>Красивый backtest может быть следствием удачного периода, а не устойчивой логики.</p>
+            </article>
+            <article>
+              <span class="card-index">04</span>
+              <h3>Хорошие компоненты не переиспользуются</h3>
+              <p>Селектор, сигнал или аллокатор редко становятся частью системного поиска.</p>
+            </article>
+          </div>
+        </section>
+
+        <section>
+          <div class="slide-head">
+            <p class="kicker">Продуктовая формула</p>
+            <h2>ITS превращает исследование стратегии в управляемый R&amp;D-контур</h2>
+          </div>
+          <div class="pipeline">
+            <div class="pipe-node">
+              <span>01</span>
+              <strong>Данные</strong>
+              <small>подключаемые источники, нормализация, единый Data API</small>
+            </div>
+            <div class="pipe-node">
+              <span>02</span>
+              <strong>Протоколы</strong>
+              <small>базовые классы и контракты для компонентов стратегии</small>
+            </div>
+            <div class="pipe-node">
+              <span>03</span>
+              <strong>Сборка</strong>
+              <small>ручная экспертная модель или стратегия, найденная GA</small>
+            </div>
+            <div class="pipe-node">
+              <span>04</span>
+              <strong>Проверка</strong>
+              <small>CPCV, WalkForward, Backtesting и сравнение</small>
+            </div>
+            <div class="pipe-node">
+              <span>05</span>
+              <strong>Развитие</strong>
+              <small>новые компоненты, GA-алфавиты, материализация TOP</small>
+            </div>
+          </div>
+          <p class="bottom-note">
+            Главная идея не в том, что стратегия делится на известные этапы. Ценность в том, что
+            каждый компонент создается по единому контракту: его можно написать вручную, сгенерировать
+            с помощью ИИ, заменить в модели и включить в эволюционный поиск.
+          </p>
+        </section>
+
+
+        <section class="image-full">
+          <div class="slide-head overlay-head">
+            <p class="kicker">Первое впечатление</p>
+            <h2>Launchpad: единая точка входа</h2>
+          </div>
+          <figure class="screenshot large">
+            <img src="assets/img/launchpad_ui.png" alt="Главный экран ITS Launchpad" />
+          </figure>
+        </section>
+
+        <section>
+          <div class="slide-head">
+            <p class="kicker">Архитектура</p>
+            <h2>Система разделена на интерфейсы, backend-сервисы и Python-ядро</h2>
+          </div>
+          <div class="architecture">
+            <div class="arch-lane">
+              <h3>UI</h3>
+              <span>Launchpad</span>
+              <span>Data Hub</span>
+              <span>Strategy Lab</span>
+              <span>GA Lab</span>
+            </div>
+            <div class="arch-gateway">nginx gateway</div>
+            <div class="arch-lane">
+              <h3>API</h3>
+              <span>Data Backend</span>
+              <span>Strategy Backend</span>
+              <span>GA Backend</span>
+            </div>
+            <div class="arch-lane">
+              <h3>Core</h3>
+              <span>Data loader</span>
+              <span>Strategy components</span>
+              <span>Testing methods</span>
+              <span>GA engine</span>
+            </div>
+          </div>
+          <div class="tech-strip">
+            <span>Docker Compose</span>
+            <span>Vue 3</span>
+            <span>TypeScript</span>
+            <span>FastAPI</span>
+            <span>Python</span>
+            <span>skfolio</span>
+            <span>vectorbt</span>
+            <span>PyGAD</span>
+          </div>
+        </section>
+
+        <section class="split">
+          <div>
+            <p class="kicker">Data Hub</p>
+            <h2>Данные вынесены в отдельный управляемый слой</h2>
+            <p class="lead small">
+              Data Hub не ограничен текущим набором данных. Это единая точка подключения источников:
+              адаптер приводит ответы к общей схеме, после чего данные сразу становятся доступными
+              Strategy Lab, GA Lab и backend-сервисам через один API.
+            </p>
+            <div class="statement">
+              Для исследователя новый источник не должен превращаться в отдельный проект. Он
+              подключается в data layer, а дальше используется в стратегиях тем же способом, что и
+              уже знакомые котировки, справочники или дивиденды.
+            </div>
+          </div>
+          <figure class="screenshot side">
+            <img src="assets/img/data_ui.png" alt="Интерфейс Data Hub" />
+          </figure>
+        </section>
+
+        <section>
+          <div class="slide-head compact">
+            <p class="kicker">Данные</p>
+            <h2>Data Hub открывает стратегиям единый доступ к данным</h2>
+          </div>
+          <div class="cards three">
+            <article>
+              <h3>Текущие рыночные данные</h3>
+              <p>
+                В базовой версии доступны инструменты, OHLCV-свечи, дивиденды, валюты и custom gold
+                bars. Этого достаточно, чтобы показать полный исследовательский цикл.
+              </p>
+            </article>
+            <article>
+              <h3>Точка расширения</h3>
+              <p>
+                Новый поставщик данных добавляется через адаптер. После этого
+                источник не нужно отдельно встраивать в каждую модель или тест.
+              </p>
+            </article>
+            <article>
+              <h3>Доступность для стратегий</h3>
+              <p>
+                Strategy Lab и GA Lab работают через Data API. Как только данные появились в Data
+                Hub, исследователь может использовать их в компонентах и проверках.
+              </p>
+            </article>
+          </div>
+          <div class="api-line">
+            <span>адаптер источника</span>
+            <span>единый Data API</span>
+            <span>Strategy Lab / GA Lab</span>
+          </div>
+        </section>
+
+        <section class="image-full">
+          <div class="slide-head overlay-head">
+            <p class="kicker">Strategy Lab</p>
+            <h2>Основная рабочая зона модельера</h2>
+          </div>
+          <figure class="screenshot large">
+            <img src="assets/img/strategy_ui.png" alt="Интерфейс Strategy Lab" />
+          </figure>
+          <p class="caption">
+            Здесь видны зарегистрированные компоненты, готовые модели, состав стратегии, тесты и
+            сохраненные результаты. Это не витрина: это рабочий стол исследования.
+          </p>
+        </section>
+
+        <section>
+          <div class="slide-head">
+            <p class="kicker">Модель стратегии</p>
+            <h2>Стандартизация заложена в протоколах создания компонентов</h2>
+          </div>
+          <div class="component-chain">
+            <article>
+              <span>Контракт</span>
+              <h3>Компонент должен быть понятен системе</h3>
+              <p>
+                Для pre-selection, signal и allocation заданы классы, протоколы, входы, выходы и
+                правила регистрации. Компонент не живет отдельным скриптом.
+              </p>
+            </article>
+            <article>
+              <span>Создание</span>
+              <h3>Компоненты могут писать люди и ИИ</h3>
+              <p>
+                Узкий интерфейс помогает эксперту быстро реализовать идею, а LLM — сгенерировать
+                новый селектор, сигнал или аллокатор без переписывания всей системы.
+              </p>
+            </article>
+            <article>
+              <span>Замена</span>
+              <h3>Компонент готов к эволюционному циклу</h3>
+              <p>
+                Когда компонент реализует общий контракт, его можно заменить в ручной модели или
+                превратить в ген, к которому применяются отбор, скрещивание и мутация.
+              </p>
+            </article>
+          </div>
+          <p class="bottom-note">
+            Связка pre-selection -> signal -> allocation сама по себе не уникальна. В ITS важен
+            программный стандарт: он делает компоненты взаимозаменяемыми и пригодными для генерации
+            новых алгоритмов через GA.
+          </p>
+        </section>
+
+        <section>
+          <div class="slide-head compact">
+            <p class="kicker">Создание стратегий</p>
+            <h2>Новая стратегия может появиться двумя путями</h2>
+          </div>
+          <div class="strategy-paths">
+            <article>
+              <span>Путь 1</span>
+              <h3>Ручная сборка экспертом</h3>
+              <p>
+                Аналитик сам выбирает компоненты, задает параметры и собирает стратегию под конкретную
+                экономическую гипотезу. Такой путь удобен, когда есть сильная предметная идея и нужно
+                быстро довести ее до тестов.
+              </p>
+            </article>
+            <article>
+              <span>Путь 2</span>
+              <h3>Генерация через GA</h3>
+              <p>
+                Компоненты становятся генами, а стратегия — комбинацией генов. Генетический алгоритм
+                применяет отбор, скрещивание, мутацию и элитизм, чтобы найти новые сочетания, которые
+                человек мог бы не перебрать вручную.
+              </p>
+            </article>
+          </div>
+          <p class="bottom-note">
+            Оба пути сходятся в одном месте: стратегия попадает в общий контур проверки, сравнения и
+            последующей доработки.
+          </p>
+        </section>
+
+        <section>
+          <div class="slide-head compact">
+            <p class="kicker">Методология</p>
+            <h2>Проверка построена как несколько фильтров качества</h2>
+          </div>
+          <div class="testing-grid">
+            <figure class="screenshot tile">
+              <img src="assets/img/CPCV%20test.png" alt="CPCV test" />
+              <figcaption>CPCV показывает разброс результата по комбинациям фолдов.</figcaption>
+            </figure>
+            <figure class="screenshot tile">
+              <img src="assets/img/WalkForward%20test.png" alt="WalkForward test" />
+              <figcaption>WalkForward проверяет стратегию на последовательных OOS-окнах.</figcaption>
+            </figure>
+            <figure class="screenshot tile">
+              <img src="assets/img/Backtesting.png" alt="Backtesting result" />
+              <figcaption>Backtesting моделирует торговлю с ребалансировкой и издержками.</figcaption>
+            </figure>
+          </div>
+        </section>
+
+        <section class="split">
+          <div>
+            <p class="kicker">CPCV</p>
+            <h2>Первая проверка: стратегия не должна зависеть от одного разбиения данных</h2>
+            <p class="lead small">
+              Combinatorial Purged Cross-Validation помогает увидеть устойчивость результатов и
+              риск переобучения. Пользователь задает период, интервал, класс активов и параметры
+              фолдов, а система сохраняет отчет.
+            </p>
+            <ul class="compact-list">
+              <li>медианная и средняя доходность по test paths;</li>
+              <li>разброс результатов и стабильность Sharpe;</li>
+              <li>графики cumulative returns по путям;</li>
+              <li>сохраненный JSON для последующего сравнения.</li>
+            </ul>
+          </div>
+          <figure class="screenshot side portrait">
+            <img src="assets/img/CPCV%20test.png" alt="Окно CPCV теста" />
+          </figure>
+        </section>
+
+        <section class="split reverse">
+          <figure class="screenshot side portrait">
+            <img src="assets/img/WalkForward%20test.png" alt="Окно WalkForward теста" />
+          </figure>
+          <div>
+            <p class="kicker">WalkForward</p>
+            <h2>Вторая проверка: стратегия должна переживать смену рыночных режимов</h2>
+            <p class="lead small">
+              WalkForward обучает модель на одном окне и проверяет на следующем. Для финансовой
+              стратегии это важнее, чем одна усредненная оценка: рынок меняется, и модель должна
+              показывать поведение во времени.
+            </p>
+            <ul class="compact-list">
+              <li>train/test окна и OOS-результаты;</li>
+              <li>склеенная OOS equity curve;</li>
+              <li>контроль дублей дат при объединении окон;</li>
+              <li>метрики для сравнения с CPCV и Backtesting.</li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="split">
+          <div>
+            <p class="kicker">Backtesting</p>
+            <h2>Третья проверка: историческая торговля с реальными ограничениями</h2>
+            <p class="lead small">
+              Backtesting в ITS учитывает стартовый капитал, ребалансировки, комиссии,
+              проскальзывание, налоговую ставку и rolling Sharpe. Для полных trading strategies
+              дополнительно видны stop-loss и take-profit события.
+            </p>
+            <div class="metric-row">
+              <span>Total Return</span>
+              <span>Sharpe</span>
+              <span>Calmar</span>
+              <span>Max Drawdown</span>
+            </div>
+          </div>
+          <figure class="screenshot side">
+            <img src="assets/img/Backtesting.png" alt="Окно Backtesting" />
+          </figure>
+        </section>
+
+        <section class="split reverse">
+          <figure class="screenshot side portrait">
+            <img src="assets/img/Backtesting%20portfolio%20composition.png" alt="Состав портфеля" />
+          </figure>
+          <div>
+            <p class="kicker">Портфель</p>
+            <h2>Результат backtest можно разложить до состава портфеля</h2>
+            <p class="lead small">
+              Важно видеть не только итоговую кривую, но и то, из чего она получилась: какие бумаги
+              вошли в портфель на ребалансировках, как распределены веса и какая секторная
+              экспозиция возникла.
+            </p>
+            <div class="statement">
+              Это снижает риск случайно принять «хороший график» за качественную инвестиционную
+              логику.
+            </div>
+          </div>
+        </section>
+
+        <section class="image-full">
+          <div class="slide-head overlay-head">
+            <p class="kicker">Сравнение</p>
+            <h2>Модели ранжируются</h2>
+          </div>
+          <figure class="screenshot large">
+            <img src="assets/img/Model_compare.png" alt="Сравнение моделей" />
+          </figure>
+          <p class="caption">
+            В сравнение попадают модели, у которых есть CPCV, WalkForward и Backtesting. Итоговый
+            рейтинг не сводится к одной доходности: учитываются устойчивость, просадка и качество OOS.
+          </p>
+        </section>
+
+        <section>
+          <div class="slide-head compact">
+            <p class="kicker">Метрики</p>
+            <h2>Рейтинг собирает доходность, устойчивость и риск в одну управляемую картину</h2>
+          </div>
+          <div class="score-board">
+            <article>
+              <span>WF_Return</span>
+              <strong>OOS доходность</strong>
+              <p>Показывает, что модель заработала вне обучающего участка.</p>
+            </article>
+            <article>
+              <span>WF_Calmar</span>
+              <strong>Доходность к просадке</strong>
+              <p>Помогает не путать агрессивную модель с качественной.</p>
+            </article>
+            <article>
+              <span>Robustness_Delta</span>
+              <strong>Разрыв CPCV и WF</strong>
+              <p>Чем меньше расхождение, тем спокойнее интерпретация результата.</p>
+            </article>
+            <article>
+              <span>Sharpe_Stability</span>
+              <strong>Стабильность Sharpe</strong>
+              <p>Фиксирует, насколько результат зависит от конкретного пути.</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="split">
+          <div>
+            <p class="kicker">GA Lab</p>
+            <h2>Генетический алгоритм работает с компонентами как с генами стратегии</h2>
+            <p class="lead small">
+              В GA Lab попадают компоненты, которые реализуют стандартные протоколы. Кандидат
+              декодируется в рабочую стратегию, проходит оценку и может быть сохранен как обычный
+              Python-класс в реестре моделей.
+            </p>
+            <div class="formula">стандартный компонент -> GA-алфавит -> операторы GA -> новая стратегия</div>
+          </div>
+          <figure class="screenshot side">
+            <img src="assets/img/GA_ui.png" alt="Интерфейс GA Lab" />
+          </figure>
+        </section>
+
+        <section>
+          <div class="slide-head">
+            <p class="kicker">Эволюционный цикл</p>
+            <h2>GA Lab не заменяет модельера, а расширяет пространство поиска</h2>
+          </div>
+          <div class="timeline">
+            <article>
+              <span>1</span>
+              <h3>Компонент как ген</h3>
+              <p>В алфавит попадает компонент, который реализует общий протокол и имеет понятные параметры.</p>
+            </article>
+            <article>
+              <span>2</span>
+              <h3>Операторы GA</h3>
+              <p>К стратегиям применяются отбор, скрещивание, мутация, турнир и элитизм.</p>
+            </article>
+            <article>
+              <span>3</span>
+              <h3>Оценить кандидатов</h3>
+              <p>Fitness использует WF_Return, WF_Calmar, Robustness_Delta и Sharpe_Stability.</p>
+            </article>
+            <article>
+              <span>4</span>
+              <h3>Материализовать TOP</h3>
+              <p>Лучшие стратегии появляются в реестре моделей и дальше тестируются как обычные.</p>
+            </article>
+          </div>
+        </section>
+
+        <section>
+          <div class="slide-head compact">
+            <p class="kicker">Исследовательский цикл</p>
+            <h2>Как это выглядит в работе аналитика</h2>
+          </div>
+          <div class="research-loop">
+            <span>Гипотеза</span>
+            <span>Компонент</span>
+            <span>Ручная сборка</span>
+            <span>GA-генерация</span>
+            <span>Стратегия</span>
+            <span>CPCV</span>
+            <span>WalkForward</span>
+            <span>Backtesting</span>
+            <span>Сравнение</span>
+          </div>
+        </section>
+
+        <section>
+          <div class="slide-head compact">
+            <p class="kicker">Для внедрения</p>
+            <h2>Что получает команда в текущей версии</h2>
+          </div>
+          <div class="cards three">
+            <article>
+              <h3>Закрытый исследовательский контур</h3>
+              <p>
+                Система запускается локально или во внутренней среде. Секреты и источники данных
+                остаются под контролем.
+              </p>
+            </article>
+            <article>
+              <h3>Расширяемые протоколы</h3>
+              <p>
+                Можно добавлять источники, селекторы, сигналы, аллокаторы, торговые политики и т.д.
+              </p>
+            </article>
+            <article>
+              <h3>Артефакты для аудита</h3>
+              <p>
+                Результаты тестов, GA-запуски и материализованные стратегии сохраняются, поэтому
+                исследование можно восстановить и обсудить.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section>
+          <div class="slide-head compact">
+            <p class="kicker">Эксплуатация</p>
+            <h2>Поставка рассчитана на быстрый запуск и понятную передачу</h2>
+          </div>
+          <div class="delivery-grid">
+            <article>
+              <span>Запуск</span>
+              <strong>docker compose up --build</strong>
+              <p>Одна команда поднимает gateway, UI, API и Python-сервисы.</p>
+            </article>
+            <article>
+              <span>Документация</span>
+              <strong>Markdown и PDF</strong>
+              <p>В комплекте есть редактируемые docs и собранные PDF-версии.</p>
+            </article>
+            <article>
+              <span>Хранение</span>
+              <strong>Docker volumes</strong>
+              <p>Кэши данных, тестов и GA-запусков сохраняются между сессиями.</p>
+            </article>
+            <article>
+              <span>API</span>
+              <strong>Swagger endpoints</strong>
+              <p>Data, Strategy и GA backend доступны для интеграций.</p>
+            </article>
+          </div>
+        </section>
+
+        <section>
+          <div class="slide-head compact">
+            <p class="kicker">Границы применимости</p>
+            <h2>Текущая версия — исследовательская платформа</h2>
+          </div>
+          <div class="risk-layout">
+            <div class="risk-box">
+              <h3>Сейчас система не делает</h3>
+              <ul>
+                <li>не выставляет реальные заявки;</li>
+                <li>не исполняет сделки на брокерском счете;</li>
+                <li>не гарантирует будущую доходность;</li>
+                <li>не заменяет production risk-management.</li>
+              </ul>
+            </div>
+            <div class="risk-box accent">
+              <h3>Что будет добавлено в следующих версиях</h3>
+              <ul>
+                <li>модуль ордеров и журнал исполнения;</li>
+                <li>лимиты, pre-trade checks и риск-контроль;</li>
+                <li>авторизацию и контур доступа;</li>
+                <li>новые источники данных и корпоративные справочники.</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <section class="closing">
+          <p class="kicker">Итог</p>
+          <h2>ITS — это способ дисциплинировать исследование торговых стратегий</h2>
+          <p class="lead">
+            Система не продает обещание доходности. Она дает инфраструктуру, где гипотезы можно
+            формулировать, проверять, сравнивать и развивать без постоянного возвращения к
+            ручной подготовке данных и разрозненному коду.
+          </p>
+        </section>
+      </div>
+    </div>
+
+    <script src="../../dist/reveal.js"></script>
+    <script>
+      Reveal.initialize({
+        hash: true,
+        width: 1600,
+        height: 900,
+        margin: 0.04,
+        controls: true,
+        progress: true,
+        slideNumber: "c/t",
+        center: false,
+        transition: "fade",
+        backgroundTransition: "fade"
+      });
+    </script>
+  </body>
+</html>

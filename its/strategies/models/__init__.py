@@ -18,6 +18,9 @@ from its.strategies.models.ga_generated_20260501165257_03fe8b1a_top_3 import Gen
 from its.strategies.models.ga_generated_20260501165415_d7edeed9_top_1 import Generated20260501165415D7edeed9Top1Builder
 from its.strategies.models.ga_generated_20260501165415_d7edeed9_top_2 import Generated20260501165415D7edeed9Top2Builder
 from its.strategies.models.ga_generated_20260501165415_d7edeed9_top_3 import Generated20260501165415D7edeed9Top3Builder
+from its.strategies.models.ga_generated_20260506150627_466593f8_top_1 import Generated20260506150627466593f8Top1Builder
+from its.strategies.models.ga_generated_20260506150627_466593f8_top_2 import Generated20260506150627466593f8Top2Builder
+from its.strategies.models.ga_generated_20260506150627_466593f8_top_3 import Generated20260506150627466593f8Top3Builder
 
 __all__ = [
     'ModelTurnoverWithEQBuilder',
@@ -36,4 +39,7 @@ __all__ = [
     'Generated20260501165415D7edeed9Top1Builder',
     'Generated20260501165415D7edeed9Top2Builder',
     'Generated20260501165415D7edeed9Top3Builder',
+    'Generated20260506150627466593f8Top1Builder',
+    'Generated20260506150627466593f8Top2Builder',
+    'Generated20260506150627466593f8Top3Builder',
 ]

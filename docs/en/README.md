@@ -20,6 +20,7 @@ The primary user is a financial modeler, quant researcher, or analyst who design
 10. [Operations, Configuration, and Delivery](10-operations-and-delivery.md)
 11. [Scientific Basis and Author Publications](11-scientific-basis.md)
 12. [Glossary](12-glossary.md)
+13. [Software Registration Certificate](13-registration-certificate.md)
 
 ## Quick Start
 
@@ -68,4 +69,3 @@ The system gives the modeler a single workspace for:
 ## Current Implementation Status
 
 The current version is a research and laboratory platform for forming, analyzing, testing, and generating trading strategies. It includes data infrastructure, UI, APIs, the strategy core, testing tools, and a GA generator. Production order execution, broker account management, risk-control services, and order-management modules can be implemented as separate extensions.
-

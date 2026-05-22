@@ -46,6 +46,7 @@ DOCS: dict[str, list[tuple[str, str]]] = {
         ("10-operations-and-delivery.md", "Эксплуатация, конфигурация и передача системы"),
         ("11-scientific-basis.md", "Научная база и публикации автора"),
         ("12-glossary.md", "Глоссарий"),
+        ("13-registration-certificate.md", "Свидетельство о регистрации программы для ЭВМ"),
     ],
     "en": [
         ("README.md", "Contents"),
@@ -61,6 +62,7 @@ DOCS: dict[str, list[tuple[str, str]]] = {
         ("10-operations-and-delivery.md", "Operations, Configuration, and Delivery"),
         ("11-scientific-basis.md", "Scientific Basis and Author Publications"),
         ("12-glossary.md", "Glossary"),
+        ("13-registration-certificate.md", "Software Registration Certificate"),
     ],
 }
 
@@ -494,7 +496,7 @@ def render_image(base_dir: Path, target: str, max_width: float) -> Image | None:
     if width <= 0 or height <= 0:
         return None
 
-    max_height = 145 * mm
+    max_height = (215 if height / width > 1.25 else 145) * mm
     scale = min(max_width / width, max_height / height, 1.0)
     return Image(str(target_path), width=width * scale, height=height * scale, hAlign="LEFT")
 

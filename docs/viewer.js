@@ -13,6 +13,7 @@ const DOCS = {
     ["10-operations-and-delivery.md", "Эксплуатация"],
     ["11-scientific-basis.md", "Научная база"],
     ["12-glossary.md", "Глоссарий"],
+    ["13-registration-certificate.md", "Свидетельство"],
   ],
   en: [
     ["README.md", "Contents"],
@@ -28,6 +29,7 @@ const DOCS = {
     ["10-operations-and-delivery.md", "Operations"],
     ["11-scientific-basis.md", "Scientific Basis"],
     ["12-glossary.md", "Glossary"],
+    ["13-registration-certificate.md", "Certificate"],
   ],
 };
 

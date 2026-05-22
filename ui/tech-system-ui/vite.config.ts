@@ -12,6 +12,11 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/tech/, "/api/v1"),
       },
+      "/api/event-log": {
+        target: "http://127.0.0.1:8105",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/event-log/, "/api/v1"),
+      },
     },
   },
 });

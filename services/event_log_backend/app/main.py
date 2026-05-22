@@ -2,15 +2,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from its.event_log.integration import install_event_log
-from its.tech_system.auth.router import router as auth_router
+from its.event_log.router import router as event_log_router
 
 API_PREFIX = "/api/v1"
 
 
 def create_app() -> FastAPI:
     app = FastAPI(
-        title="ITS Tech System Backend",
-        description="Technical services API for Intelligent Trading Strategies",
+        title="ITS Event Log Backend",
+        description="Append-only user action audit log API",
         version="0.1.0",
         docs_url=f"{API_PREFIX}/docs",
         openapi_url=f"{API_PREFIX}/openapi.json",
@@ -22,11 +22,12 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    install_event_log(app, service_name="tech-system-backend")
+    install_event_log(app, service_name="event-log-backend")
 
     @app.get(f"{API_PREFIX}/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    app.include_router(auth_router, prefix=API_PREFIX, tags=["Auth"])
+    app.include_router(event_log_router, prefix=API_PREFIX)
     return app
+

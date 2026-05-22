@@ -15,6 +15,7 @@ from services.strategy_backend.app.trading_strategy_backtest import (
     router as trading_strategy_backtest_router,
 )
 from services.strategy_backend.app.walk_forward import router as walk_forward_router
+from its.event_log.integration import install_event_log
 
 
 API_PREFIX = "/api/v1"
@@ -68,6 +69,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    install_event_log(app, service_name="strategy-backend")
     app.include_router(backtest_router, prefix=API_PREFIX)
     app.include_router(comparison_router, prefix=API_PREFIX)
     app.include_router(cpcv_router, prefix=API_PREFIX)

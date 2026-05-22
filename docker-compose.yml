@@ -1,6 +1,14 @@
 x-app-database-environment: &app-database-environment
   DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-its}:${POSTGRES_PASSWORD:-its_password}@postgres:5432/${POSTGRES_DB:-its}"
 
+x-event-log-database-environment: &event-log-database-environment
+  EVENT_LOG_DATABASE_URL: "postgresql+psycopg://${EVENT_LOG_POSTGRES_USER:-its_event_log}:${EVENT_LOG_POSTGRES_PASSWORD:-its_event_log_password}@event-log-postgres:5432/${EVENT_LOG_POSTGRES_DB:-its_event_log}"
+
+x-auth-jwt-environment: &auth-jwt-environment
+  AUTH_JWT_SECRET_KEY: ${AUTH_JWT_SECRET_KEY:-its_dev_auth_secret_change_me_please_rotate}
+  AUTH_JWT_ALGORITHM: ${AUTH_JWT_ALGORITHM:-HS256}
+  AUTH_JWT_ISSUER: ${AUTH_JWT_ISSUER:-its-tech-system}
+
 services:
   postgres:
     image: postgres:18-alpine
@@ -14,6 +22,24 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/18/docker
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  event-log-postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${EVENT_LOG_POSTGRES_DB:-its_event_log}
+      POSTGRES_USER: ${EVENT_LOG_POSTGRES_USER:-its_event_log}
+      POSTGRES_PASSWORD: ${EVENT_LOG_POSTGRES_PASSWORD:-its_event_log_password}
+      PGDATA: /var/lib/postgresql/18/docker
+    ports:
+      - "${EVENT_LOG_POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - event-log-postgres-data:/var/lib/postgresql/18/docker
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
@@ -38,7 +64,10 @@ services:
     env_file:
       - .env
     environment:
-      <<: *app-database-environment
+      <<:
+        - *app-database-environment
+        - *event-log-database-environment
+        - *auth-jwt-environment
       tinvest_token: ${tinvest_token:-}
       TINVEST_TOKEN: ${TINVEST_TOKEN:-}
       TINKOFF_INVEST_API_TOKEN: ${TINKOFF_INVEST_API_TOKEN:-}
@@ -50,6 +79,8 @@ services:
     depends_on:
       db-migrations:
         condition: service_completed_successfully
+      event-log-postgres:
+        condition: service_healthy
 
   data-ui:
     build:
@@ -65,7 +96,10 @@ services:
       context: .
       dockerfile: services/strategy_backend/Dockerfile
     environment:
-      <<: *app-database-environment
+      <<:
+        - *app-database-environment
+        - *event-log-database-environment
+        - *auth-jwt-environment
       DATA_BACKEND_BASE_URL: http://data-backend:8000/api/v1
       STRATEGY_TEST_CACHE_DIR: /app/its/data/strategy_tests/cpcv
       STRATEGY_WF_CACHE_DIR: /app/its/data/strategy_tests/walk_forward
@@ -78,6 +112,8 @@ services:
       data-backend:
         condition: service_started
       postgres:
+        condition: service_healthy
+      event-log-postgres:
         condition: service_healthy
     expose:
       - "8000"
@@ -96,7 +132,10 @@ services:
       context: .
       dockerfile: its/services/ga_backend/Dockerfile
     environment:
-      <<: *app-database-environment
+      <<:
+        - *app-database-environment
+        - *event-log-database-environment
+        - *auth-jwt-environment
       DATA_BACKEND_BASE_URL: http://data-backend:8000/api/v1
       GA_RUN_CACHE_DIR: /app/its/data/ga_runs
       GA_MODELS_DIR: /app/its/strategies/models
@@ -109,6 +148,8 @@ services:
       data-backend:
         condition: service_started
       postgres:
+        condition: service_healthy
+      event-log-postgres:
         condition: service_healthy
     expose:
       - "8000"
@@ -127,15 +168,31 @@ services:
       context: .
       dockerfile: services/tech_system_backend/Dockerfile
     environment:
-      <<: *app-database-environment
-      AUTH_JWT_SECRET_KEY: ${AUTH_JWT_SECRET_KEY:-its_dev_auth_secret_change_me_please_rotate}
-      AUTH_JWT_ALGORITHM: ${AUTH_JWT_ALGORITHM:-HS256}
-      AUTH_JWT_ISSUER: ${AUTH_JWT_ISSUER:-its-tech-system}
+      <<:
+        - *app-database-environment
+        - *event-log-database-environment
+        - *auth-jwt-environment
       AUTH_ACCESS_TOKEN_TTL_MINUTES: ${AUTH_ACCESS_TOKEN_TTL_MINUTES:-30}
       AUTH_REFRESH_TOKEN_TTL_DAYS: ${AUTH_REFRESH_TOKEN_TTL_DAYS:-7}
     depends_on:
       db-migrations:
         condition: service_completed_successfully
+      event-log-postgres:
+        condition: service_healthy
+    expose:
+      - "8000"
+
+  event-log-backend:
+    build:
+      context: .
+      dockerfile: services/event_log_backend/Dockerfile
+    environment:
+      <<:
+        - *event-log-database-environment
+        - *auth-jwt-environment
+    depends_on:
+      event-log-postgres:
+        condition: service_healthy
     expose:
       - "8000"
 
@@ -159,6 +216,7 @@ services:
       - strategy-ui
       - ga-ui
       - tech-system-ui
+      - event-log-backend
 
   nginx-gateway:
     build:
@@ -175,10 +233,12 @@ services:
       - ga-ui
       - tech-system-backend
       - tech-system-ui
+      - event-log-backend
       - launchpad-ui
 
 volumes:
   postgres-data:
+  event-log-postgres-data:
   t-invest-cache:
   strategy-test-cache:
   ga-cache:

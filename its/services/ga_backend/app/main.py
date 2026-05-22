@@ -14,6 +14,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from its.event_log.integration import install_event_log
 from its.ga.engine import run_ga_search
 from its.ga.registry import load_alphabet_registry
 
@@ -71,6 +72,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    install_event_log(app, service_name="ga-backend")
 
     @app.get(f"{API_PREFIX}/health")
     async def health() -> dict[str, str]:

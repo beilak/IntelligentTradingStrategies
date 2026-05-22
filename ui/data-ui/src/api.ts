@@ -12,6 +12,8 @@ import type {
 } from "./types";
 
 const API_BASE = import.meta.env.VITE_DATA_API_BASE ?? "/api/data";
+const ACCESS_TOKEN_KEY = "its-auth-access-token";
+const REFRESH_TOKEN_KEY = "its-auth-refresh-token";
 
 interface StockParams {
   class_code?: string;
@@ -112,7 +114,7 @@ async function request<T>(path: string, params: object): Promise<T> {
   const url = new URL(`${API_BASE}${path}`, window.location.origin);
   appendParams(url, params as Record<string, unknown>);
 
-  const response = await fetch(url);
+  const response = await fetch(url, { headers: await authHeaders() });
   if (!response.ok) {
     const payload = await response.json().catch(() => null);
     throw new Error(payload?.detail ?? response.statusText);
@@ -124,7 +126,7 @@ async function request<T>(path: string, params: object): Promise<T> {
 async function post<T>(path: string): Promise<T> {
   const url = new URL(`${API_BASE}${path}`, window.location.origin);
 
-  const response = await fetch(url, { method: "POST" });
+  const response = await fetch(url, { method: "POST", headers: await authHeaders() });
   if (!response.ok) {
     const payload = await response.json().catch(() => null);
     throw new Error(payload?.detail ?? response.statusText);
@@ -146,4 +148,43 @@ function appendParams(url: URL, params: Record<string, unknown>) {
 
     url.searchParams.set(key, String(value));
   });
+}
+
+async function authHeaders(): Promise<Record<string, string>> {
+  const token = await accessTokenForRequest();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+async function accessTokenForRequest(): Promise<string | null> {
+  const accessToken = localStorage.getItem(ACCESS_TOKEN_KEY);
+  if (accessToken && !tokenExpiresSoon(accessToken)) {
+    return accessToken;
+  }
+
+  const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+  if (!refreshToken) return null;
+
+  const response = await fetch("/api/tech/auth/refresh", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  }).catch(() => null);
+  if (!response?.ok) return null;
+
+  const payload = (await response.json()) as {
+    access_token: string;
+    refresh_token: string;
+  };
+  localStorage.setItem(ACCESS_TOKEN_KEY, payload.access_token);
+  localStorage.setItem(REFRESH_TOKEN_KEY, payload.refresh_token);
+  return payload.access_token;
+}
+
+function tokenExpiresSoon(token: string): boolean {
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1] ?? "")) as { exp?: number };
+    return typeof payload.exp !== "number" || payload.exp * 1000 <= Date.now() + 30_000;
+  } catch {
+    return true;
+  }
 }

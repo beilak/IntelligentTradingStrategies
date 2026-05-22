@@ -7,6 +7,7 @@ import {
   CandlestickChart,
   Dna,
   Globe2,
+  Home,
   Layers3,
   Play,
   CircleHelp,
@@ -435,6 +436,14 @@ function buildScoreChart(items: Array<{ generation: number; best_total_score: nu
         </div>
       </div>
       <div class="top-actions" :aria-label="t.language">
+        <a
+          class="icon-button"
+          href="/launchpad/"
+          title="Launchpad"
+          aria-label="Launchpad"
+        >
+          <Home :size="18" />
+        </a>
         <a
           class="icon-button"
           :href="docsHref"

@@ -8,6 +8,7 @@ import {
   Database,
   Dices,
   Globe2,
+  Home,
   RefreshCw,
   Rss,
   Search,
@@ -658,6 +659,14 @@ function setActiveTab(tab: ViewTab) {
       </div>
 
       <div class="top-actions" :aria-label="t.language">
+        <a
+          class="icon-button"
+          href="/launchpad/"
+          title="Launchpad"
+          aria-label="Launchpad"
+        >
+          <Home :size="18" />
+        </a>
         <a
           class="icon-button"
           :href="docsHref"

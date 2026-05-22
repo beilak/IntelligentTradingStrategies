@@ -68,9 +68,7 @@ def list_event_logs(
     total = session.scalar(count_stmt) or 0
     items = list(
         session.scalars(
-            stmt.order_by(desc(EventLogEntry.date_time), desc(EventLogEntry.id))
-            .offset(offset)
-            .limit(limit)
+            _order_event_logs_newest_first(stmt).offset(offset).limit(limit)
         )
     )
     return items, total
@@ -118,6 +116,10 @@ def _apply_filters(statement, filters: EventLogFilters):
     if filters.body:
         statement = statement.where(EventLogEntry.body.ilike(_contains(filters.body)))
     return statement
+
+
+def _order_event_logs_newest_first(statement):
+    return statement.order_by(desc(EventLogEntry.date_time), desc(EventLogEntry.id))
 
 
 def _contains(value: str) -> str:

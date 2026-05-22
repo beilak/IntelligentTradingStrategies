@@ -327,10 +327,15 @@ onMounted(async () => {
           <span>Личный кабинет</span>
         </div>
       </div>
-      <a class="ghost-link" href="/docs/" target="_blank" rel="noreferrer">
-        Документация
-        <ArrowRight :size="16" />
-      </a>
+      <div class="top-actions">
+        <a class="top-icon-button" href="/launchpad/" title="Launchpad" aria-label="Launchpad">
+          <Home :size="18" />
+        </a>
+        <a class="ghost-link" href="/docs/" target="_blank" rel="noreferrer">
+          Документация
+          <ArrowRight :size="16" />
+        </a>
+      </div>
     </header>
 
     <main

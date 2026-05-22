@@ -8,6 +8,7 @@ import {
     FolderOpen,
     GitBranch,
     Globe2,
+    Home,
     Layers3,
     PlayCircle,
     RefreshCw,
@@ -979,6 +980,14 @@ function polarPoint(cx: number, cy: number, radius: number, ratio: number) {
             </div>
 
             <div class="top-actions" :aria-label="t.language">
+                <a
+                    class="icon-button"
+                    href="/launchpad/"
+                    title="Launchpad"
+                    aria-label="Launchpad"
+                >
+                    <Home :size="18" />
+                </a>
                 <a
                     class="icon-button"
                     :href="docsHref"

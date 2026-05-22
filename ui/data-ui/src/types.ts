@@ -120,6 +120,46 @@ export interface CustomGoldBarsResponse extends PricesResponse {
   };
 }
 
+export interface MonteCarloClosePoint {
+  time: string;
+  close: number;
+  figi?: string | null;
+  ticker?: string | null;
+}
+
+export interface MonteCarloPathPoint {
+  path_id: number;
+  time: string;
+  close: number;
+  step: number;
+}
+
+export type MonteCarloDriftMode = "historical" | "zero";
+
+export interface MonteCarloResponse {
+  actual: MonteCarloClosePoint[];
+  training: MonteCarloClosePoint[];
+  paths: MonteCarloPathPoint[];
+  meta: PricesResponse["meta"] & {
+    instrument_type: string;
+    model: string;
+    train_until: string;
+    simulation_end: string;
+    requested_simulation_end_date: string;
+    path_count: number;
+    simulation_steps: number;
+    training_points: number;
+    anchor_close: number;
+    mean_log_return: number;
+    volatility: number;
+    volatility_scale: number;
+    scaled_volatility: number;
+    drift: number;
+    drift_mode: MonteCarloDriftMode;
+    seed: number | null;
+  };
+}
+
 export interface Dividend {
   dividend_net: number;
   payment_date: string;
@@ -152,4 +192,36 @@ export interface DividendsResponse {
     end_date: string;
   };
   summary: DividendSummary[];
+}
+
+export interface RssItem {
+  pub_date: string;
+  title: string;
+  text: string;
+  source: string;
+}
+
+export interface RssItemsResponse {
+  items: RssItem[];
+  total: number;
+  limit: number;
+  offset: number;
+  filters: {
+    pub_date_from: string | null;
+    pub_date_to: string | null;
+    title: string | null;
+    text: string | null;
+    source: string | null;
+  };
+}
+
+export interface RssSourcesResponse {
+  items: string[];
+}
+
+export interface RssLoadResponse {
+  feeds: string[];
+  parsed_items: number;
+  saved_items: number;
+  errors: string[];
 }

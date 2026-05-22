@@ -1,14 +1,17 @@
 import asyncio
 import math
 import os
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from enum import Enum
 from typing import Annotated
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import Select, func, select
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 from t_tech.invest import CandleInterval
 
 from its.data_loader.custom_bar.gold_bar import (
@@ -16,12 +19,20 @@ from its.data_loader.custom_bar.gold_bar import (
     build_gold_bar_types,
     parse_gold_bar_type as parse_gold_bar_type_name,
 )
-from its.data_loader.t_invest_data_readers.prices_reader import get_prices
+from its.data_loader.monte_carlo import build_close_price_monte_carlo
+from its.data_loader.rss_loader import (
+    DEFAULT_RSS_URLS,
+    get_default_rss_sources,
+    load_rss_items_to_db,
+)
 from its.data_loader.t_invest_data_readers.dividents_reader import get_dividends
+from its.data_loader.t_invest_data_readers.prices_reader import get_prices
 from its.data_loader.t_invest_data_readers.stock_info import (
     get_currencies_info,
     get_stock_info,
 )
+from its.db.models import RSSItem
+from its.db.session import get_session
 
 API_PREFIX = "/api/v1"
 DEFAULT_CLASS_CODE = "TQBR"
@@ -30,6 +41,8 @@ DEFAULT_DIVIDEND_START_YEAR = 2010
 DEFAULT_GOLD_TICKER = "GLDRUB_TOM"
 DEFAULT_GOLD_CLASS_CODE = "CETS"
 DEFAULT_INSTRUMENT_TYPE = "stocks"
+DEFAULT_MONTE_CARLO_PATH_COUNT = 100
+MAX_MONTE_CARLO_PATH_COUNT = 500
 
 DIVIDEND_COLUMNS = [
     "dividend_net",
@@ -106,6 +119,9 @@ PRICE_COLUMNS = [
     "ticker",
 ]
 
+MONTE_CARLO_CLOSE_COLUMNS = ["time", "close", "figi", "ticker"]
+MONTE_CARLO_PATH_COLUMNS = ["path_id", "time", "close", "step"]
+
 SUPPORTED_INTERVALS = {
     "CANDLE_INTERVAL_1_MIN": CandleInterval.CANDLE_INTERVAL_1_MIN,
     "CANDLE_INTERVAL_5_MIN": CandleInterval.CANDLE_INTERVAL_5_MIN,
@@ -156,6 +172,13 @@ def create_app() -> FastAPI:
                     "status": "active",
                     "resources": ["dividends"],
                     "intervals": [],
+                },
+                {
+                    "id": "monte-carlo-close",
+                    "name": "Monte Carlo close price generator",
+                    "status": "active",
+                    "resources": ["monte-carlo"],
+                    "intervals": list(SUPPORTED_INTERVALS),
                 },
             ]
         }
@@ -422,6 +445,125 @@ def create_app() -> FastAPI:
             "summary": build_price_summary(custom_bars_df),
         }
 
+    @app.get(f"{API_PREFIX}/monte-carlo")
+    async def monte_carlo(
+        figis: Annotated[list[str] | None, Query()] = None,
+        tickers: Annotated[list[str] | None, Query()] = None,
+        class_code: str | None = DEFAULT_CLASS_CODE,
+        instrument_type: str = DEFAULT_INSTRUMENT_TYPE,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        interval: str = DEFAULT_INTERVAL,
+        is_complete: bool = True,
+        train_until_date: date | None = None,
+        simulation_end_date: date | None = None,
+        path_count: Annotated[
+            int, Query(ge=1, le=MAX_MONTE_CARLO_PATH_COUNT)
+        ] = DEFAULT_MONTE_CARLO_PATH_COUNT,
+        seed: int | None = 42,
+        volatility_scale: Annotated[float, Query(ge=0, le=10)] = 1.0,
+        drift_mode: str = "historical",
+    ) -> dict[str, object]:
+        token = get_tinvest_token()
+        parsed_interval = parse_interval(interval)
+        requested_figis = split_query_list(figis)
+        requested_tickers = split_query_list(tickers)
+
+        if not requested_figis and not requested_tickers:
+            raise HTTPException(
+                status_code=422,
+                detail="Pass one figi or ticker.",
+            )
+        if train_until_date is None:
+            raise HTTPException(
+                status_code=422,
+                detail="train_until_date is required.",
+            )
+
+        current_today = pd.Timestamp(datetime.utcnow().date())
+        requested_simulation_end = pd.Timestamp(
+            simulation_end_date or end_date or current_today.date()
+        )
+        current_end = pd.Timestamp(end_date or requested_simulation_end.date())
+        current_end = min(current_end, current_today)
+        current_start = pd.Timestamp(
+            start_date or (current_end - pd.Timedelta(days=180)).date()
+        )
+        if current_start > current_end:
+            raise HTTPException(
+                status_code=422, detail="start_date must be before end_date."
+            )
+
+        instruments_df = await get_instruments_frame(gateway, token, instrument_type)
+        resolved_figis, figi_ticker_map = resolve_instruments(
+            instruments_df=instruments_df,
+            figis=requested_figis,
+            tickers=requested_tickers,
+            class_code=class_code,
+        )
+        if not resolved_figis:
+            raise HTTPException(
+                status_code=404, detail="No instruments found for request."
+            )
+        if len(resolved_figis) > 1:
+            raise HTTPException(
+                status_code=422,
+                detail="Monte Carlo simulation supports exactly one instrument.",
+            )
+
+        prices_df = await get_prices(
+            figis=resolved_figis,
+            start_date=current_start,
+            end_date=current_end,
+            interval=parsed_interval,
+            token=token,
+            is_complete=is_complete,
+        )
+        if prices_df.empty:
+            raise HTTPException(
+                status_code=404, detail="No prices found for Monte Carlo simulation."
+            )
+
+        prices_df = prices_df.copy()
+        if "ticker" not in prices_df.columns:
+            prices_df["ticker"] = prices_df["figi"].map(figi_ticker_map)
+        prices_df = prices_df.sort_values(["ticker", "time"])
+
+        try:
+            result = build_close_price_monte_carlo(
+                prices_df=prices_df,
+                train_until=train_until_date,
+                simulation_end=requested_simulation_end,
+                path_count=path_count,
+                seed=seed,
+                volatility_scale=volatility_scale,
+                drift_mode=drift_mode,  # type: ignore[arg-type]
+                interval=interval,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+        return {
+            "actual": dataframe_to_records(result.actual, MONTE_CARLO_CLOSE_COLUMNS),
+            "training": dataframe_to_records(
+                result.training, MONTE_CARLO_CLOSE_COLUMNS
+            ),
+            "paths": dataframe_to_records(result.paths, MONTE_CARLO_PATH_COLUMNS),
+            "meta": {
+                **build_prices_meta(
+                    resolved_figis,
+                    figi_ticker_map,
+                    current_start,
+                    current_end,
+                    interval,
+                    is_complete,
+                ),
+                **result.meta,
+                "instrument_type": instrument_type,
+                "requested_simulation_end_date": requested_simulation_end.date().isoformat(),
+            },
+        }
+
     @app.get(f"{API_PREFIX}/dividends")
     async def dividends(
         figis: Annotated[list[str] | None, Query()] = None,
@@ -501,6 +643,81 @@ def create_app() -> FastAPI:
                 current_end,
             ),
             "summary": build_dividends_summary(dividends_df),
+        }
+
+    @app.get(f"{API_PREFIX}/rss")
+    async def rss_items(
+        session: Annotated[Session, Depends(get_session)],
+        pub_date_from: date | None = None,
+        pub_date_to: date | None = None,
+        title: str | None = None,
+        text: str | None = None,
+        source: str | None = None,
+        limit: Annotated[int, Query(ge=1, le=1_000)] = 200,
+        offset: Annotated[int, Query(ge=0)] = 0,
+    ) -> dict[str, object]:
+        try:
+            base_statement = build_rss_statement(
+                pub_date_from=pub_date_from,
+                pub_date_to=pub_date_to,
+                title=title,
+                text=text,
+                source=source,
+            )
+            total = session.scalar(
+                select(func.count()).select_from(base_statement.subquery())
+            )
+            items = session.scalars(
+                base_statement.order_by(RSSItem.pub_date.desc(), RSSItem.title)
+                .offset(offset)
+                .limit(limit)
+            ).all()
+        except SQLAlchemyError as error:
+            raise HTTPException(
+                status_code=503,
+                detail=f"RSS database query failed: {format_sqlalchemy_error(error)}",
+            ) from error
+
+        return {
+            "items": [serialize_rss_item(item) for item in items],
+            "total": int(total or 0),
+            "limit": limit,
+            "offset": offset,
+            "filters": {
+                "pub_date_from": sanitize_scalar(pub_date_from),
+                "pub_date_to": sanitize_scalar(pub_date_to),
+                "title": title,
+                "text": text,
+                "source": source,
+            },
+        }
+
+    @app.get(f"{API_PREFIX}/rss/sources")
+    async def rss_sources() -> dict[str, list[str]]:
+        return {"items": get_default_rss_sources()}
+
+    @app.post(f"{API_PREFIX}/rss/load")
+    async def load_rss_items(
+        session: Annotated[Session, Depends(get_session)],
+        urls: Annotated[list[str] | None, Query()] = None,
+    ) -> dict[str, object]:
+        feed_urls = split_query_list(urls) or list(DEFAULT_RSS_URLS)
+        try:
+            result = load_rss_items_to_db(session=session, feed_urls=feed_urls)
+        except SQLAlchemyError as error:
+            raise HTTPException(
+                status_code=503,
+                detail=f"RSS database load failed: {format_sqlalchemy_error(error)}",
+            ) from error
+
+        if result.errors and result.parsed_items == 0:
+            raise HTTPException(status_code=502, detail=result.errors)
+
+        return {
+            "feeds": result.feeds,
+            "parsed_items": result.parsed_items,
+            "saved_items": result.saved_items,
+            "errors": result.errors,
         }
 
     return app
@@ -887,6 +1104,48 @@ def build_dividends_summary(dividends_df: pd.DataFrame) -> list[dict[str, object
         )
 
     return summary
+
+
+def build_rss_statement(
+    pub_date_from: date | None,
+    pub_date_to: date | None,
+    title: str | None,
+    text: str | None,
+    source: str | None,
+) -> Select[tuple[RSSItem]]:
+    statement = select(RSSItem)
+
+    if pub_date_from:
+        statement = statement.where(
+            RSSItem.pub_date >= datetime.combine(pub_date_from, time.min, tzinfo=UTC)
+        )
+    if pub_date_to:
+        statement = statement.where(
+            RSSItem.pub_date <= datetime.combine(pub_date_to, time.max, tzinfo=UTC)
+        )
+    if title:
+        statement = statement.where(RSSItem.title.ilike(f"%{title.strip()}%"))
+    if text:
+        statement = statement.where(RSSItem.text.ilike(f"%{text.strip()}%"))
+    if source:
+        statement = statement.where(RSSItem.source.ilike(f"%{source.strip()}%"))
+
+    return statement
+
+
+def serialize_rss_item(item: RSSItem) -> dict[str, object]:
+    return {
+        "pub_date": sanitize_scalar(item.pub_date),
+        "title": item.title,
+        "text": item.text,
+        "source": item.source,
+    }
+
+
+def format_sqlalchemy_error(error: SQLAlchemyError) -> str:
+    original = getattr(error, "orig", None)
+    message = str(original or error)
+    return message.split("[SQL:", 1)[0].strip()
 
 
 def dataframe_to_records(

@@ -6,23 +6,28 @@ import {
   CircleHelp,
   Coins,
   Database,
+  Dices,
   Globe2,
   RefreshCw,
+  Rss,
   Search,
   TrendingUp,
+  X,
 } from "lucide-vue-next";
 import { computed, onMounted, ref, watch } from "vue";
-import { getCurrencies, getCustomGoldBars, getDividends, getPrices, getStocks } from "./api";
+import { getCurrencies, getCustomGoldBars, getDividends, getMonteCarlo, getPrices, getRssItems, getRssSources, getStocks, loadRssItems } from "./api";
 import CandlestickChartPanel from "./components/CandlestickChart.vue";
+import CloseLineChartPanel from "./components/CloseLineChart.vue";
+import MonteCarloPathsChartPanel from "./components/MonteCarloPathsChart.vue";
 import { messages } from "./i18n";
-import type { Candle, Currency, Dividend, DividendSummary, GoldBarType, Locale, Stock, StockFilters } from "./types";
+import type { Candle, Currency, Dividend, DividendSummary, GoldBarType, Locale, MonteCarloClosePoint, MonteCarloDriftMode, MonteCarloResponse, RssItem, RssLoadResponse, Stock, StockFilters } from "./types";
 
 const savedLocale = localStorage.getItem("its-data-locale") as Locale | null;
 const locale = ref<Locale>(savedLocale === "en" ? "en" : "ru");
 const t = computed(() => messages[locale.value]);
 const docsHref = computed(() => `/docs/?lang=${locale.value}`);
 
-type ViewTab = "quotes" | "dividends" | "instruments" | "currencies";
+type ViewTab = "quotes" | "dividends" | "instruments" | "currencies" | "rss";
 const activeTab = ref<ViewTab>("quotes");
 
 const stocks = ref<Stock[]>([]);
@@ -48,6 +53,11 @@ const currencyCandles = ref<Candle[]>([]);
 const customGoldBars = ref<Candle[]>([]);
 const dividends = ref<Dividend[]>([]);
 const dividendsSummary = ref<DividendSummary[]>([]);
+const rssItems = ref<RssItem[]>([]);
+const rssTotal = ref(0);
+const rssSources = ref<string[]>([]);
+const rssLoadResult = ref<RssLoadResponse | null>(null);
+const monteCarloResult = ref<MonteCarloResponse | null>(null);
 
 const search = ref("");
 const classCode = ref("TQBR");
@@ -57,6 +67,19 @@ const selectedFigi = ref("");
 const selectedCurrencyFigi = ref("");
 const startDate = ref(formatDate(addDays(new Date(), -180)));
 const endDate = ref(formatDate(new Date()));
+const rssPubDateFrom = ref("");
+const rssPubDateTo = ref("");
+const rssTitle = ref("");
+const rssText = ref("");
+const rssSource = ref("");
+const isMonteCarloOpen = ref(false);
+const monteCarloStartDate = ref("");
+const monteCarloTrainUntil = ref("");
+const monteCarloSimulationEnd = ref("");
+const monteCarloPathCount = ref(100);
+const monteCarloSeed = ref<number | null>(42);
+const monteCarloVolatilityScale = ref(1);
+const monteCarloDriftMode = ref<MonteCarloDriftMode>("historical");
 const goldBarCount = ref(1);
 const goldBarType = ref("T_OUNCE_400");
 const goldBarTypes = ref<GoldBarType[]>([
@@ -72,6 +95,10 @@ const isLoadingCurrencyPrices = ref(false);
 const isLoadingCustomGoldBars = ref(false);
 const isLoadingDividends = ref(false);
 const isLoadingCurrencies = ref(false);
+const isLoadingRss = ref(false);
+const isUpdatingRss = ref(false);
+const isLoadingMonteCarlo = ref(false);
+const monteCarloError = ref("");
 const error = ref("");
 
 const orderedCandles = computed(() =>
@@ -114,7 +141,9 @@ const isBusy = computed(
     isLoadingCurrencyPrices.value ||
     isLoadingCustomGoldBars.value ||
     isLoadingDividends.value ||
-    isLoadingCurrencies.value,
+    isLoadingCurrencies.value ||
+    isLoadingRss.value ||
+    isUpdatingRss.value,
 );
 const priceChangePct = computed(() => {
   if (!firstCandle.value || !lastCandle.value || !firstCandle.value.close) {
@@ -125,6 +154,31 @@ const priceChangePct = computed(() => {
 const totalVolume = computed(() =>
   orderedCandles.value.reduce((sum, candle) => sum + Number(candle.volume ?? 0), 0),
 );
+const closeLinePoints = computed<MonteCarloClosePoint[]>(() =>
+  monteCarloResult.value?.actual.length
+    ? monteCarloResult.value.actual
+    : orderedCandles.value.map((candle) => ({
+        time: candle.time,
+        close: candle.close,
+        figi: candle.figi,
+        ticker: candle.ticker,
+      })),
+);
+const monteCarloCanRun = computed(() => {
+  if (
+    !selectedFigi.value ||
+    !monteCarloStartDate.value ||
+    !monteCarloTrainUntil.value ||
+    !monteCarloSimulationEnd.value
+  ) {
+    return false;
+  }
+
+  const simulationStart = parseDateInput(monteCarloStartDate.value);
+  const trainUntil = parseDateInput(monteCarloTrainUntil.value);
+  const simulationEnd = parseDateInput(monteCarloSimulationEnd.value);
+  return simulationStart < trainUntil && trainUntil < simulationEnd;
+});
 
 const totalDividendsNet = computed(() =>
   dividendsSummary.value.reduce((sum, d) => sum + Number(d.total_net ?? 0), 0),
@@ -136,7 +190,7 @@ const totalDividendsCount = computed(() =>
 watch(locale, (value) => localStorage.setItem("its-data-locale", value));
 
 onMounted(async () => {
-  await loadStocks();
+  await Promise.all([loadStocks(), loadRssSources()]);
 });
 
 async function loadStocks() {
@@ -302,6 +356,76 @@ async function loadCustomGoldBars() {
   }
 }
 
+function openMonteCarlo() {
+  resetMonteCarloDefaults();
+  window.scrollTo({ left: 0, top: 0 });
+  isMonteCarloOpen.value = true;
+  monteCarloError.value = "";
+  monteCarloResult.value = null;
+  void runMonteCarlo();
+}
+
+function closeMonteCarlo() {
+  isMonteCarloOpen.value = false;
+}
+
+function resetMonteCarloDefaults() {
+  const sourceCandles = orderedCandles.value;
+  const firstSourceCandle = sourceCandles[0];
+  const lastSourceCandle = sourceCandles[sourceCandles.length - 1];
+  const fallbackStart = firstSourceCandle ? toDateInput(firstSourceCandle.time) : startDate.value;
+  const fallbackEnd = lastSourceCandle ? toDateInput(lastSourceCandle.time) : endDate.value;
+
+  monteCarloStartDate.value = fallbackStart || startDate.value;
+
+  if (sourceCandles.length > 2) {
+    const trainIndex = Math.min(
+      sourceCandles.length - 2,
+      Math.max(1, Math.floor((sourceCandles.length - 1) * 0.72)),
+    );
+    monteCarloTrainUntil.value = toDateInput(sourceCandles[trainIndex].time);
+  } else {
+    monteCarloTrainUntil.value = startDate.value;
+  }
+
+  monteCarloSimulationEnd.value = endDate.value || fallbackEnd || formatDate(new Date());
+  monteCarloPathCount.value = 100;
+  monteCarloSeed.value = 42;
+  monteCarloVolatilityScale.value = 1;
+  monteCarloDriftMode.value = "historical";
+}
+
+async function runMonteCarlo() {
+  if (!selectedFigi.value || !monteCarloCanRun.value) {
+    return;
+  }
+
+  isLoadingMonteCarlo.value = true;
+  monteCarloError.value = "";
+  try {
+    monteCarloResult.value = await getMonteCarlo({
+      figis: [selectedFigi.value],
+      class_code: classCode.value,
+      instrument_type: "stocks",
+      start_date: monteCarloStartDate.value,
+      end_date: monteCarloSimulationEnd.value,
+      interval: interval.value,
+      is_complete: true,
+      train_until_date: monteCarloTrainUntil.value,
+      simulation_end_date: monteCarloSimulationEnd.value,
+      path_count: monteCarloPathCount.value,
+      seed: monteCarloSeed.value,
+      volatility_scale: monteCarloVolatilityScale.value,
+      drift_mode: monteCarloDriftMode.value,
+    });
+  } catch (err) {
+    monteCarloError.value = formatError(err);
+    monteCarloResult.value = null;
+  } finally {
+    isLoadingMonteCarlo.value = false;
+  }
+}
+
 function onToolbarChange() {
   if (activeTab.value === "quotes") {
     void loadPrices();
@@ -313,6 +437,10 @@ function onToolbarChange() {
 }
 
 function onSubmitToolbar() {
+  if (activeTab.value === "rss") {
+    void loadRss();
+    return;
+  }
   if (activeTab.value === "currencies") {
     void loadCurrencies();
     return;
@@ -352,6 +480,24 @@ function formatDate(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
+function toDateInput(value: string) {
+  const isoDate = value.match(/^\d{4}-\d{2}-\d{2}/)?.[0];
+  if (isoDate) {
+    return isoDate;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return formatDate(new Date());
+  }
+  return formatDate(parsed);
+}
+
+function parseDateInput(value: string) {
+  const parsed = new Date(`${value}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? Number.NaN : parsed.getTime();
+}
+
 function formatError(err: unknown) {
   return err instanceof Error ? err.message : String(err);
 }
@@ -365,6 +511,13 @@ function formatNumber(value: number | null | undefined, digits = 2) {
   }).format(value);
 }
 
+function formatPercentValue(value: number | null | undefined, digits = 4) {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return "—";
+  }
+  return `${formatNumber(value * 100, digits)}%`;
+}
+
 function formatDateOnly(dateStr: string | null) {
   if (!dateStr) return "—";
   const parsed = new Date(dateStr);
@@ -373,6 +526,19 @@ function formatDateOnly(dateStr: string | null) {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
+  }).format(parsed);
+}
+
+function formatDateTime(dateStr: string | null) {
+  if (!dateStr) return "—";
+  const parsed = new Date(dateStr);
+  if (Number.isNaN(parsed.getTime())) return dateStr;
+  return new Intl.DateTimeFormat(locale.value === "ru" ? "ru-RU" : "en-US", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
   }).format(parsed);
 }
 
@@ -415,6 +581,52 @@ async function loadDividends() {
   }
 }
 
+async function loadRss() {
+  isLoadingRss.value = true;
+  error.value = "";
+  try {
+    const response = await getRssItems({
+      pub_date_from: rssPubDateFrom.value,
+      pub_date_to: rssPubDateTo.value,
+      title: rssTitle.value,
+      text: rssText.value,
+      source: rssSource.value,
+      limit: 500,
+    });
+    rssItems.value = response.items;
+    rssTotal.value = response.total;
+  } catch (err) {
+    error.value = formatError(err);
+    rssItems.value = [];
+    rssTotal.value = 0;
+  } finally {
+    isLoadingRss.value = false;
+  }
+}
+
+async function loadRssSources() {
+  try {
+    const response = await getRssSources();
+    rssSources.value = response.items;
+  } catch (err) {
+    error.value = formatError(err);
+    rssSources.value = [];
+  }
+}
+
+async function updateRss() {
+  isUpdatingRss.value = true;
+  error.value = "";
+  try {
+    rssLoadResult.value = await loadRssItems();
+    await loadRss();
+  } catch (err) {
+    error.value = formatError(err);
+  } finally {
+    isUpdatingRss.value = false;
+  }
+}
+
 function setActiveTab(tab: ViewTab) {
   activeTab.value = tab;
   if (tab === "quotes" && selectedFigi.value && candles.value.length === 0) {
@@ -423,6 +635,11 @@ function setActiveTab(tab: ViewTab) {
     void loadDividends();
   } else if (tab === "currencies" && currencies.value.length === 0) {
     void loadCurrencies();
+  } else if (tab === "rss" && rssItems.value.length === 0) {
+    if (rssSources.value.length === 0) {
+      void loadRssSources();
+    }
+    void loadRss();
   }
 }
 </script>
@@ -497,10 +714,64 @@ function setActiveTab(tab: ViewTab) {
           <Coins :size="18" />
           <span>{{ t.currencies }}</span>
         </button>
+        <button
+          class="source-item"
+          :class="{ active: activeTab === 'rss' }"
+          type="button"
+          @click="setActiveTab('rss')"
+        >
+          <Rss :size="18" />
+          <span>{{ t.rss }}</span>
+        </button>
       </aside>
 
       <section class="content">
-        <form class="toolbar" @submit.prevent="onSubmitToolbar">
+        <form v-if="activeTab === 'rss'" class="toolbar rss-toolbar" @submit.prevent="loadRss">
+          <label class="control date-control">
+            <span>{{ t.from }}</span>
+            <input v-model="rssPubDateFrom" type="date" />
+          </label>
+
+          <label class="control date-control">
+            <span>{{ t.to }}</span>
+            <input v-model="rssPubDateTo" type="date" />
+          </label>
+
+          <label class="control">
+            <span>{{ t.source }}</span>
+            <select v-model="rssSource">
+              <option value="">{{ t.all }}</option>
+              <option v-for="source in rssSources" :key="source" :value="source">
+                {{ source }}
+              </option>
+              <option v-if="rssSource && !rssSources.includes(rssSource)" :value="rssSource">
+                {{ rssSource }}
+              </option>
+            </select>
+          </label>
+
+          <label class="control">
+            <span>{{ t.title }}</span>
+            <input v-model="rssTitle" type="search" :placeholder="t.title" />
+          </label>
+
+          <label class="control">
+            <span>{{ t.text }}</span>
+            <input v-model="rssText" type="search" :placeholder="t.text" />
+          </label>
+
+          <button class="refresh-button" type="submit" :disabled="isLoadingRss || isUpdatingRss">
+            <RefreshCw :class="{ spin: isLoadingRss }" :size="17" />
+            <span>{{ t.load }}</span>
+          </button>
+
+          <button class="refresh-button secondary-button" type="button" :disabled="isLoadingRss || isUpdatingRss" @click="updateRss">
+            <RefreshCw :class="{ spin: isUpdatingRss }" :size="17" />
+            <span>{{ t.update }}</span>
+          </button>
+        </form>
+
+        <form v-else class="toolbar" @submit.prevent="onSubmitToolbar">
           <label class="control search-control">
             <span>{{ t.search }}</span>
             <div class="input-shell">
@@ -585,7 +856,25 @@ function setActiveTab(tab: ViewTab) {
             <strong>{{ filters.countries.length }}</strong>
           </article>
         </section>
-        <section v-else class="metrics" :aria-label="t.currencies">
+        <section v-else-if="activeTab === 'rss'" class="metrics" :aria-label="t.rss">
+          <article class="metric">
+            <span>{{ t.records }}</span>
+            <strong>{{ rssTotal }}</strong>
+          </article>
+          <article class="metric">
+            <span>{{ t.source }}</span>
+            <strong>{{ rssSource || t.all }}</strong>
+          </article>
+          <article class="metric">
+            <span>{{ t.parsed }}</span>
+            <strong>{{ rssLoadResult?.parsed_items ?? "—" }}</strong>
+          </article>
+          <article class="metric">
+            <span>{{ t.saved }}</span>
+            <strong>{{ rssLoadResult?.saved_items ?? "—" }}</strong>
+          </article>
+        </section>
+        <section v-else-if="activeTab === 'currencies'" class="metrics" :aria-label="t.currencies">
           <article class="metric">
             <span>{{ t.currencies }}</span>
             <strong>{{ currencyTotal }}</strong>
@@ -604,7 +893,7 @@ function setActiveTab(tab: ViewTab) {
           </article>
         </section>
 
-        <section class="visual-grid" :class="{ 'full-width': activeTab === 'instruments' || activeTab === 'currencies' }">
+        <section class="visual-grid" :class="{ 'full-width': activeTab === 'instruments' || activeTab === 'currencies' || activeTab === 'rss' }">
           <template v-if="activeTab === 'quotes'">
             <div class="quote-chart-stack">
               <div class="chart-panel">
@@ -613,7 +902,18 @@ function setActiveTab(tab: ViewTab) {
                     <span>{{ t.quotes }}</span>
                     <strong>{{ selectedStock?.name ?? selectedTicker }}</strong>
                   </div>
-                  <Activity :size="18" />
+                  <div class="panel-actions">
+                    <button
+                      class="panel-action-button"
+                      type="button"
+                      :disabled="orderedCandles.length < 3 || isLoadingPrices"
+                      @click="openMonteCarlo"
+                    >
+                      <Dices :size="16" />
+                      <span>{{ t.monteCarlo }}</span>
+                    </button>
+                    <Activity :size="18" />
+                  </div>
                 </div>
                 <CandlestickChartPanel
                   :candles="orderedCandles"
@@ -768,6 +1068,47 @@ function setActiveTab(tab: ViewTab) {
             </div>
           </template>
 
+          <template v-else-if="activeTab === 'rss'">
+            <div class="chart-panel">
+              <div class="panel-head">
+                <div>
+                  <span>{{ t.rss }}</span>
+                  <strong>{{ rssTotal }}</strong>
+                </div>
+                <Rss :size="18" />
+              </div>
+              <div v-if="isLoadingRss || isUpdatingRss" class="loading-state">
+                <RefreshCw :class="{ spin: true }" :size="24" />
+                <span>{{ t.loading }}</span>
+              </div>
+              <div v-else-if="rssItems.length === 0" class="empty-state">
+                <span>{{ t.empty }}</span>
+              </div>
+              <div v-else class="table-scroll wide-table rss-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>{{ t.pubDate }}</th>
+                      <th>{{ t.title }}</th>
+                      <th>{{ t.text }}</th>
+                      <th>{{ t.source }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="item in rssItems" :key="`${item.source}-${item.pub_date}-${item.title}`">
+                      <td>
+                        <strong>{{ formatDateTime(item.pub_date) }}</strong>
+                      </td>
+                      <td>{{ item.title }}</td>
+                      <td class="text-cell">{{ item.text }}</td>
+                      <td>{{ item.source }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </template>
+
           <template v-else-if="activeTab === 'currencies'">
             <div class="chart-panel">
               <div class="panel-head">
@@ -893,5 +1234,141 @@ function setActiveTab(tab: ViewTab) {
         </section>
       </section>
     </main>
+
+    <div v-if="isMonteCarloOpen" class="modal-backdrop" role="dialog" aria-modal="true" @click.self="closeMonteCarlo">
+      <section class="monte-carlo-window">
+        <header class="modal-head">
+          <div>
+            <span>{{ t.monteCarloGenerator }}</span>
+            <strong>{{ selectedStock?.name ?? selectedTicker }}</strong>
+          </div>
+          <button class="icon-button" type="button" :aria-label="t.close" @click="closeMonteCarlo">
+            <X :size="18" />
+          </button>
+        </header>
+
+        <div class="monte-carlo-layout">
+          <aside class="monte-carlo-controls">
+            <form class="monte-carlo-form" @submit.prevent="runMonteCarlo">
+              <label class="control">
+                <span>{{ t.simulationStart }}</span>
+                <input v-model="monteCarloStartDate" type="date" />
+              </label>
+
+              <label class="control">
+                <span>{{ t.trainingUntil }}</span>
+                <input v-model="monteCarloTrainUntil" type="date" />
+              </label>
+
+              <label class="control">
+                <span>{{ t.simulationUntil }}</span>
+                <input v-model="monteCarloSimulationEnd" type="date" />
+              </label>
+
+              <label class="control">
+                <span>{{ t.paths }}</span>
+                <input v-model.number="monteCarloPathCount" min="1" max="500" step="1" type="number" />
+              </label>
+
+              <label class="control">
+                <span>{{ t.seed }}</span>
+                <input v-model.number="monteCarloSeed" type="number" />
+              </label>
+
+              <label class="control">
+                <span class="label-with-tooltip">
+                  {{ t.volatilityScale }}
+                  <span class="help-tooltip" :aria-label="t.volatilityScaleHelp" tabindex="0">
+                    <CircleHelp :size="14" />
+                    <span class="tooltip-content" aria-hidden="true" role="tooltip">{{ t.volatilityScaleHelp }}</span>
+                  </span>
+                </span>
+                <input v-model.number="monteCarloVolatilityScale" min="0" max="10" step="0.1" type="number" />
+              </label>
+
+              <label class="control">
+                <span>{{ t.driftMode }}</span>
+                <select v-model="monteCarloDriftMode">
+                  <option value="historical">{{ t.historicalDrift }}</option>
+                  <option value="zero">{{ t.zeroDrift }}</option>
+                </select>
+              </label>
+
+              <button class="refresh-button" type="submit" :disabled="isLoadingMonteCarlo || !monteCarloCanRun">
+                <RefreshCw :class="{ spin: isLoadingMonteCarlo }" :size="17" />
+                <span>{{ t.runSimulation }}</span>
+              </button>
+            </form>
+
+            <p v-if="monteCarloError" class="error-banner">{{ monteCarloError }}</p>
+
+            <section v-if="monteCarloResult" class="monte-carlo-stats">
+              <article class="modal-stat">
+                <span>{{ t.trainingPoints }}</span>
+                <strong>{{ monteCarloResult.meta.training_points }}</strong>
+              </article>
+              <article class="modal-stat">
+                <span>{{ t.simulationSteps }}</span>
+                <strong>{{ monteCarloResult.meta.simulation_steps }}</strong>
+              </article>
+              <article class="modal-stat">
+                <span>{{ t.meanReturn }}</span>
+                <strong>{{ formatPercentValue(monteCarloResult.meta.mean_log_return) }}</strong>
+              </article>
+              <article class="modal-stat">
+                <span>{{ t.volatility }}</span>
+                <strong>{{ formatPercentValue(monteCarloResult.meta.scaled_volatility) }}</strong>
+              </article>
+              <article class="modal-stat">
+                <span>{{ t.anchorPrice }}</span>
+                <strong>{{ formatNumber(monteCarloResult.meta.anchor_close) }}</strong>
+              </article>
+            </section>
+          </aside>
+
+          <div class="monte-carlo-charts">
+            <div class="chart-panel">
+              <div class="panel-head">
+                <div>
+                  <span>{{ t.actualClose }}</span>
+                  <strong>{{ selectedStock?.name ?? selectedTicker }}</strong>
+                </div>
+                <Activity :size="18" />
+              </div>
+              <CloseLineChartPanel
+                :interval="interval"
+                :locale="locale"
+                :points="closeLinePoints"
+              />
+            </div>
+
+            <div class="chart-panel">
+              <div class="panel-head">
+                <div>
+                  <span>{{ t.simulatedPaths }}</span>
+                  <strong>{{ selectedTicker }}</strong>
+                </div>
+                <Dices :size="18" />
+              </div>
+              <div v-if="isLoadingMonteCarlo" class="loading-state monte-carlo-loading">
+                <RefreshCw :class="{ spin: true }" :size="24" />
+                <span>{{ t.loading }}</span>
+              </div>
+              <MonteCarloPathsChartPanel
+                v-else-if="monteCarloResult"
+                :interval="interval"
+                :locale="locale"
+                :paths="monteCarloResult.paths"
+                :train-until="monteCarloResult.meta.train_until"
+                :training="monteCarloResult.training"
+              />
+              <div v-else class="empty-state monte-carlo-loading">
+                <span>{{ t.empty }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
   </div>
 </template>

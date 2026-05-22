@@ -9,7 +9,7 @@ WORKDIR /app
 
 RUN pip install --no-cache-dir "poetry==${POETRY_VERSION}"
 
-COPY pyproject.toml poetry.lock poetry.toml ./
+COPY pyproject.toml poetry.lock poetry.toml alembic.ini ./
 RUN poetry config virtualenvs.create false \
     && poetry install --only main --no-interaction --no-ansi --no-root
 

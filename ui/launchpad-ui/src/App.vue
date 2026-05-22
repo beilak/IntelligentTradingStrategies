@@ -11,15 +11,33 @@ import {
   Globe2,
   Layers3,
   LineChart,
+  Loader2,
+  LogOut,
   Play,
   ShieldCheck,
+  UserCircle,
 } from "lucide-vue-next";
-import { computed, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 
 type Locale = "ru" | "en";
+type User = {
+  id: string;
+  email: string;
+  is_active: boolean;
+  is_verified: boolean;
+  role_version: number;
+  created_at: string;
+  last_login_at: string | null;
+};
 
 const savedLocale = localStorage.getItem("its-launchpad-locale") as Locale | null;
 const locale = ref<Locale>(savedLocale === "en" ? "en" : "ru");
+const isCheckingAuth = ref(true);
+const currentUser = ref<User | null>(null);
+
+const ACCESS_TOKEN_KEY = "its-auth-access-token";
+const REFRESH_TOKEN_KEY = "its-auth-refresh-token";
+const authHref = "/tech/auth/?returnTo=/launchpad/";
 
 const messages = {
   ru: {
@@ -27,6 +45,9 @@ const messages = {
     appSubtitle: "Единая точка запуска рабочих интерфейсов",
     documentation: "Документация",
     language: "Язык",
+    profile: "Профиль",
+    logout: "Выйти",
+    checkingAuth: "Проверка входа",
     open: "Открыть",
     ready: "Готово",
     dataTitle: "Данные рынка",
@@ -38,21 +59,24 @@ const messages = {
     gaTitle: "GA генератор",
     gaSubtitle: "Генетические алгоритмы для поиска стратегий",
     gaBody: "Алфавиты компонентов, эволюционный запуск, визуализация поколений и материализация TOP-3 стратегий.",
-    observabilityTitle: "Контроль системы",
-    observabilitySubtitle: "Состояние сервисов и маршрутов",
-    observabilityBody: "Health endpoints, gateway routes и базовая навигация по контейнерам.",
+    observabilityTitle: "Состояние платформы",
+    observabilitySubtitle: "Проверка доступности",
+    observabilityBody: "Быстрый контроль доступности рабочих разделов и основных сервисов.",
     roadmapTitle: "Следующие интерфейсы",
     roadmapSubtitle: "Место для новых UI",
     roadmapBody: "Сюда можно добавить риск-панель, execution, portfolio monitor или research notebooks.",
-    statusData: "Data backend",
-    statusStrategy: "Strategy backend",
-    stack: "VueJS / FastAPI / Docker",
+    statusData: "Сервис данных",
+    statusStrategy: "Сервис стратегий",
+    stack: "Единая рабочая среда",
   },
   en: {
     appTitle: "ITS Launchpad",
     appSubtitle: "One place to open every working interface",
     documentation: "Documentation",
     language: "Language",
+    profile: "Profile",
+    logout: "Sign out",
+    checkingAuth: "Checking sign-in",
     open: "Open",
     ready: "Ready",
     dataTitle: "Market Data",
@@ -64,15 +88,15 @@ const messages = {
     gaTitle: "GA Generator",
     gaSubtitle: "Genetic algorithms for strategy search",
     gaBody: "Component alphabets, evolutionary runs, generation visualization, and TOP-3 materialization.",
-    observabilityTitle: "System Control",
-    observabilitySubtitle: "Service and route status",
-    observabilityBody: "Health endpoints, gateway routes, and basic navigation across containers.",
+    observabilityTitle: "Platform Status",
+    observabilitySubtitle: "Availability check",
+    observabilityBody: "Quick access to the availability state of key platform services.",
     roadmapTitle: "Next Interfaces",
     roadmapSubtitle: "Space for upcoming UI modules",
     roadmapBody: "Add risk dashboards, execution, portfolio monitoring, or research notebooks here.",
-    statusData: "Data backend",
-    statusStrategy: "Strategy backend",
-    stack: "VueJS / FastAPI / Docker",
+    statusData: "Data service",
+    statusStrategy: "Strategy service",
+    stack: "Unified workspace",
   },
 } satisfies Record<Locale, Record<string, string>>;
 
@@ -133,10 +157,95 @@ const tiles = computed(() => [
 ]);
 
 watch(locale, (value) => localStorage.setItem("its-launchpad-locale", value));
+
+function clearAuthTokens() {
+  localStorage.removeItem(ACCESS_TOKEN_KEY);
+  localStorage.removeItem(REFRESH_TOKEN_KEY);
+}
+
+async function fetchCurrentUser(accessToken: string): Promise<User | null> {
+  const response = await fetch("/api/tech/auth/me", {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+  if (!response.ok) return null;
+  return (await response.json()) as User;
+}
+
+async function refreshAccessToken(): Promise<User | null> {
+  const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+  if (!refreshToken) return null;
+
+  const response = await fetch("/api/tech/auth/refresh", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  });
+  if (!response.ok) return null;
+
+  const payload = (await response.json()) as {
+    access_token: string;
+    refresh_token: string;
+    user: User;
+  };
+  localStorage.setItem(ACCESS_TOKEN_KEY, payload.access_token);
+  localStorage.setItem(REFRESH_TOKEN_KEY, payload.refresh_token);
+  return payload.user;
+}
+
+async function requireAuth() {
+  const accessToken = localStorage.getItem(ACCESS_TOKEN_KEY);
+  try {
+    const user = accessToken ? await fetchCurrentUser(accessToken) : null;
+    if (user) {
+      currentUser.value = user;
+      isCheckingAuth.value = false;
+      return;
+    }
+
+    const refreshedUser = await refreshAccessToken();
+    if (refreshedUser) {
+      currentUser.value = refreshedUser;
+      isCheckingAuth.value = false;
+      return;
+    }
+  } catch {
+    clearAuthTokens();
+  }
+
+  clearAuthTokens();
+  window.location.replace(authHref);
+}
+
+async function signOut() {
+  const accessToken = localStorage.getItem(ACCESS_TOKEN_KEY);
+  if (accessToken) {
+    await fetch("/api/tech/auth/logout", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    }).catch(() => undefined);
+  }
+  clearAuthTokens();
+  window.location.replace(authHref);
+}
+
+onMounted(() => {
+  void requireAuth();
+});
 </script>
 
 <template>
-  <div class="app-shell">
+  <div v-if="isCheckingAuth" class="auth-check-shell">
+    <Loader2 class="spin" :size="28" />
+    <span>{{ t.checkingAuth }}</span>
+  </div>
+
+  <div v-else class="app-shell">
     <header class="topbar">
       <div class="brand">
         <div class="brand-mark">
@@ -149,6 +258,18 @@ watch(locale, (value) => localStorage.setItem("its-launchpad-locale", value));
       </div>
 
       <div class="top-actions" :aria-label="t.language">
+        <a
+          class="user-pill"
+          href="/tech/profile/"
+          :title="currentUser?.email || t.profile"
+          :aria-label="t.profile"
+        >
+          <UserCircle :size="18" />
+          <span>{{ currentUser?.email || t.profile }}</span>
+        </a>
+        <button class="icon-button" type="button" :title="t.logout" :aria-label="t.logout" @click="signOut">
+          <LogOut :size="18" />
+        </button>
         <a
           class="icon-button"
           :href="docsHref"

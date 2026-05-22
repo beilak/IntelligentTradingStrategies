@@ -122,6 +122,32 @@ services:
     depends_on:
       - ga-backend
 
+  tech-system-backend:
+    build:
+      context: .
+      dockerfile: services/tech_system_backend/Dockerfile
+    environment:
+      <<: *app-database-environment
+      AUTH_JWT_SECRET_KEY: ${AUTH_JWT_SECRET_KEY:-its_dev_auth_secret_change_me_please_rotate}
+      AUTH_JWT_ALGORITHM: ${AUTH_JWT_ALGORITHM:-HS256}
+      AUTH_JWT_ISSUER: ${AUTH_JWT_ISSUER:-its-tech-system}
+      AUTH_ACCESS_TOKEN_TTL_MINUTES: ${AUTH_ACCESS_TOKEN_TTL_MINUTES:-30}
+      AUTH_REFRESH_TOKEN_TTL_DAYS: ${AUTH_REFRESH_TOKEN_TTL_DAYS:-7}
+    depends_on:
+      db-migrations:
+        condition: service_completed_successfully
+    expose:
+      - "8000"
+
+  tech-system-ui:
+    build:
+      context: .
+      dockerfile: ui/tech-system-ui/Dockerfile
+    expose:
+      - "80"
+    depends_on:
+      - tech-system-backend
+
   launchpad-ui:
     build:
       context: .
@@ -132,6 +158,7 @@ services:
       - data-ui
       - strategy-ui
       - ga-ui
+      - tech-system-ui
 
   nginx-gateway:
     build:
@@ -146,6 +173,8 @@ services:
       - strategy-ui
       - ga-backend
       - ga-ui
+      - tech-system-backend
+      - tech-system-ui
       - launchpad-ui
 
 volumes:

@@ -36,6 +36,29 @@ button {
   min-height: 100vh;
 }
 
+.auth-check-shell {
+  align-items: center;
+  color: #c8ceda;
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  min-height: 100vh;
+}
+
+.auth-check-shell svg {
+  color: #66d9ef;
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .topbar {
   align-items: center;
   background: rgba(9, 11, 16, 0.88);
@@ -52,6 +75,7 @@ button {
 
 .brand,
 .top-actions,
+.user-pill,
 .eyebrow,
 .tile-head,
 .tile-footer,
@@ -64,6 +88,8 @@ button {
 .brand,
 .top-actions {
   gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .brand-mark,
@@ -84,8 +110,27 @@ button {
   color: #c8ceda;
   cursor: pointer;
   height: 38px;
+  padding: 0;
   text-decoration: none;
   width: 38px;
+}
+
+.user-pill {
+  background: #151821;
+  border: 1px solid #2b3342;
+  border-radius: 8px;
+  color: #c8ceda;
+  gap: 8px;
+  min-height: 38px;
+  max-width: min(280px, 44vw);
+  padding: 0 12px;
+  text-decoration: none;
+}
+
+.user-pill span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .brand strong {

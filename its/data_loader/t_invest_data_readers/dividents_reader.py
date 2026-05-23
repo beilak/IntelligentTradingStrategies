@@ -1,10 +1,10 @@
 import asyncio
-from pathlib import Path
-import aiometer
-from async_lru import alru_cache
-
 import functools
+from pathlib import Path
+
+import aiometer
 import pandas as pd
+from async_lru import alru_cache
 from grpc import StatusCode
 from loguru import logger
 from t_tech.invest import AsyncClient, GetDividendsResponse
@@ -144,7 +144,9 @@ def _write_cache(cache_rows: pd.DataFrame, cache_path: Path) -> None:
     if "payment_date" in cache_to_save.columns:
         sort_columns.append("payment_date")
     sort_columns.extend([CACHE_START_COLUMN, CACHE_END_COLUMN])
-    sort_columns = [column for column in sort_columns if column in cache_to_save.columns]
+    sort_columns = [
+        column for column in sort_columns if column in cache_to_save.columns
+    ]
     cache_to_save = cache_to_save.sort_values(sort_columns, na_position="last")
 
     cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -292,19 +294,39 @@ async def _get_dividend(
     end_date: pd.Timestamp,
     client: AsyncClient,
 ):
-    try:
-        divs: GetDividendsResponse = await client.instruments.get_dividends(
-            figi=figi,
-            from_=start_date,
-            to=end_date,
-        )
-        response = [dividend for dividend in divs.dividends]
-    except AioRequestError as error:
-        logger.info(f"{error = }")
-        if error.code == StatusCode.RESOURCE_EXHAUSTED:
-            logger.info(f"Лимит исчерпан. Ждем {error.metadata.ratelimit_reset} сек.")
-            await asyncio.sleep(error.metadata.ratelimit_reset)
-        raise
+    response = []
+    retry_attempts = 10
+
+    for attempt in range(retry_attempts):
+        try:
+            divs: GetDividendsResponse = await client.instruments.get_dividends(
+                figi=figi,
+                from_=start_date,
+                to=end_date,
+            )
+            response = [dividend for dividend in divs.dividends]
+            break
+        except AioRequestError as error:
+            logger.info(f"{error = }")
+
+            if (
+                error.code != StatusCode.RESOURCE_EXHAUSTED
+                or attempt >= retry_attempts - 1
+            ):
+                raise
+
+            has_ratelimit_limit = bool(getattr(error.metadata, "ratelimit_limit", None))
+            if has_ratelimit_limit:
+                logger.info(
+                    "Rate limit detected by provider. Waiting 10 sec before retry."
+                )
+                await asyncio.sleep(30)
+                continue
+
+            ratelimit_reset = getattr(error.metadata, "ratelimit_reset", None)
+            wait_seconds = ratelimit_reset if ratelimit_reset is not None else 10
+            logger.info(f"Лимит исчерпан. Ждем {wait_seconds} сек.")
+            await asyncio.sleep(wait_seconds)
 
     raw_dividends = dataclasses_to_dict(response)
 

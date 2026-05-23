@@ -16,6 +16,7 @@ CACHE_DIR = Path(__file__).resolve().parents[2] / "data"
 CACHE_FILE_PREFIX = "dividends"
 CACHE_FILE_SUFFIX = "csv"
 CACHE_PATH = CACHE_DIR / f"{CACHE_FILE_PREFIX}.{CACHE_FILE_SUFFIX}"
+NEGATIVE_CACHE_PATH = CACHE_DIR / f"{CACHE_FILE_PREFIX}.no_divs.{CACHE_FILE_SUFFIX}"
 CACHE_START_COLUMN = "cache_requested_start"
 CACHE_END_COLUMN = "cache_requested_end"
 CACHE_MARKER_COLUMN = "cache_marker"
@@ -229,9 +230,13 @@ def read_dividends_from_cache(
     if cache_path is None:
         cache_path = CACHE_PATH
 
-    cache = _read_cache_file(cache_path)
-    if cache.empty:
+    main_cache = _read_cache_file(cache_path)
+    negative_cache = _read_cache_file(NEGATIVE_CACHE_PATH)
+
+    if main_cache.empty and negative_cache.empty:
         return pd.DataFrame(), {figi: [(start_date, end_date)] for figi in unique_figis}
+
+    cache = pd.concat([main_cache, negative_cache], ignore_index=True, sort=False)
 
     figi_mask = cache["figi"].isin(unique_figis)
     filtered_cache = cache.loc[figi_mask].copy()
@@ -272,6 +277,9 @@ def _build_cache_rows(
                 CACHE_START_COLUMN: start_date,
                 CACHE_END_COLUMN: end_date,
                 CACHE_MARKER_COLUMN: True,
+                # include payment_date column to keep schema consistent when
+                # saving marker-only rows to CSV and when reading later
+                "payment_date": pd.NaT,
             }
         ]
     )
@@ -372,27 +380,51 @@ async def _download_dividends(
     async with AsyncClient(token) as client:
         jobs = [
             functools.partial(
-                _get_dividend,
-                figi,
-                current_from,
-                current_to,
-                client=client,
+                _get_dividend, figi, current_from, current_to, client=client
             )
             for figi, current_from, current_to in job_specs
         ]
-        raw_dividends = await aiometer.run_all(
-            jobs,
-            max_at_once=max_at_once,
-            max_per_second=max_per_second,
-        )
+        try:
+            raw_dividends = await aiometer.run_all(
+                jobs,
+                max_at_once=max_at_once,
+                max_per_second=max_per_second,
+            )
+        except Exception as exc:  # pragma: no cover - fallback path
+            # If the concurrent runner fails (network/library issue), fall
+            # back to sequential execution so we still generate marker rows
+            # for every requested range and persist coverage to cache.
+            logger.warning("aiometer.run_all failed, falling back to sequential fetch: {}", exc)
+            raw_dividends = []
+            for job in jobs:
+                try:
+                    result = await job()
+                except Exception as err:
+                    logger.exception(
+                        "Failed to fetch dividends for a job; treating as no dividends: {}",
+                        err,
+                    )
+                    # represent failure as empty DataFrame so we still write a marker row
+                    result = pd.DataFrame()
+                raw_dividends.append(result)
 
     downloaded_dividends = []
     cache_rows = []
+    negative_cache_rows = []
 
     for (figi, current_from, current_to), dividends in zip(job_specs, raw_dividends):
-        cache_rows.append(_build_cache_rows(figi, dividends, current_from, current_to))
-        if not dividends.empty:
+        rows = _build_cache_rows(figi, dividends, current_from, current_to)
+        # If there are actual dividend rows (cache_marker == False), keep
+        # them in the main cache. If it's only a marker row (no dividends),
+        # write it to the negative cache file so we don't re-request the
+        # same empty range repeatedly.
+        marker_mask = rows[CACHE_MARKER_COLUMN].fillna(False).astype(bool)
+        has_dividend_rows = (~marker_mask).any()
+        if has_dividend_rows:
+            cache_rows.append(rows)
             downloaded_dividends.append(dividends)
+        else:
+            negative_cache_rows.append(rows)
 
     if downloaded_dividends:
         all_dividends = pd.concat(downloaded_dividends, ignore_index=True)
@@ -403,8 +435,17 @@ async def _download_dividends(
     else:
         all_cache_rows = pd.DataFrame()
 
+    if negative_cache_rows:
+        all_negative_rows = pd.concat(negative_cache_rows, ignore_index=True)
+    else:
+        all_negative_rows = pd.DataFrame()
+
     if not all_cache_rows.empty and cache_path is not None:
         _write_cache(all_cache_rows, cache_path)
+
+    # write marker-only (no-div) rows into a separate negative cache file
+    if not all_negative_rows.empty:
+        _write_cache(all_negative_rows, NEGATIVE_CACHE_PATH)
 
     return all_dividends, all_cache_rows
 

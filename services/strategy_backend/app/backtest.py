@@ -158,7 +158,7 @@ async def fetch_stocks(
 async def fetch_stocks_by_class_code(
     class_code: str, *, authorization: str | None
 ) -> list[dict[str, Any]]:
-    async with httpx.AsyncClient(timeout=60) as client:
+    async with httpx.AsyncClient(timeout=None) as client:
         response = await client.get(
             f"{DATA_BACKEND_BASE_URL}/stocks",
             params={"class_code": class_code},
@@ -204,7 +204,7 @@ async def fetch_prices(
         ("interval", request.interval),
         ("is_complete", "true"),
     ]
-    async with httpx.AsyncClient(timeout=300) as client:
+    async with httpx.AsyncClient(timeout=None) as client:
         response = await client.get(
             f"{DATA_BACKEND_BASE_URL}/prices",
             params=params,
@@ -224,7 +224,7 @@ async def fetch_dividends(
         ("class_code", request.class_code),
         ("end_date", request.end_date.isoformat()),
     ]
-    async with httpx.AsyncClient(timeout=300) as client:
+    async with httpx.AsyncClient(timeout=None) as client:
         response = await client.get(
             f"{DATA_BACKEND_BASE_URL}/dividends",
             params=params,

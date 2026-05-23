@@ -29,7 +29,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   color: inherit;
   font: inherit;
 }
@@ -146,6 +147,10 @@ select {
   background: #11141b;
   border: 1px solid #252b36;
   border-radius: 8px;
+}
+
+.access-page {
+  grid-template-rows: auto auto minmax(0, 1fr);
 }
 
 .system-panel {
@@ -636,7 +641,10 @@ input {
 }
 
 .event-filters input,
-.event-filters select {
+.event-filters select,
+.role-request-form select,
+.role-request-form textarea,
+.request-card textarea {
   background: #0b0e14;
   border: 1px solid #2b3342;
   border-radius: 8px;
@@ -647,8 +655,169 @@ input {
 }
 
 .event-filters input:focus,
-.event-filters select:focus {
+.event-filters select:focus,
+.role-request-form select:focus,
+.role-request-form textarea:focus,
+.request-card textarea:focus {
   border-color: #66d9ef;
+}
+
+.role-request-form textarea,
+.request-card textarea {
+  line-height: 1.45;
+  padding: 10px;
+  resize: vertical;
+}
+
+.profile-access-grid,
+.access-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.access-section {
+  background: #0b0e14;
+  border: 1px solid #2b3342;
+  border-radius: 8px;
+  display: grid;
+  gap: 14px;
+  min-height: 220px;
+  padding: 16px;
+}
+
+.access-section.wide {
+  grid-column: 1 / -1;
+}
+
+.section-head {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+.section-head svg {
+  color: #66d9ef;
+}
+
+.section-head h2 {
+  font-size: 22px;
+}
+
+.role-list,
+.request-list,
+.permission-groups,
+.role-request-form {
+  display: grid;
+  gap: 10px;
+}
+
+.role-row,
+.request-card,
+.permission-groups div {
+  background: #11141b;
+  border: 1px solid #252b36;
+  border-radius: 8px;
+  display: grid;
+  gap: 7px;
+  padding: 12px;
+}
+
+.role-row span,
+.role-row small,
+.request-card span,
+.request-card p,
+.permission-groups small {
+  color: #919bad;
+}
+
+.permission-groups small,
+.permission-cloud small {
+  background: #11141b;
+  border: 1px solid #252b36;
+  border-radius: 6px;
+  display: inline-flex;
+  margin: 0 6px 6px 0;
+  padding: 5px 7px;
+}
+
+.permission-cloud {
+  align-content: start;
+}
+
+.role-request-form label {
+  display: grid;
+  gap: 8px;
+}
+
+.role-request-form span {
+  color: #c8ceda;
+  font-size: 13px;
+}
+
+.request-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.request-card textarea,
+.request-actions {
+  grid-column: 1 / -1;
+}
+
+.request-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.status-badge {
+  border: 1px solid #2b3342;
+  border-radius: 999px;
+  color: #c8ceda;
+  height: fit-content;
+  padding: 4px 8px;
+}
+
+.status-badge.approved {
+  border-color: rgba(174, 233, 209, 0.55);
+  color: #aee9d1;
+}
+
+.status-badge.rejected,
+.status-badge.cancelled {
+  border-color: rgba(255, 102, 102, 0.48);
+  color: #ffb3b3;
+}
+
+.success-message {
+  background: rgba(174, 233, 209, 0.12);
+  border: 1px solid rgba(174, 233, 209, 0.42);
+  border-radius: 8px;
+  color: #aee9d1;
+  padding: 10px 12px;
+}
+
+.compact-table {
+  border-collapse: collapse;
+  font-size: 13px;
+  width: 100%;
+}
+
+.compact-table th,
+.compact-table td {
+  border-bottom: 1px solid #252b36;
+  padding: 9px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.compact-table th {
+  color: #d8deea;
+}
+
+.compact-table td {
+  color: #c8ceda;
+  overflow-wrap: anywhere;
 }
 
 .filter-actions {
@@ -761,6 +930,11 @@ input {
   }
 
   .system-module-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-access-grid,
+  .access-grid {
     grid-template-columns: 1fr;
   }
 

@@ -7,9 +7,12 @@ from typing import Any
 
 import httpx
 import pandas as pd
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from its.authz.context import AuthContext
+from its.authz.dependencies import require_permissions
+from its.authz.permissions import Permissions
 from its.strategies.testing.walk_forward import (
     cache_path,
     generate_walk_forward_report,
@@ -39,12 +42,19 @@ class WalkForwardRunRequest(BaseModel):
 
 
 @router.get("/tests")
-async def list_walk_forward_tests(model_name: str) -> dict[str, Any]:
+async def list_walk_forward_tests(
+    model_name: str,
+    _auth: AuthContext = Depends(require_permissions(Permissions.STRATEGY_TEST_READ)),
+) -> dict[str, Any]:
     return {"items": [read_test_summary(path) for path in list_test_paths(model_name)]}
 
 
 @router.get("/tests/{test_name}")
-async def get_walk_forward_test(model_name: str, test_name: str) -> dict[str, Any]:
+async def get_walk_forward_test(
+    model_name: str,
+    test_name: str,
+    _auth: AuthContext = Depends(require_permissions(Permissions.STRATEGY_TEST_READ)),
+) -> dict[str, Any]:
     path = cache_path(model_name, test_name)
     if not path.exists():
         raise HTTPException(
@@ -58,6 +68,15 @@ async def get_walk_forward_test(model_name: str, test_name: str) -> dict[str, An
 async def run_walk_forward_test(
     model_name: str,
     request: WalkForwardRunRequest,
+    http_request: Request,
+    _auth: AuthContext = Depends(
+        require_permissions(
+            Permissions.STRATEGY_TEST_RUN,
+            Permissions.DATA_INSTRUMENTS_READ,
+            Permissions.DATA_PRICES_READ,
+            Permissions.DATA_DIVIDENDS_READ,
+        )
+    ),
 ) -> dict[str, Any]:
     if request.start_date >= request.end_date:
         raise HTTPException(
@@ -66,15 +85,16 @@ async def run_walk_forward_test(
         )
 
     path = cache_path(model_name, request.test_name)
-    stocks = await fetch_stocks(request)
+    authorization = http_request.headers.get("authorization")
+    stocks = await fetch_stocks(request, authorization=authorization)
     figis = [item["figi"] for item in stocks if item.get("figi")]
     if not figis:
         raise HTTPException(status_code=404, detail="No assets found for WalkForward.")
 
-    prices = await fetch_prices(figis, request)
+    prices = await fetch_prices(figis, request, authorization=authorization)
     if prices.empty:
         raise HTTPException(status_code=404, detail="No prices found for WalkForward.")
-    dividends_info = await fetch_dividends(figis, request)
+    dividends_info = await fetch_dividends(figis, request, authorization=authorization)
 
     settings = request.model_dump(mode="json")
     result = generate_walk_forward_report(
@@ -90,13 +110,16 @@ async def run_walk_forward_test(
     return result
 
 
-async def fetch_stocks(request: WalkForwardRunRequest) -> list[dict[str, Any]]:
+async def fetch_stocks(
+    request: WalkForwardRunRequest, *, authorization: str | None
+) -> list[dict[str, Any]]:
     async with httpx.AsyncClient(timeout=60) as client:
         response = await client.get(
             f"{DATA_BACKEND_BASE_URL}/stocks",
             params={
                 "class_code": request.class_code,
             },
+            headers=auth_headers(authorization),
         )
     payload = handle_data_response(response)
     return payload.get("items", [])
@@ -105,6 +128,8 @@ async def fetch_stocks(request: WalkForwardRunRequest) -> list[dict[str, Any]]:
 async def fetch_prices(
     figis: list[str],
     request: WalkForwardRunRequest,
+    *,
+    authorization: str | None,
 ) -> pd.DataFrame:
     params: list[tuple[str, str]] = [("figis", figi) for figi in figis] + [
         ("class_code", request.class_code),
@@ -114,7 +139,11 @@ async def fetch_prices(
         ("is_complete", "true"),
     ]
     async with httpx.AsyncClient(timeout=300) as client:
-        response = await client.get(f"{DATA_BACKEND_BASE_URL}/prices", params=params)
+        response = await client.get(
+            f"{DATA_BACKEND_BASE_URL}/prices",
+            params=params,
+            headers=auth_headers(authorization),
+        )
     payload = handle_data_response(response)
     return pd.DataFrame(payload.get("items", []))
 
@@ -122,13 +151,19 @@ async def fetch_prices(
 async def fetch_dividends(
     figis: list[str],
     request: WalkForwardRunRequest,
+    *,
+    authorization: str | None,
 ) -> pd.DataFrame:
     params: list[tuple[str, str]] = [("figis", figi) for figi in figis] + [
         ("class_code", request.class_code),
         ("end_date", request.end_date.isoformat()),
     ]
     async with httpx.AsyncClient(timeout=300) as client:
-        response = await client.get(f"{DATA_BACKEND_BASE_URL}/dividends", params=params)
+        response = await client.get(
+            f"{DATA_BACKEND_BASE_URL}/dividends",
+            params=params,
+            headers=auth_headers(authorization),
+        )
     payload = handle_data_response(response)
     return pd.DataFrame(payload.get("items", []))
 
@@ -144,3 +179,7 @@ def handle_data_response(response: httpx.Response) -> dict[str, Any]:
         status_code=502,
         detail=f"Data backend request failed: {detail}",
     )
+
+
+def auth_headers(authorization: str | None) -> dict[str, str]:
+    return {"Authorization": authorization} if authorization else {}

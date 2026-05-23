@@ -15,6 +15,10 @@ class AuthSettings(BaseSettings):
         default=30, alias="AUTH_ACCESS_TOKEN_TTL_MINUTES"
     )
     refresh_token_ttl_days: int = Field(default=7, alias="AUTH_REFRESH_TOKEN_TTL_DAYS")
+    bootstrap_admin_email: str | None = Field(
+        default=None,
+        alias="ITS_BOOTSTRAP_ADMIN_EMAIL",
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env", extra="ignore", populate_by_name=True

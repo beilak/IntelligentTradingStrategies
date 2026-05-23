@@ -28,6 +28,8 @@ type User = {
   role_version: number;
   created_at: string;
   last_login_at: string | null;
+  roles: Array<{ code: string; title: string; description: string | null }>;
+  permissions: string[];
 };
 
 const savedLocale = localStorage.getItem("its-launchpad-locale") as Locale | null;
@@ -50,6 +52,12 @@ const messages = {
     checkingAuth: "Проверка входа",
     open: "Открыть",
     ready: "Готово",
+    documentationTitle: "Документация",
+    documentationSubtitle: "Руководства и описание платформы",
+    documentationBody: "Базовая информация по рабочим разделам ITS, данным, стратегиям и процессу запроса доступа.",
+    profileTitle: "Профиль",
+    profileSubtitle: "Аккаунт и доступы",
+    profileBody: "Просмотр назначенных ролей, доступных прав и отправка заявки на расширение доступа.",
     dataTitle: "Данные рынка",
     dataSubtitle: "Котировки, инструменты, дивиденды и источники данных",
     dataBody: "Быстрый просмотр T-Invest/MOEX данных, свечей, объемов и справочников бумаг.",
@@ -59,9 +67,9 @@ const messages = {
     gaTitle: "GA генератор",
     gaSubtitle: "Генетические алгоритмы для поиска стратегий",
     gaBody: "Алфавиты компонентов, эволюционный запуск, визуализация поколений и материализация TOP-3 стратегий.",
-    techTitle: "Tech System",
-    techSubtitle: "Аудит и системные журналы",
-    techBody: "Просмотр append-only event logs по действиям пользователей во всех FastAPI-сервисах.",
+    techTitle: "Управление платформой",
+    techSubtitle: "Доступы и аудит",
+    techBody: "Просмотр событий, заявок на доступ и технических операций платформы.",
     observabilityTitle: "Состояние платформы",
     observabilitySubtitle: "Проверка доступности",
     observabilityBody: "Быстрый контроль доступности рабочих разделов и основных сервисов.",
@@ -82,6 +90,12 @@ const messages = {
     checkingAuth: "Checking sign-in",
     open: "Open",
     ready: "Ready",
+    documentationTitle: "Documentation",
+    documentationSubtitle: "Guides and platform overview",
+    documentationBody: "Core information about ITS workspaces, data, strategies, and access request workflow.",
+    profileTitle: "Profile",
+    profileSubtitle: "Account and access",
+    profileBody: "Review assigned roles, available permissions, and request additional access.",
     dataTitle: "Market Data",
     dataSubtitle: "Quotes, instruments, dividends, and data sources",
     dataBody: "Fast access to T-Invest/MOEX candles, volumes, instruments, and reference data.",
@@ -91,9 +105,9 @@ const messages = {
     gaTitle: "GA Generator",
     gaSubtitle: "Genetic algorithms for strategy search",
     gaBody: "Component alphabets, evolutionary runs, generation visualization, and TOP-3 materialization.",
-    techTitle: "Tech System",
-    techSubtitle: "Audit and system logs",
-    techBody: "View append-only event logs for user actions across every FastAPI service.",
+    techTitle: "Platform Management",
+    techSubtitle: "Access and audit",
+    techBody: "Review audit events, access requests, and platform operations.",
     observabilityTitle: "Platform Status",
     observabilitySubtitle: "Availability check",
     observabilityBody: "Quick access to the availability state of key platform services.",
@@ -108,75 +122,145 @@ const messages = {
 
 const t = computed(() => messages[locale.value]);
 const docsHref = computed(() => `/docs/?lang=${locale.value}`);
+const canOpenTechSystem = computed(() =>
+  ["user.read", "role.read", "permission.read", "role.request.read", "audit.role.read"].some(
+    (permission) => currentUser.value?.permissions.includes(permission),
+  ),
+);
 
-const tiles = computed(() => [
-  {
-    id: "data",
-    title: t.value.dataTitle,
-    subtitle: t.value.dataSubtitle,
-    body: t.value.dataBody,
-    href: "/data/",
-    icon: CandlestickChart,
-    accent: "#66d9ef",
-    metrics: ["Stocks", "Candles", "Dividends"],
-  },
-  {
-    id: "strategies",
-    title: t.value.strategyTitle,
-    subtitle: t.value.strategySubtitle,
-    body: t.value.strategyBody,
-    href: "/strategies/",
-    icon: Boxes,
-    accent: "#ffcc66",
-    metrics: ["Registry", "CPCV", "Backtest"],
-  },
-  {
-    id: "ga",
-    title: t.value.gaTitle,
-    subtitle: t.value.gaSubtitle,
-    body: t.value.gaBody,
-    href: "/ga/",
-    icon: Dna,
-    accent: "#aee9d1",
-    metrics: ["Alphabets", "PyGAD", "TOP-3"],
-  },
-  {
-    id: "tech-system",
-    title: t.value.techTitle,
-    subtitle: t.value.techSubtitle,
-    body: t.value.techBody,
-    href: "/tech/system/",
-    icon: ShieldCheck,
-    accent: "#66d9ef",
-    metrics: ["Event Logs", "JWT", "Audit"],
-  },
-  {
-    id: "system",
-    title: t.value.observabilityTitle,
-    subtitle: t.value.observabilitySubtitle,
-    body: t.value.observabilityBody,
-    href: "/health",
-    icon: Activity,
-    accent: "#aee9d1",
-    metrics: [t.value.statusData, t.value.statusStrategy],
-  },
-  {
-    id: "roadmap",
-    title: t.value.roadmapTitle,
-    subtitle: t.value.roadmapSubtitle,
-    body: t.value.roadmapBody,
-    href: "#",
-    icon: Layers3,
-    accent: "#b48cf2",
-    metrics: ["Risk", "Execution", "Monitor"],
-  },
-]);
+const tiles = computed(() => {
+  const items = [] as Array<{
+    id: string;
+    title: string;
+    subtitle: string;
+    body: string;
+    href: string;
+    icon: typeof CandlestickChart;
+    accent: string;
+    metrics: string[];
+  }>;
+
+  if (hasPermission("app.docs.read")) {
+    items.push({
+      id: "docs",
+      title: t.value.documentationTitle,
+      subtitle: t.value.documentationSubtitle,
+      body: t.value.documentationBody,
+      href: docsHref.value,
+      icon: CircleHelp,
+      accent: "#aee9d1",
+      metrics: locale.value === "ru" ? ["Руководства", "Процессы"] : ["Guides", "Workflow"],
+    });
+  }
+
+  if (hasPermission("profile.self.read")) {
+    items.push({
+      id: "profile",
+      title: t.value.profileTitle,
+      subtitle: t.value.profileSubtitle,
+      body: t.value.profileBody,
+      href: "/tech/profile/",
+      icon: UserCircle,
+      accent: "#ffcc66",
+      metrics: locale.value === "ru" ? ["Роли", "Заявки"] : ["Roles", "Requests"],
+    });
+  }
+
+  if (hasPermission("data.sources.read") || hasPermission("data.instruments.read")) {
+    items.push({
+      id: "data",
+      title: t.value.dataTitle,
+      subtitle: t.value.dataSubtitle,
+      body: t.value.dataBody,
+      href: "/data/",
+      icon: CandlestickChart,
+      accent: "#66d9ef",
+      metrics: ["Stocks", "Candles", "Dividends"],
+    });
+  }
+
+  if (hasPermission("strategy.model.read") || hasPermission("strategy.component.read")) {
+    items.push({
+      id: "strategies",
+      title: t.value.strategyTitle,
+      subtitle: t.value.strategySubtitle,
+      body: t.value.strategyBody,
+      href: "/strategies/",
+      icon: Boxes,
+      accent: "#ffcc66",
+      metrics: ["Registry", "CPCV", "Backtest"],
+    });
+  }
+
+  if (hasPermission("ga.alphabet.read") || hasPermission("ga.run.read")) {
+    items.push({
+      id: "ga",
+      title: t.value.gaTitle,
+      subtitle: t.value.gaSubtitle,
+      body: t.value.gaBody,
+      href: "/ga/",
+      icon: Dna,
+      accent: "#aee9d1",
+      metrics: ["Alphabets", "PyGAD", "TOP-3"],
+    });
+  }
+
+  if (canOpenTechSystem.value) {
+    items.push({
+      id: "tech-system",
+      title: t.value.techTitle,
+      subtitle: t.value.techSubtitle,
+      body: t.value.techBody,
+      href: "/tech/system/",
+      icon: ShieldCheck,
+      accent: "#66d9ef",
+      metrics: locale.value === "ru" ? ["Доступы", "Аудит", "Пользователи"] : ["Access", "Audit", "Users"],
+    });
+  }
+
+  if (hasPermission("system.health.read")) {
+    items.push({
+      id: "system",
+      title: t.value.observabilityTitle,
+      subtitle: t.value.observabilitySubtitle,
+      body: t.value.observabilityBody,
+      href: "/health",
+      icon: Activity,
+      accent: "#aee9d1",
+      metrics: [t.value.statusData, t.value.statusStrategy],
+    });
+  }
+
+  if (items.length === 0) {
+    items.push({
+      id: "roadmap",
+      title: t.value.roadmapTitle,
+      subtitle: t.value.roadmapSubtitle,
+      body: t.value.roadmapBody,
+      href: "#",
+      icon: Layers3,
+      accent: "#b48cf2",
+      metrics: ["Risk", "Execution", "Monitor"],
+    });
+  }
+
+  return items;
+});
 
 watch(locale, (value) => localStorage.setItem("its-launchpad-locale", value));
 
 function clearAuthTokens() {
   localStorage.removeItem(ACCESS_TOKEN_KEY);
   localStorage.removeItem(REFRESH_TOKEN_KEY);
+}
+
+function hasPermission(permission: string): boolean {
+  return currentUser.value?.permissions.includes(permission) ?? false;
+}
+
+function finishAuth(user: User) {
+  currentUser.value = user;
+  isCheckingAuth.value = false;
 }
 
 async function fetchCurrentUser(accessToken: string): Promise<User | null> {
@@ -217,15 +301,13 @@ async function requireAuth() {
   try {
     const user = accessToken ? await fetchCurrentUser(accessToken) : null;
     if (user) {
-      currentUser.value = user;
-      isCheckingAuth.value = false;
+      finishAuth(user);
       return;
     }
 
     const refreshedUser = await refreshAccessToken();
     if (refreshedUser) {
-      currentUser.value = refreshedUser;
-      isCheckingAuth.value = false;
+      finishAuth(refreshedUser);
       return;
     }
   } catch {

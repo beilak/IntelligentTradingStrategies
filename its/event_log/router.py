@@ -4,6 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from its.authz.context import AuthContext
 from its.event_log.repository import (
     EventLogFilters,
     list_event_log_filter_options,
@@ -22,7 +23,7 @@ router = APIRouter(tags=["Event Logs"])
 
 @router.get("/events", response_model=EventLogListResponse)
 def events(
-    _: Annotated[dict[str, object], Depends(require_event_log_access_token)],
+    _: Annotated[AuthContext, Depends(require_event_log_access_token)],
     session: Annotated[Session, Depends(get_event_log_session)],
     id: Annotated[int | None, Query(ge=1)] = None,
     date_time_from: datetime | None = None,
@@ -65,7 +66,7 @@ def events(
 
 @router.get("/events/filter-options", response_model=EventLogFilterOptionsResponse)
 def event_filter_options(
-    _: Annotated[dict[str, object], Depends(require_event_log_access_token)],
+    _: Annotated[AuthContext, Depends(require_event_log_access_token)],
     session: Annotated[Session, Depends(get_event_log_session)],
 ) -> EventLogFilterOptionsResponse:
     services, users = list_event_log_filter_options(session)

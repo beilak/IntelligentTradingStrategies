@@ -5,10 +5,12 @@ import {
   ArrowRight,
   BadgeCheck,
   CalendarDays,
+  CheckCircle2,
+  ClipboardList,
   Filter,
-  Grid2X2,
   Home,
   KeyRound,
+  KeySquare,
   Loader2,
   LockKeyhole,
   LogIn,
@@ -21,26 +23,42 @@ import {
   ShieldCheck,
   UserRound,
   UserPlus,
+  Users,
+  XCircle,
 } from "lucide-vue-next";
 import { computed, onMounted, reactive, ref } from "vue";
 
 import {
   ApiError,
+  approveRoleRequest,
   clearAuthSession,
+  createRoleRequest,
   fetchEventLogFilterOptions,
   fetchEventLogs,
   fetchCurrentUser,
+  fetchMyRoleRequests,
+  fetchPermissions,
+  fetchProfileRoles,
+  fetchRequestableRoles,
+  fetchRoleRequests,
+  fetchRoles,
+  fetchUsers,
   login,
   logout,
   register,
+  rejectRoleRequest,
   saveAuthSession,
   type EventLogEntry,
   type EventLogFilters,
+  type Permission,
+  type Role,
+  type RoleAssignment,
+  type RoleRequest,
   type User,
 } from "./api";
 
 type Mode = "login" | "register";
-type SystemView = "home" | "event_logs";
+type SystemView = "home" | "event_logs" | "access";
 
 const mode = ref<Mode>("login");
 const email = ref("");
@@ -87,6 +105,21 @@ const eventLogColumns = ref<string[]>([
   "body",
 ]);
 const eventLogs = ref<EventLogEntry[]>([]);
+const profileRoles = ref<RoleAssignment[]>([]);
+const requestableRoles = ref<Role[]>([]);
+const myRoleRequests = ref<RoleRequest[]>([]);
+const selectedRoleCode = ref("");
+const roleJustification = ref("");
+const roleRequestMessage = ref("");
+const profileAccessError = ref("");
+const isProfileAccessLoading = ref(false);
+const accessRoles = ref<Role[]>([]);
+const accessUsers = ref<User[]>([]);
+const accessPermissions = ref<Permission[]>([]);
+const accessRoleRequests = ref<RoleRequest[]>([]);
+const accessDecisionComments = reactive<Record<string, string>>({});
+const accessError = ref("");
+const isAccessLoading = ref(false);
 const eventLogServiceOptions = ref<string[]>([]);
 const eventLogUserOptions = ref<string[]>([]);
 const eventLogTotal = ref(0);
@@ -115,6 +148,198 @@ const eventLogRange = computed(() => {
   const end = Math.min(eventLogOffset.value + eventLogs.value.length, eventLogTotal.value);
   return `${start}-${end} / ${eventLogTotal.value}`;
 });
+const permissionGroups = computed(() => groupPermissionLabels(user.value?.permissions || []));
+const canViewEventLogs = computed(() => hasPermission("system.logs.read"));
+const canManageAccess = computed(() =>
+  hasAnyPermission([
+    "user.read",
+    "role.read",
+    "permission.read",
+    "role.request.read",
+    "role.request.approve",
+  ]),
+);
+
+const roleTitles: Record<string, string> = {
+  documentation_reader: "Документация",
+  viewer: "Наблюдатель",
+  quant_researcher: "Исследователь стратегий",
+  data_manager: "Менеджер данных",
+  strategy_releaser: "Ответственный за релиз стратегии",
+  production_approver: "Согласующий production",
+  trading_operator: "Оператор торгового контура",
+  risk_manager: "Риск-менеджер",
+  secret_manager: "Администратор секретов",
+  role_admin: "Администратор доступа",
+  system_admin: "Системный администратор",
+  auditor: "Аудитор",
+};
+
+const roleDescriptions: Record<string, string> = {
+  documentation_reader: "Первичный доступ к документации и заявкам на расширение доступа.",
+  viewer: "Просмотр доступных разделов, отчетов и документации без запуска расчетов.",
+  quant_researcher: "Работа с гипотезами, моделями стратегий, проверками и GA-запусками.",
+  data_manager: "Загрузка рыночных данных, справочников и управление источниками данных.",
+  strategy_releaser: "Подготовка стратегии к передаче в production-контур.",
+  production_approver: "Проверка и согласование заявок на вывод стратегии в production.",
+  trading_operator: "Запуск и остановка paper/live торговых процессов без доступа к секретам.",
+  risk_manager: "Контроль лимитов, риск-согласование и остановка торгового контура.",
+  secret_manager: "Создание, обновление и ротация ссылок на секреты без чтения их значений.",
+  role_admin: "Управление пользователями, ролями, заявками и историей изменений доступа.",
+  system_admin: "Управление техническим состоянием ITS, настройками, журналами и интеграциями.",
+  auditor: "Просмотр истории действий, заявок и изменений без права вносить изменения.",
+};
+
+const permissionTitles: Record<string, string> = {
+  "app.launchpad.read": "Открытие рабочего стола",
+  "app.docs.read": "Просмотр документации",
+  "profile.self.read": "Просмотр своего профиля",
+  "profile.self.update": "Обновление своего профиля",
+  "data.sources.read": "Просмотр источников данных",
+  "data.instruments.read": "Просмотр инструментов",
+  "data.prices.read": "Просмотр котировок",
+  "data.dividends.read": "Просмотр дивидендов",
+  "data.custom_bars.read": "Просмотр производных баров",
+  "data.upload.create": "Загрузка новых данных",
+  "data.upload.read": "Просмотр истории загрузок",
+  "data.version.deactivate": "Деактивация версии данных",
+  "data.source.create": "Добавление источника данных",
+  "data.source.update": "Обновление источника данных",
+  "strategy.component.read": "Просмотр компонентов стратегий",
+  "strategy.component.create": "Создание компонентов стратегий",
+  "strategy.component.update": "Обновление компонентов стратегий",
+  "strategy.component.delete": "Удаление компонентов стратегий",
+  "strategy.model.read": "Просмотр моделей стратегий",
+  "strategy.model.create": "Создание моделей стратегий",
+  "strategy.model.update": "Обновление моделей стратегий",
+  "strategy.model.delete": "Удаление моделей стратегий",
+  "strategy.test.run": "Запуск проверок стратегий",
+  "strategy.test.read": "Просмотр результатов проверок",
+  "strategy.compare.read": "Сравнение стратегий",
+  "strategy.production.request": "Подготовка стратегии к production",
+  "ga.alphabet.read": "Просмотр алфавитов GA",
+  "ga.alphabet.update": "Обновление алфавитов GA",
+  "ga.run.create": "Запуск GA",
+  "ga.run.read": "Просмотр результатов GA",
+  "ga.run.cancel": "Остановка GA-запуска",
+  "ga.candidate.materialize": "Материализация GA-кандидата",
+  "production.strategy.request": "Создание заявки на production",
+  "production.strategy.read": "Просмотр production-стратегий",
+  "production.strategy.approve": "Согласование production",
+  "production.strategy.reject": "Отклонение production-заявки",
+  "production.strategy.deploy": "Размещение production-стратегии",
+  "production.strategy.disable": "Отключение production-стратегии",
+  "trading.paper.start": "Запуск paper trading",
+  "trading.paper.stop": "Остановка paper trading",
+  "trading.live.start": "Запуск live trading",
+  "trading.live.stop": "Остановка live trading",
+  "trading.orders.read": "Просмотр ордеров",
+  "trading.trades.read": "Просмотр сделок",
+  "trading.positions.read": "Просмотр позиций",
+  "trading.emergency_stop": "Аварийная остановка торговли",
+  "risk.limits.read": "Просмотр риск-лимитов",
+  "risk.limits.update": "Изменение риск-лимитов",
+  "risk.events.read": "Просмотр риск-событий",
+  "risk.strategy.approve": "Риск-согласование стратегии",
+  "risk.strategy.block": "Блокировка стратегии по риску",
+  "secret.reference.read": "Просмотр ссылок на секреты",
+  "secret.reference.create": "Создание ссылки на секрет",
+  "secret.reference.update": "Обновление ссылки на секрет",
+  "secret.reference.delete": "Удаление ссылки на секрет",
+  "secret.reference.rotate": "Ротация секрета",
+  "broker.account.read": "Просмотр брокерских аккаунтов",
+  "broker.account.create": "Создание брокерского аккаунта",
+  "broker.account.update": "Обновление брокерского аккаунта",
+  "user.read": "Просмотр пользователей",
+  "user.update": "Обновление пользователей",
+  "user.block": "Блокировка пользователей",
+  "role.read": "Просмотр уровней доступа",
+  "role.create": "Создание уровня доступа",
+  "role.update": "Обновление уровня доступа",
+  "role.delete": "Удаление уровня доступа",
+  "role.assign": "Назначение уровня доступа",
+  "role.revoke": "Отзыв уровня доступа",
+  "role.request.create": "Создание заявки на доступ",
+  "role.request.read": "Просмотр заявок на доступ",
+  "role.request.approve": "Одобрение заявки на доступ",
+  "role.request.reject": "Отклонение заявки на доступ",
+  "permission.read": "Просмотр прав доступа",
+  "audit.auth.read": "Просмотр истории входов",
+  "audit.role.read": "Просмотр истории доступа",
+  "audit.production.read": "Просмотр production-аудита",
+  "audit.trading.read": "Просмотр торгового аудита",
+  "audit.secret.read": "Просмотр аудита секретов",
+  "system.health.read": "Просмотр состояния системы",
+  "system.settings.read": "Просмотр системных настроек",
+  "system.settings.update": "Изменение системных настроек",
+  "system.logs.read": "Просмотр системных журналов",
+  "system.integrations.manage": "Управление интеграциями",
+};
+
+const permissionDomains: Record<string, string> = {
+  app: "Рабочая среда",
+  profile: "Профиль",
+  data: "Данные рынка",
+  strategy: "Стратегии",
+  ga: "GA Lab",
+  production: "Production",
+  trading: "Торговый контур",
+  risk: "Риски",
+  secret: "Секреты",
+  broker: "Брокерские аккаунты",
+  user: "Пользователи",
+  role: "Управление доступом",
+  permission: "Права доступа",
+  audit: "Аудит",
+  system: "Система",
+};
+
+function hasPermission(permission: string): boolean {
+  return user.value?.permissions.includes(permission) ?? false;
+}
+
+function hasAnyPermission(permissions: string[]): boolean {
+  return permissions.some((permission) => hasPermission(permission));
+}
+
+function displayRoleTitle(role: { code: string; title: string }): string {
+  return roleTitles[role.code] || role.title;
+}
+
+function displayRoleDescription(role: { code: string; description?: string | null }): string {
+  return roleDescriptions[role.code] || role.description || "Описание пока не задано";
+}
+
+function displayPermissionTitle(permission: string | Permission): string {
+  const code = typeof permission === "string" ? permission : permission.code;
+  return permissionTitles[code] || (typeof permission === "string" ? permission : permission.title);
+}
+
+function displayRequestStatus(status: string): string {
+  if (status === "pending") return "На рассмотрении";
+  if (status === "approved") return "Одобрена";
+  if (status === "rejected") return "Отклонена";
+  if (status === "cancelled") return "Отменена";
+  return status;
+}
+
+function groupPermissionLabels(permissions: string[]) {
+  const grouped = permissions.reduce<Record<string, { code: string; title: string }[]>>(
+    (acc, permission) => {
+      const domain = permission.split(".")[0] || "other";
+      acc[domain] = acc[domain] || [];
+      acc[domain].push({ code: permission, title: displayPermissionTitle(permission) });
+      return acc;
+    },
+    {},
+  );
+
+  return Object.entries(grouped).map(([domain, items]) => ({
+    domain,
+    title: permissionDomains[domain] || domain,
+    items,
+  }));
+}
 
 function mapError(error: unknown): string {
   if (error instanceof ApiError) {
@@ -137,10 +362,6 @@ function continueToLaunchpad() {
 
 function openLaunchpad() {
   window.location.assign(launchpadHref);
-}
-
-function openSystem() {
-  window.location.assign(systemHref);
 }
 
 function openProfile() {
@@ -215,6 +436,7 @@ async function loadEventLogFilterOptions() {
 }
 
 async function openEventLogs() {
+  if (!canViewEventLogs.value) return;
   activeSystemView.value = "event_logs";
   eventLogOffset.value = 0;
   eventLogsError.value = "";
@@ -229,8 +451,94 @@ async function openEventLogs() {
   }
 }
 
+async function openAccessManagement() {
+  activeSystemView.value = "access";
+  await loadAccessManagement();
+}
+
 function closeEventLogs() {
   activeSystemView.value = "home";
+}
+
+function closeAccessManagement() {
+  activeSystemView.value = "home";
+}
+
+async function loadProfileAccess() {
+  if (!isProfilePage.value || !user.value) return;
+  profileAccessError.value = "";
+  isProfileAccessLoading.value = true;
+  try {
+    const [roles, requestable, requests] = await Promise.all([
+      fetchProfileRoles(),
+      fetchRequestableRoles(),
+      fetchMyRoleRequests(),
+    ]);
+    profileRoles.value = roles;
+    requestableRoles.value = requestable;
+    myRoleRequests.value = requests;
+    if (!selectedRoleCode.value && requestable.length > 0) {
+      selectedRoleCode.value = requestable[0].code;
+    }
+  } catch (error) {
+    profileAccessError.value = mapError(error);
+  } finally {
+    isProfileAccessLoading.value = false;
+  }
+}
+
+async function submitRoleRequest() {
+  if (!selectedRoleCode.value) return;
+  roleRequestMessage.value = "";
+  profileAccessError.value = "";
+  try {
+    await createRoleRequest(selectedRoleCode.value, roleJustification.value);
+    roleJustification.value = "";
+    roleRequestMessage.value = "Заявка отправлена на рассмотрение.";
+    await loadProfileAccess();
+  } catch (error) {
+    profileAccessError.value = mapError(error);
+  }
+}
+
+async function loadAccessManagement() {
+  if (!isSystemPage.value || !user.value || activeSystemView.value !== "access") return;
+  accessError.value = "";
+  isAccessLoading.value = true;
+  try {
+    const [roles, permissions, users, requests] = await Promise.all([
+      hasPermission("role.read") ? fetchRoles() : Promise.resolve([]),
+      hasPermission("permission.read") ? fetchPermissions() : Promise.resolve([]),
+      hasPermission("user.read") ? fetchUsers() : Promise.resolve([]),
+      hasPermission("role.request.read") ? fetchRoleRequests() : Promise.resolve([]),
+    ]);
+    accessRoles.value = roles;
+    accessPermissions.value = permissions;
+    accessUsers.value = users;
+    accessRoleRequests.value = requests;
+    for (const request of requests) {
+      accessDecisionComments[request.id] =
+        accessDecisionComments[request.id] || "Решение администратора доступа.";
+    }
+  } catch (error) {
+    accessError.value = mapError(error);
+  } finally {
+    isAccessLoading.value = false;
+  }
+}
+
+async function approveAccessRequest(request: RoleRequest) {
+  const comment = accessDecisionComments[request.id] || "";
+  if (comment.trim().length < 3) return;
+  await approveRoleRequest(request.id, comment);
+  await loadAccessManagement();
+}
+
+async function rejectAccessRequest(request: RoleRequest) {
+  const comment = accessDecisionComments[request.id] || "";
+  if (comment.trim().length < 3) return;
+  await rejectRoleRequest(request.id, comment);
+  await loadAccessManagement();
 }
 
 async function loadEventLogs() {
@@ -302,6 +610,9 @@ onMounted(async () => {
     if (isSystemPage.value) {
       activeSystemView.value = "home";
     }
+    if (isProfilePage.value) {
+      await loadProfileAccess();
+    }
   } catch {
     clearAuthSession();
     if (isSystemPage.value) {
@@ -353,9 +664,9 @@ onMounted(async () => {
             <div>
               <span class="eyebrow">
                 <ShieldCheck :size="16" />
-                Tech System
+                Управление платформой
               </span>
-              <h1>Tech System</h1>
+              <h1>Управление платформой</h1>
               <p>Технические инструменты платформы: аудит, доступы, системные журналы и операции.</p>
             </div>
             <div class="session-actions">
@@ -375,35 +686,45 @@ onMounted(async () => {
           </div>
 
           <div class="system-module-grid">
-            <button class="system-module-card primary-module" type="button" @click="openEventLogs">
-              <span class="module-icon">
+            <button
+              class="system-module-card primary-module"
+              type="button"
+              :disabled="!canViewEventLogs"
+              @click="openEventLogs"
+            >
+              <span class="module-icon" :class="{ muted: !canViewEventLogs }">
                 <ScrollText :size="24" />
               </span>
-              <span class="panel-kicker">event_logs</span>
-              <strong>Event Logs</strong>
-              <p>Append-only журнал HTTP-действий пользователей по всем backend-сервисам.</p>
+              <span class="panel-kicker">Аудит</span>
+              <strong>Журнал событий</strong>
+              <p>История действий пользователей и сервисов по рабочим разделам платформы.</p>
+            </button>
+            <button
+              class="system-module-card primary-module"
+              type="button"
+              :disabled="!canManageAccess"
+              @click="openAccessManagement"
+            >
+              <span class="module-icon" :class="{ muted: !canManageAccess }">
+                <Users :size="24" />
+              </span>
+              <span class="panel-kicker">Доступы</span>
+              <strong>Управление доступом</strong>
+              <p>Пользователи, роли, права и заявки на расширение доступа.</p>
             </button>
             <button class="system-module-card" type="button" disabled>
               <span class="module-icon muted">
                 <Settings :size="24" />
               </span>
-              <span class="panel-kicker">planned</span>
-              <strong>System Settings</strong>
+              <span class="panel-kicker">В планах</span>
+              <strong>Настройки системы</strong>
               <p>Будущий раздел для технических параметров платформы.</p>
-            </button>
-            <button class="system-module-card" type="button" disabled>
-              <span class="module-icon muted">
-                <Grid2X2 :size="24" />
-              </span>
-              <span class="panel-kicker">planned</span>
-              <strong>Service Registry</strong>
-              <p>Будущий раздел для статусов и конфигурации сервисов.</p>
             </button>
           </div>
         </template>
       </section>
 
-      <section v-else class="event-log-page">
+      <section v-else-if="activeSystemView === 'event_logs'" class="event-log-page">
         <div v-if="isCheckingSession" class="loading-state">
           <Loader2 class="spin" :size="28" />
           <span>Проверка входа</span>
@@ -414,15 +735,15 @@ onMounted(async () => {
             <div>
               <span class="eyebrow">
                 <ScrollText :size="16" />
-                Tech System
+                Управление платформой
               </span>
-              <h1>Event Logs</h1>
+              <h1>Журнал событий</h1>
             </div>
             <div class="event-toolbar-actions">
               <span>{{ eventLogRange }}</span>
               <button class="secondary-button" type="button" @click="closeEventLogs">
                 <ArrowLeft :size="18" />
-                Tech System
+                Управление
               </button>
               <button class="icon-action" type="button" aria-label="Refresh" @click="loadEventLogs">
                 <RefreshCw :class="{ spin: isEventLogsLoading }" :size="18" />
@@ -553,6 +874,149 @@ onMounted(async () => {
           </div>
         </template>
       </section>
+
+      <section v-else class="event-log-page access-page">
+        <div v-if="isCheckingSession" class="loading-state">
+          <Loader2 class="spin" :size="28" />
+          <span>Проверка входа</span>
+        </div>
+
+        <template v-else-if="user">
+          <div class="event-toolbar">
+            <div>
+              <span class="eyebrow">
+                <Users :size="16" />
+                Управление платформой
+              </span>
+              <h1>Управление доступом</h1>
+            </div>
+            <div class="event-toolbar-actions">
+              <button class="secondary-button" type="button" @click="closeAccessManagement">
+                <ArrowLeft :size="18" />
+                Управление
+              </button>
+              <button class="icon-action" type="button" aria-label="Refresh" @click="loadAccessManagement">
+                <RefreshCw :class="{ spin: isAccessLoading }" :size="18" />
+              </button>
+            </div>
+          </div>
+
+          <p v-if="accessError" class="error-message event-error">
+            <AlertCircle :size="18" />
+            {{ accessError }}
+          </p>
+
+          <div class="access-grid">
+            <article class="access-section">
+              <div class="section-head">
+                <Users :size="20" />
+                <h2>Пользователи</h2>
+              </div>
+              <div v-if="isAccessLoading" class="empty-cell">
+                <Loader2 class="spin" :size="20" />
+                Загрузка
+              </div>
+              <div v-else-if="accessUsers.length === 0" class="empty-cell">Нет данных</div>
+              <table v-else class="compact-table">
+                <thead>
+                  <tr>
+                    <th>Email</th>
+                    <th>Роли</th>
+                    <th>Статус</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="item in accessUsers" :key="item.id">
+                    <td>{{ item.email }}</td>
+                    <td>{{ item.roles.map(displayRoleTitle).join(", ") || "без ролей" }}</td>
+                    <td>{{ item.is_active ? "Активен" : "Отключен" }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </article>
+
+            <article class="access-section">
+              <div class="section-head">
+                <KeySquare :size="20" />
+                <h2>Роли</h2>
+              </div>
+              <div v-if="isAccessLoading" class="empty-cell">
+                <Loader2 class="spin" :size="20" />
+                Загрузка
+              </div>
+              <div v-else-if="accessRoles.length === 0" class="empty-cell">Нет данных</div>
+              <div v-else class="role-list">
+                <div v-for="role in accessRoles" :key="role.code" class="role-row">
+                  <strong>{{ displayRoleTitle(role) }}</strong>
+                  <span>{{ displayRoleDescription(role) }}</span>
+                  <small>{{ role.permissions.length }} прав доступа</small>
+                </div>
+              </div>
+            </article>
+
+            <article class="access-section wide">
+              <div class="section-head">
+                <ClipboardList :size="20" />
+                <h2>Заявки на доступ</h2>
+              </div>
+              <div v-if="isAccessLoading" class="empty-cell">
+                <Loader2 class="spin" :size="20" />
+                Загрузка
+              </div>
+              <div v-else-if="accessRoleRequests.length === 0" class="empty-cell">Нет заявок</div>
+              <div v-else class="request-list">
+                <div v-for="item in accessRoleRequests" :key="item.id" class="request-card">
+                  <div>
+                    <strong>{{ displayRoleTitle(item.role) }}</strong>
+                    <span>{{ item.requester_email || item.requester_id }}</span>
+                    <p>{{ item.justification }}</p>
+                  </div>
+                  <small :class="['status-badge', item.status]">{{ displayRequestStatus(item.status) }}</small>
+                  <template v-if="item.status === 'pending'">
+                    <textarea
+                      v-model="accessDecisionComments[item.id]"
+                      rows="2"
+                      placeholder="Комментарий к решению"
+                    ></textarea>
+                    <div class="request-actions">
+                      <button
+                        class="primary-button"
+                        type="button"
+                        :disabled="!hasPermission('role.request.approve')"
+                        @click="approveAccessRequest(item)"
+                      >
+                        <CheckCircle2 :size="18" />
+                        Одобрить
+                      </button>
+                      <button
+                        class="secondary-button"
+                        type="button"
+                        :disabled="!hasPermission('role.request.reject')"
+                        @click="rejectAccessRequest(item)"
+                      >
+                        <XCircle :size="18" />
+                        Отклонить
+                      </button>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </article>
+
+            <article class="access-section wide">
+              <div class="section-head">
+                <KeyRound :size="20" />
+                <h2>Права доступа</h2>
+              </div>
+              <div class="permission-cloud">
+                <small v-for="permission in accessPermissions" :key="permission.code">
+                  {{ displayPermissionTitle(permission) }}
+                </small>
+              </div>
+            </article>
+          </div>
+        </template>
+      </section>
     </main>
 
     <main v-else-if="isProfilePage" class="profile-workspace">
@@ -576,10 +1040,6 @@ onMounted(async () => {
               <button class="primary-button" type="button" @click="openLaunchpad">
                 <Home :size="18" />
                 Launchpad
-              </button>
-              <button class="secondary-button" type="button" @click="openSystem">
-                <ShieldCheck :size="18" />
-                Tech System
               </button>
               <button class="secondary-button" type="button" @click="signOut">
                 <LogOut :size="18" />
@@ -610,6 +1070,93 @@ onMounted(async () => {
               <strong>{{ formatDate(user.last_login_at) }}</strong>
             </article>
           </div>
+
+          <p v-if="profileAccessError" class="error-message event-error">
+            <AlertCircle :size="18" />
+            {{ profileAccessError }}
+          </p>
+
+          <div class="profile-access-grid">
+            <article class="access-section">
+              <div class="section-head">
+                <KeySquare :size="20" />
+                <h2>Мои роли</h2>
+              </div>
+              <div v-if="isProfileAccessLoading" class="empty-cell">
+                <Loader2 class="spin" :size="20" />
+                Загрузка
+              </div>
+              <div v-else-if="profileRoles.length === 0" class="empty-cell">Роли не назначены</div>
+              <div v-else class="role-list">
+                <div v-for="item in profileRoles" :key="item.role.code" class="role-row">
+                  <strong>{{ displayRoleTitle(item.role) }}</strong>
+                  <span>{{ displayRoleDescription(item.role) }}</span>
+                  <small>Назначена: {{ formatDate(item.assigned_at) }}</small>
+                </div>
+              </div>
+            </article>
+
+            <article class="access-section">
+              <div class="section-head">
+                <KeyRound :size="20" />
+                <h2>Мои права доступа</h2>
+              </div>
+              <div v-if="permissionGroups.length === 0" class="empty-cell">
+                Права доступа не назначены
+              </div>
+              <div v-else class="permission-groups">
+                <div v-for="group in permissionGroups" :key="group.domain">
+                  <strong>{{ group.title }}</strong>
+                  <small v-for="permission in group.items" :key="permission.code">
+                    {{ permission.title }}
+                  </small>
+                </div>
+              </div>
+            </article>
+
+            <article class="access-section">
+              <div class="section-head">
+                <ClipboardList :size="20" />
+                <h2>Запросить доступ</h2>
+              </div>
+              <p v-if="roleRequestMessage" class="success-message">{{ roleRequestMessage }}</p>
+              <form class="role-request-form" @submit.prevent="submitRoleRequest">
+                <label>
+                  <span>Уровень доступа</span>
+                  <select v-model="selectedRoleCode" required>
+                    <option v-for="role in requestableRoles" :key="role.code" :value="role.code">
+                      {{ displayRoleTitle(role) }}
+                    </option>
+                  </select>
+                </label>
+                <label>
+                  <span>Обоснование</span>
+                  <textarea v-model.trim="roleJustification" rows="4" minlength="10" required></textarea>
+                </label>
+                <button class="primary-button" type="submit" :disabled="requestableRoles.length === 0">
+                  <ArrowRight :size="18" />
+                  Отправить заявку
+                </button>
+              </form>
+            </article>
+
+            <article class="access-section">
+              <div class="section-head">
+                <ScrollText :size="20" />
+                <h2>Мои заявки</h2>
+              </div>
+              <div v-if="myRoleRequests.length === 0" class="empty-cell">Заявок пока нет</div>
+              <div v-else class="request-list">
+                <div v-for="item in myRoleRequests" :key="item.id" class="request-card">
+                  <div>
+                    <strong>{{ displayRoleTitle(item.role) }}</strong>
+                    <span>{{ formatDate(item.created_at) }}</span>
+                  </div>
+                  <small :class="['status-badge', item.status]">{{ displayRequestStatus(item.status) }}</small>
+                </div>
+              </div>
+            </article>
+          </div>
         </template>
       </section>
     </main>
@@ -618,10 +1165,10 @@ onMounted(async () => {
       <section class="system-panel">
         <span class="eyebrow">
           <ShieldCheck :size="16" />
-          Защищенный доступ
+          Intelligent Trading Strategies
         </span>
-        <h1>Добро пожаловать в ITS</h1>
-        <p class="hero-note">Войдите, чтобы перейти к рабочим инструментам платформы.</p>
+        <h1>ITS Platform</h1>
+        <p class="hero-note">Рыночные данные, торговые стратегии и проверка гипотез в единой рабочей среде.</p>
         <div class="signal-grid" aria-hidden="true">
           <span></span>
           <span></span>

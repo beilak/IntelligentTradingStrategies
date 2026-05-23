@@ -30,6 +30,9 @@ def test_jwt_access_token_contains_user_context() -> None:
         email="user@example.com",
         role_version=1,
         token_type="access",
+        roles=["quant_researcher"],
+        permissions=["strategy.test.run", "ga.run.create"],
+        env_scopes=["research", "paper"],
         settings=settings,
     )
     payload = decode_jwt_token(token, expected_type="access", settings=settings)
@@ -39,6 +42,9 @@ def test_jwt_access_token_contains_user_context() -> None:
     assert payload["email"] == "user@example.com"
     assert payload["typ"] == "access"
     assert payload["role_version"] == 1
+    assert payload["roles"] == ["quant_researcher"]
+    assert payload["permissions"] == ["strategy.test.run", "ga.run.create"]
+    assert payload["env_scopes"] == ["research", "paper"]
 
 
 def test_register_request_normalizes_email() -> None:

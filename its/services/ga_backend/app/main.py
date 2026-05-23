@@ -10,10 +10,13 @@ from typing import Any
 
 import httpx
 import pandas as pd
-from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from its.authz.context import AuthContext
+from its.authz.dependencies import require_permissions
+from its.authz.permissions import Permissions
 from its.event_log.integration import install_event_log
 from its.ga.engine import run_ga_search
 from its.ga.registry import load_alphabet_registry
@@ -79,11 +82,15 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     @app.get(f"{API_PREFIX}/alphabets")
-    async def alphabets() -> dict[str, Any]:
+    async def alphabets(
+        _auth: AuthContext = Depends(require_permissions(Permissions.GA_ALPHABET_READ)),
+    ) -> dict[str, Any]:
         return load_alphabet_registry()
 
     @app.get(f"{API_PREFIX}/runs")
-    async def list_runs() -> dict[str, Any]:
+    async def list_runs(
+        _auth: AuthContext = Depends(require_permissions(Permissions.GA_RUN_READ)),
+    ) -> dict[str, Any]:
         with RUNS_LOCK:
             items = [
                 summarize_run(run)
@@ -96,7 +103,10 @@ def create_app() -> FastAPI:
         return {"items": items}
 
     @app.get(f"{API_PREFIX}/runs/{{run_id}}")
-    async def get_run(run_id: str) -> dict[str, Any]:
+    async def get_run(
+        run_id: str,
+        _auth: AuthContext = Depends(require_permissions(Permissions.GA_RUN_READ)),
+    ) -> dict[str, Any]:
         with RUNS_LOCK:
             run = RUNS.get(run_id)
         if run is None:
@@ -110,6 +120,15 @@ def create_app() -> FastAPI:
     async def start_run(
         request: GARunRequest,
         background_tasks: BackgroundTasks,
+        http_request: Request,
+        _auth: AuthContext = Depends(
+            require_permissions(
+                Permissions.GA_RUN_CREATE,
+                Permissions.DATA_INSTRUMENTS_READ,
+                Permissions.DATA_PRICES_READ,
+                Permissions.DATA_DIVIDENDS_READ,
+            )
+        ),
     ) -> dict[str, Any]:
         validate_request(request)
         run_id = f"{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}"
@@ -127,7 +146,12 @@ def create_app() -> FastAPI:
         }
         with RUNS_LOCK:
             RUNS[run_id] = run
-        background_tasks.add_task(run_ga_job, run_id, settings)
+        background_tasks.add_task(
+            run_ga_job,
+            run_id,
+            settings,
+            http_request.headers.get("authorization"),
+        )
         return run
 
     return app
@@ -150,17 +174,21 @@ def validate_request(request: GARunRequest) -> None:
         )
 
 
-def run_ga_job(run_id: str, settings: dict[str, Any]) -> None:
+def run_ga_job(
+    run_id: str,
+    settings: dict[str, Any],
+    authorization: str | None,
+) -> None:
     update_run(run_id, status="running")
     try:
-        stocks = fetch_stocks(settings)
+        stocks = fetch_stocks(settings, authorization=authorization)
         figis = [item["figi"] for item in stocks if item.get("figi")]
         if not figis:
             raise HTTPException(status_code=404, detail="No assets found for GA.")
-        prices = fetch_prices(figis, settings)
+        prices = fetch_prices(figis, settings, authorization=authorization)
         if prices.empty:
             raise HTTPException(status_code=404, detail="No prices found for GA.")
-        dividends_info = fetch_dividends(figis, settings)
+        dividends_info = fetch_dividends(figis, settings, authorization=authorization)
 
         result = run_ga_search(
             prices=prices,
@@ -176,17 +204,25 @@ def run_ga_job(run_id: str, settings: dict[str, Any]) -> None:
         cache_run(run_id)
 
 
-def fetch_stocks(settings: dict[str, Any]) -> list[dict[str, Any]]:
+def fetch_stocks(
+    settings: dict[str, Any], *, authorization: str | None
+) -> list[dict[str, Any]]:
     with httpx.Client(timeout=60) as client:
         response = client.get(
             f"{DATA_BACKEND_BASE_URL}/stocks",
             params={"class_code": settings["class_code"]},
+            headers=auth_headers(authorization),
         )
     payload = handle_data_response(response)
     return payload.get("items", [])
 
 
-def fetch_prices(figis: list[str], settings: dict[str, Any]) -> pd.DataFrame:
+def fetch_prices(
+    figis: list[str],
+    settings: dict[str, Any],
+    *,
+    authorization: str | None,
+) -> pd.DataFrame:
     params: list[tuple[str, str]] = [("figis", figi) for figi in figis] + [
         ("class_code", settings["class_code"]),
         ("start_date", settings["start_date"]),
@@ -195,18 +231,31 @@ def fetch_prices(figis: list[str], settings: dict[str, Any]) -> pd.DataFrame:
         ("is_complete", "true"),
     ]
     with httpx.Client(timeout=300) as client:
-        response = client.get(f"{DATA_BACKEND_BASE_URL}/prices", params=params)
+        response = client.get(
+            f"{DATA_BACKEND_BASE_URL}/prices",
+            params=params,
+            headers=auth_headers(authorization),
+        )
     payload = handle_data_response(response)
     return pd.DataFrame(payload.get("items", []))
 
 
-def fetch_dividends(figis: list[str], settings: dict[str, Any]) -> pd.DataFrame:
+def fetch_dividends(
+    figis: list[str],
+    settings: dict[str, Any],
+    *,
+    authorization: str | None,
+) -> pd.DataFrame:
     params: list[tuple[str, str]] = [("figis", figi) for figi in figis] + [
         ("class_code", settings["class_code"]),
         ("end_date", settings["end_date"]),
     ]
     with httpx.Client(timeout=300) as client:
-        response = client.get(f"{DATA_BACKEND_BASE_URL}/dividends", params=params)
+        response = client.get(
+            f"{DATA_BACKEND_BASE_URL}/dividends",
+            params=params,
+            headers=auth_headers(authorization),
+        )
     payload = handle_data_response(response)
     return pd.DataFrame(payload.get("items", []))
 
@@ -221,6 +270,10 @@ def handle_data_response(response: httpx.Response) -> dict[str, Any]:
     raise HTTPException(
         status_code=502, detail=f"Data backend request failed: {detail}"
     )
+
+
+def auth_headers(authorization: str | None) -> dict[str, str]:
+    return {"Authorization": authorization} if authorization else {}
 
 
 def append_event(run_id: str, event: dict[str, Any]) -> None:

@@ -31,6 +31,9 @@ from its.data_loader.t_invest_data_readers.stock_info import (
     get_currencies_info,
     get_stock_info,
 )
+from its.authz.context import AuthContext
+from its.authz.dependencies import require_permissions
+from its.authz.permissions import Permissions
 from its.db.models import RSSItem
 from its.db.session import get_session
 from its.event_log.integration import install_event_log
@@ -158,7 +161,11 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     @app.get(f"{API_PREFIX}/sources")
-    async def sources() -> dict[str, object]:
+    async def sources(
+        _auth: Annotated[
+            AuthContext, Depends(require_permissions(Permissions.DATA_SOURCES_READ))
+        ],
+    ) -> dict[str, object]:
         return {
             "items": [
                 {
@@ -187,6 +194,10 @@ def create_app() -> FastAPI:
 
     @app.get(f"{API_PREFIX}/stocks")
     async def stocks(
+        _auth: Annotated[
+            AuthContext,
+            Depends(require_permissions(Permissions.DATA_INSTRUMENTS_READ)),
+        ],
         class_code: str | None = DEFAULT_CLASS_CODE,
         search: str | None = None,
         tickers: Annotated[list[str] | None, Query()] = None,
@@ -220,6 +231,10 @@ def create_app() -> FastAPI:
 
     @app.get(f"{API_PREFIX}/currencies")
     async def currencies(
+        _auth: Annotated[
+            AuthContext,
+            Depends(require_permissions(Permissions.DATA_INSTRUMENTS_READ)),
+        ],
         class_code: str | None = None,
         search: str | None = None,
         tickers: Annotated[list[str] | None, Query()] = None,
@@ -251,6 +266,9 @@ def create_app() -> FastAPI:
 
     @app.get(f"{API_PREFIX}/prices")
     async def prices(
+        _auth: Annotated[
+            AuthContext, Depends(require_permissions(Permissions.DATA_PRICES_READ))
+        ],
         figis: Annotated[list[str] | None, Query()] = None,
         tickers: Annotated[list[str] | None, Query()] = None,
         class_code: str | None = DEFAULT_CLASS_CODE,
@@ -336,6 +354,10 @@ def create_app() -> FastAPI:
 
     @app.get(f"{API_PREFIX}/custom-gold-bars")
     async def custom_gold_bars(
+        _auth: Annotated[
+            AuthContext,
+            Depends(require_permissions(Permissions.DATA_CUSTOM_BARS_READ)),
+        ],
         figis: Annotated[list[str] | None, Query()] = None,
         tickers: Annotated[list[str] | None, Query()] = None,
         class_code: str | None = DEFAULT_CLASS_CODE,
@@ -449,6 +471,9 @@ def create_app() -> FastAPI:
 
     @app.get(f"{API_PREFIX}/monte-carlo")
     async def monte_carlo(
+        _auth: Annotated[
+            AuthContext, Depends(require_permissions(Permissions.DATA_PRICES_READ))
+        ],
         figis: Annotated[list[str] | None, Query()] = None,
         tickers: Annotated[list[str] | None, Query()] = None,
         class_code: str | None = DEFAULT_CLASS_CODE,
@@ -568,6 +593,10 @@ def create_app() -> FastAPI:
 
     @app.get(f"{API_PREFIX}/dividends")
     async def dividends(
+        _auth: Annotated[
+            AuthContext,
+            Depends(require_permissions(Permissions.DATA_DIVIDENDS_READ)),
+        ],
         figis: Annotated[list[str] | None, Query()] = None,
         tickers: Annotated[list[str] | None, Query()] = None,
         class_code: str = DEFAULT_CLASS_CODE,
@@ -649,6 +678,9 @@ def create_app() -> FastAPI:
 
     @app.get(f"{API_PREFIX}/rss")
     async def rss_items(
+        _auth: Annotated[
+            AuthContext, Depends(require_permissions(Permissions.DATA_SOURCES_READ))
+        ],
         session: Annotated[Session, Depends(get_session)],
         pub_date_from: date | None = None,
         pub_date_to: date | None = None,
@@ -695,11 +727,18 @@ def create_app() -> FastAPI:
         }
 
     @app.get(f"{API_PREFIX}/rss/sources")
-    async def rss_sources() -> dict[str, list[str]]:
+    async def rss_sources(
+        _auth: Annotated[
+            AuthContext, Depends(require_permissions(Permissions.DATA_SOURCES_READ))
+        ],
+    ) -> dict[str, list[str]]:
         return {"items": get_default_rss_sources()}
 
     @app.post(f"{API_PREFIX}/rss/load")
     async def load_rss_items(
+        _auth: Annotated[
+            AuthContext, Depends(require_permissions(Permissions.DATA_UPLOAD_CREATE))
+        ],
         session: Annotated[Session, Depends(get_session)],
         urls: Annotated[list[str] | None, Query()] = None,
     ) -> dict[str, object]:

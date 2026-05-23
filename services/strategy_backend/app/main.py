@@ -5,9 +5,13 @@ import inspect
 import sys
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
+from its.authz.context import AuthContext
+from its.authz.dependencies import require_permissions
+from its.authz.permissions import Permissions
+from its.event_log.integration import install_event_log
 from services.strategy_backend.app.backtest import router as backtest_router
 from services.strategy_backend.app.comparison import router as comparison_router
 from services.strategy_backend.app.cpcv import router as cpcv_router
@@ -15,8 +19,6 @@ from services.strategy_backend.app.trading_strategy_backtest import (
     router as trading_strategy_backtest_router,
 )
 from services.strategy_backend.app.walk_forward import router as walk_forward_router
-from its.event_log.integration import install_event_log
-
 
 API_PREFIX = "/api/v1"
 
@@ -81,7 +83,11 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     @app.get(f"{API_PREFIX}/registry")
-    async def registry() -> dict[str, Any]:
+    async def registry(
+        _auth: AuthContext = Depends(
+            require_permissions(Permissions.STRATEGY_COMPONENT_READ)
+        ),
+    ) -> dict[str, Any]:
         groups = [load_registry_group(registry_info) for registry_info in REGISTRIES]
         return {
             "groups": groups,
@@ -97,12 +103,21 @@ def create_app() -> FastAPI:
         }
 
     @app.get(f"{API_PREFIX}/models")
-    async def models() -> dict[str, Any]:
+    async def models(
+        _auth: AuthContext = Depends(
+            require_permissions(Permissions.STRATEGY_MODEL_READ)
+        ),
+    ) -> dict[str, Any]:
         group = load_registry_group(get_registry_info("strategy_model"))
         return {"items": group["items"]}
 
     @app.get(f"{API_PREFIX}/models/{{model_name}}")
-    async def model_detail(model_name: str) -> dict[str, Any]:
+    async def model_detail(
+        model_name: str,
+        _auth: AuthContext = Depends(
+            require_permissions(Permissions.STRATEGY_MODEL_READ)
+        ),
+    ) -> dict[str, Any]:
         model_group = load_registry_group(get_registry_info("strategy_model"))
         model_item = next(
             (item for item in model_group["items"] if item["name"] == model_name),
@@ -129,12 +144,21 @@ def create_app() -> FastAPI:
         }
 
     @app.get(f"{API_PREFIX}/trading-strategies")
-    async def trading_strategies() -> dict[str, Any]:
+    async def trading_strategies(
+        _auth: AuthContext = Depends(
+            require_permissions(Permissions.STRATEGY_MODEL_READ)
+        ),
+    ) -> dict[str, Any]:
         group = load_registry_group(get_registry_info("trading_strategy_model"))
         return {"items": group["items"]}
 
     @app.get(f"{API_PREFIX}/trading-strategies/{{strategy_name}}")
-    async def trading_strategy_detail(strategy_name: str) -> dict[str, Any]:
+    async def trading_strategy_detail(
+        strategy_name: str,
+        _auth: AuthContext = Depends(
+            require_permissions(Permissions.STRATEGY_MODEL_READ)
+        ),
+    ) -> dict[str, Any]:
         strategy_group = load_registry_group(
             get_registry_info("trading_strategy_model")
         )
@@ -172,7 +196,11 @@ def create_app() -> FastAPI:
         }
 
     @app.get(f"{API_PREFIX}/strategy-type")
-    async def strategy_type() -> dict[str, Any]:
+    async def strategy_type(
+        _auth: AuthContext = Depends(
+            require_permissions(Permissions.STRATEGY_COMPONENT_READ)
+        ),
+    ) -> dict[str, Any]:
         return describe_strategy_type()
 
     return app
@@ -270,9 +298,11 @@ def get_parameters(obj: Any) -> list[dict[str, str]]:
         result.append(
             {
                 "name": parameter.name,
-                "default": ""
-                if parameter.default is inspect._empty
-                else repr(parameter.default),
+                "default": (
+                    ""
+                    if parameter.default is inspect._empty
+                    else repr(parameter.default)
+                ),
                 "annotation": annotation_to_string(parameter.annotation),
                 "kind": str(parameter.kind),
             }
@@ -442,9 +472,9 @@ def describe_strategy_type() -> dict[str, Any]:
             {
                 "name": field.name,
                 "type": annotation_to_string(field.type),
-                "default": ""
-                if field.default is dataclasses.MISSING
-                else repr(field.default),
+                "default": (
+                    "" if field.default is dataclasses.MISSING else repr(field.default)
+                ),
             }
             for field in dataclasses.fields(Strategy)
         ]

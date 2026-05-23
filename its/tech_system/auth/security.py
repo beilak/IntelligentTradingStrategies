@@ -41,6 +41,9 @@ def create_jwt_token(
     email: str,
     role_version: int,
     token_type: TokenType,
+    roles: list[str] | None = None,
+    permissions: list[str] | None = None,
+    env_scopes: list[str] | None = None,
     settings: AuthSettings | None = None,
 ) -> tuple[str, int]:
     auth_settings = settings or get_auth_settings()
@@ -61,6 +64,10 @@ def create_jwt_token(
         "nbf": int(now.timestamp()),
         "exp": int(expires_at.timestamp()),
     }
+    if token_type == "access":
+        payload["roles"] = roles or []
+        payload["permissions"] = permissions or []
+        payload["env_scopes"] = env_scopes or ["research"]
     token = jwt.encode(
         payload, auth_settings.jwt_secret_key, algorithm=auth_settings.jwt_algorithm
     )

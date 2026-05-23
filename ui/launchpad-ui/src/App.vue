@@ -9,6 +9,7 @@ import {
   DatabaseZap,
   Dna,
   Globe2,
+  Landmark,
   Layers3,
   LineChart,
   Loader2,
@@ -67,6 +68,9 @@ const messages = {
     gaTitle: "GA генератор",
     gaSubtitle: "Генетические алгоритмы для поиска стратегий",
     gaBody: "Алфавиты компонентов, эволюционный запуск, визуализация поколений и материализация TOP-3 стратегий.",
+    executionTitle: "Execution",
+    executionSubtitle: "Брокерские счета и исполнение",
+    executionBody: "Личный кабинет T-Invest: состояние счетов, портфель, операции, заявки и безопасные заглушки приказов.",
     techTitle: "Управление платформой",
     techSubtitle: "Доступы и аудит",
     techBody: "Просмотр событий, заявок на доступ и технических операций платформы.",
@@ -105,6 +109,9 @@ const messages = {
     gaTitle: "GA Generator",
     gaSubtitle: "Genetic algorithms for strategy search",
     gaBody: "Component alphabets, evolutionary runs, generation visualization, and TOP-3 materialization.",
+    executionTitle: "Execution",
+    executionSubtitle: "Broker accounts and order flow",
+    executionBody: "T-Invest cabinet: account state, portfolio, operations, orders, and safe order-ticket stubs.",
     techTitle: "Platform Management",
     techSubtitle: "Access and audit",
     techBody: "Review audit events, access requests, and platform operations.",
@@ -204,6 +211,17 @@ const tiles = computed(() => {
       metrics: ["Alphabets", "PyGAD", "TOP-3"],
     });
   }
+
+  items.push({
+    id: "execution",
+    title: t.value.executionTitle,
+    subtitle: t.value.executionSubtitle,
+    body: t.value.executionBody,
+    href: "/execution/",
+    icon: Landmark,
+    accent: "#ff8f70",
+    metrics: locale.value === "ru" ? ["Счета", "Портфель", "Заявки"] : ["Accounts", "Portfolio", "Orders"],
+  });
 
   if (canOpenTechSystem.value) {
     items.push({

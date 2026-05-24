@@ -1,7 +1,9 @@
 import asyncio
 import functools
 import math
+from datetime import UTC
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import aiometer
 import pandas as pd
@@ -38,21 +40,25 @@ CACHE_START_COLUMN = "cache_requested_start"
 CACHE_END_COLUMN = "cache_requested_end"
 CACHE_COMPLETE_COLUMN = "cache_requested_is_complete"
 CACHE_MARKER_COLUMN = "cache_marker"
+CACHE_SCHEMA_COLUMN = "cache_schema_version"
+CACHE_SCHEMA_VERSION = "market-time-v2"
 CACHE_METADATA_COLUMNS = [
     CACHE_INTERVAL_COLUMN,
     CACHE_START_COLUMN,
     CACHE_END_COLUMN,
     CACHE_COMPLETE_COLUMN,
     CACHE_MARKER_COLUMN,
+    CACHE_SCHEMA_COLUMN,
 ]
 
 MAX_YEARS = 5
+MARKET_TIME_ZONE = ZoneInfo("Europe/Moscow")
 
 
 def _normalize_timestamp(value: pd.Timestamp) -> pd.Timestamp:
     timestamp = pd.Timestamp(value)
     if timestamp.tzinfo is not None:
-        timestamp = timestamp.tz_localize(None)
+        timestamp = timestamp.tz_convert(MARKET_TIME_ZONE).tz_localize(None)
     return timestamp
 
 
@@ -104,6 +110,22 @@ def _shift_timestamp(value: pd.Timestamp, interval: CandleInterval) -> pd.Timest
     return pd.Timestamp(value + _interval_step(interval))
 
 
+def _previous_timestamp(
+    value: pd.Timestamp,
+    interval: CandleInterval,
+) -> pd.Timestamp:
+    return pd.Timestamp(value - _interval_step(interval))
+
+
+def _market_timestamp_to_utc_datetime(value: pd.Timestamp):
+    timestamp = pd.Timestamp(value)
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.tz_localize(MARKET_TIME_ZONE)
+    else:
+        timestamp = timestamp.tz_convert(MARKET_TIME_ZONE)
+    return timestamp.tz_convert(UTC).to_pydatetime()
+
+
 def _ensure_cache_columns(prices: pd.DataFrame) -> pd.DataFrame:
     prices = prices.copy()
 
@@ -117,6 +139,8 @@ def _ensure_cache_columns(prices: pd.DataFrame) -> pd.DataFrame:
         prices[CACHE_COMPLETE_COLUMN] = pd.NA
     if CACHE_MARKER_COLUMN not in prices.columns:
         prices[CACHE_MARKER_COLUMN] = False
+    if CACHE_SCHEMA_COLUMN not in prices.columns:
+        prices[CACHE_SCHEMA_COLUMN] = pd.NA
 
     return prices
 
@@ -251,6 +275,7 @@ def _build_cache_rows(
                 CACHE_END_COLUMN: cache_end,
                 CACHE_COMPLETE_COLUMN: is_complete,
                 CACHE_MARKER_COLUMN: True,
+                CACHE_SCHEMA_COLUMN: CACHE_SCHEMA_VERSION,
             }
         ]
     )
@@ -264,6 +289,7 @@ def _build_cache_rows(
     cache_prices[CACHE_END_COLUMN] = cache_end
     cache_prices[CACHE_COMPLETE_COLUMN] = is_complete
     cache_prices[CACHE_MARKER_COLUMN] = False
+    cache_prices[CACHE_SCHEMA_COLUMN] = CACHE_SCHEMA_VERSION
 
     return pd.concat([cache_prices, marker_row], ignore_index=True, sort=False)
 
@@ -297,17 +323,24 @@ def _write_prices_cache(cache_rows: pd.DataFrame, cache_path: Path) -> None:
 
     if not price_rows.empty:
         price_rows = price_rows.sort_values(
-            [CACHE_INTERVAL_COLUMN, "figi", "time"]
+            [CACHE_SCHEMA_COLUMN, CACHE_INTERVAL_COLUMN, "figi", "time"]
         ).drop_duplicates(
-            subset=[CACHE_INTERVAL_COLUMN, "figi", "time"],
+            subset=[CACHE_SCHEMA_COLUMN, CACHE_INTERVAL_COLUMN, "figi", "time"],
             keep="last",
         )
 
     if not marker_rows.empty:
         marker_rows = marker_rows.sort_values(
-            [CACHE_INTERVAL_COLUMN, "figi", CACHE_START_COLUMN, CACHE_END_COLUMN]
+            [
+                CACHE_SCHEMA_COLUMN,
+                CACHE_INTERVAL_COLUMN,
+                "figi",
+                CACHE_START_COLUMN,
+                CACHE_END_COLUMN,
+            ]
         ).drop_duplicates(
             subset=[
+                CACHE_SCHEMA_COLUMN,
                 CACHE_INTERVAL_COLUMN,
                 "figi",
                 CACHE_START_COLUMN,
@@ -319,7 +352,13 @@ def _write_prices_cache(cache_rows: pd.DataFrame, cache_path: Path) -> None:
 
     cache_to_save = pd.concat([price_rows, marker_rows], ignore_index=True, sort=False)
     cache_to_save = cache_to_save.sort_values(
-        [CACHE_INTERVAL_COLUMN, "figi", CACHE_START_COLUMN, "time"],
+        [
+            CACHE_SCHEMA_COLUMN,
+            CACHE_INTERVAL_COLUMN,
+            "figi",
+            CACHE_START_COLUMN,
+            "time",
+        ],
         na_position="last",
     )
 
@@ -353,9 +392,12 @@ def read_prices_from_cache(
         cache[CACHE_INTERVAL_COLUMN].eq(_interval_to_cache_key(interval)).fillna(False)
     )
     complete_mask = cache[CACHE_COMPLETE_COLUMN].eq(is_complete).fillna(False)
+    schema_mask = cache[CACHE_SCHEMA_COLUMN].eq(CACHE_SCHEMA_VERSION).fillna(False)
     figi_mask = cache["figi"].isin(unique_figis)
 
-    filtered_cache = cache.loc[figi_mask & interval_mask & complete_mask].copy()
+    filtered_cache = cache.loc[
+        figi_mask & interval_mask & complete_mask & schema_mask
+    ].copy()
 
     if filtered_cache.empty:
         return pd.DataFrame(), {figi: [(start_date, end_date)] for figi in unique_figis}
@@ -430,6 +472,12 @@ async def _get_price(
     is_complete: bool = True,
 ):
     response = []
+    start_date = _normalize_timestamp(start_date)
+    end_date = _normalize_timestamp(end_date)
+    request_start = _market_timestamp_to_utc_datetime(
+        _previous_timestamp(start_date, interval)
+    )
+    request_end = _market_timestamp_to_utc_datetime(end_date)
 
     for i in range(0, 3):
         try:
@@ -437,8 +485,8 @@ async def _get_price(
                 candle
                 async for candle in client.get_all_candles(
                     figi=figi,
-                    from_=start_date,
-                    to=end_date,
+                    from_=request_start,
+                    to=request_end,
                     interval=interval,
                 )
             ]
@@ -467,8 +515,17 @@ async def _get_price(
     if "is_complete" in prices.columns and is_complete:
         prices = prices.query("is_complete").copy()
 
+    if "time" in prices.columns:
+        prices.time = pd.to_datetime(prices.time, errors="coerce")
+        prices = prices.loc[prices.time.notna()].copy()
+
     if interval == CandleInterval.CANDLE_INTERVAL_DAY:
         prices.time = prices.time.map(pd.Timestamp.normalize)
+
+    if "time" in prices.columns:
+        prices = prices.loc[
+            prices.time.between(start_date, end_date, inclusive="both")
+        ].copy()
 
     return prices
 

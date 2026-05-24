@@ -10,6 +10,7 @@ import {
 import { init, use, type ECharts, type EChartsCoreOption } from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { MARKET_TIME_ZONE } from "../marketTime";
 import type { Candle } from "../types";
 
 use([
@@ -227,10 +228,15 @@ function formatAxisTime(value: string) {
     return `${formatDatePart(parsed)}\n${formatTimePart(parsed)}`;
   }
   if (props.interval === "CANDLE_INTERVAL_MONTH") {
-    return new Intl.DateTimeFormat("ru-RU", { month: "short", year: "2-digit" }).format(parsed);
+    return new Intl.DateTimeFormat("ru-RU", {
+      timeZone: MARKET_TIME_ZONE,
+      month: "short",
+      year: "2-digit",
+    }).format(parsed);
   }
   if (props.interval === "CANDLE_INTERVAL_WEEK") {
     return new Intl.DateTimeFormat("ru-RU", {
+      timeZone: MARKET_TIME_ZONE,
       month: "short",
       day: "2-digit",
       year: "2-digit",
@@ -243,6 +249,7 @@ function formatFullTime(value: string) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return new Intl.DateTimeFormat("ru-RU", {
+    timeZone: MARKET_TIME_ZONE,
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -253,6 +260,7 @@ function formatFullTime(value: string) {
 
 function formatDatePart(value: Date) {
   return new Intl.DateTimeFormat("ru-RU", {
+    timeZone: MARKET_TIME_ZONE,
     day: "2-digit",
     month: "2-digit",
     year: "2-digit",
@@ -261,6 +269,7 @@ function formatDatePart(value: Date) {
 
 function formatTimePart(value: Date) {
   return new Intl.DateTimeFormat("ru-RU", {
+    timeZone: MARKET_TIME_ZONE,
     hour: "2-digit",
     minute: "2-digit",
   }).format(value);

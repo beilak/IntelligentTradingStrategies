@@ -193,9 +193,7 @@ def build_inclusive_day_range(
     default_start = (
         pd.Timestamp(selected_end) - pd.Timedelta(days=default_days)
     ).date()
-    current_start = pd.Timestamp(
-        start_date or default_start
-    )
+    current_start = pd.Timestamp(start_date or default_start)
     current_end = pd.Timestamp(selected_end) + END_OF_DAY_DELTA
     return current_start, current_end
 
@@ -731,9 +729,7 @@ def create_app() -> FastAPI:
             start_date
             or (
                 current_end
-                - pd.Timedelta(
-                    days=365 * (today.year - DEFAULT_DIVIDEND_START_YEAR)
-                )
+                - pd.Timedelta(days=365 * (today.year - DEFAULT_DIVIDEND_START_YEAR))
             ).date()
         )
         if current_start > current_end:
@@ -948,7 +944,9 @@ class TInvestGateway:
             or self._tradable_instruments_loaded_at is None
         ):
             return False
-        return datetime.utcnow() - self._tradable_instruments_loaded_at < self._stocks_ttl
+        return (
+            datetime.utcnow() - self._tradable_instruments_loaded_at < self._stocks_ttl
+        )
 
 
 def get_tinvest_token() -> str:
@@ -1245,8 +1243,7 @@ def filter_instruments(
         ]
     if api_trade_available is not None:
         filtered = filtered.loc[
-            filtered["api_trade_available_flag"].map(coerce_bool)
-            == api_trade_available
+            filtered["api_trade_available_flag"].map(coerce_bool) == api_trade_available
         ]
     if search:
         needle = search.strip().lower()
@@ -1414,8 +1411,8 @@ def build_price_summary(prices_df: pd.DataFrame) -> list[dict[str, object]]:
                 "last_close": last_close,
                 "change_pct": change_pct,
                 "candles": int(len(group)),
-                "from": sanitize_scalar(first.get("time")),
-                "to": sanitize_scalar(last.get("time")),
+                "from": serialize_market_time(first.get("time")),
+                "to": serialize_market_time(last.get("time")),
             }
         )
 
@@ -1514,10 +1511,30 @@ def dataframe_to_records(
     existing_columns = [column for column in columns if column in df.columns]
     prepared = df.loc[:, existing_columns].copy()
 
-    return [
-        {column: sanitize_scalar(value) for column, value in row.items()}
-        for row in prepared.to_dict(orient="records")
-    ]
+    return [serialize_dataframe_row(row) for row in prepared.to_dict(orient="records")]
+
+
+def serialize_dataframe_row(row: dict[str, object]) -> dict[str, object]:
+    return {
+        column: (
+            serialize_market_time(value) if column == "time" else sanitize_scalar(value)
+        )
+        for column, value in row.items()
+    }
+
+
+def serialize_market_time(value: object) -> object:
+    if value is None:
+        return None
+
+    timestamp = pd.Timestamp(value)
+    if pd.isna(timestamp):
+        return None
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.tz_localize(MARKET_TIME_ZONE)
+    else:
+        timestamp = timestamp.tz_convert(MARKET_TIME_ZONE)
+    return timestamp.isoformat()
 
 
 def sanitize_scalar(value: object) -> object:

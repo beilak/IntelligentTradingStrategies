@@ -36,6 +36,7 @@ import AllocationChart from "./components/AllocationChart.vue";
 import OrderBookPanel from "./components/OrderBookPanel.vue";
 import TicketCandlestickChart from "./components/TicketCandlestickChart.vue";
 import OperationsCashflowChart from "./components/OperationsCashflowChart.vue";
+import { MARKET_TIME_ZONE, formatMarketDateInput } from "./marketTime";
 import type {
   AccountItem,
   AccountOverview,
@@ -592,6 +593,7 @@ function formatPercent(value?: number | null): string {
 function formatDateTime(value?: string | null): string {
   if (!value) return "n/a";
   return new Intl.DateTimeFormat("ru-RU", {
+    timeZone: MARKET_TIME_ZONE,
     day: "2-digit",
     month: "2-digit",
     year: "2-digit",
@@ -635,7 +637,7 @@ function addDays(value: Date, days: number): Date {
 }
 
 function formatDateInput(value: Date): string {
-  return value.toISOString().slice(0, 10);
+  return formatMarketDateInput(value);
 }
 
 function buildExecutionWsUrl(path: string): string {

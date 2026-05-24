@@ -10,6 +10,7 @@ import {
 import { init, use, type ECharts, type EChartsCoreOption } from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { MARKET_TIME_ZONE } from "../marketTime";
 import type { Locale, MonteCarloClosePoint, MonteCarloPathPoint } from "../types";
 
 use([
@@ -264,6 +265,7 @@ function formatAxisTime(value: string) {
 
   if (props.interval === "CANDLE_INTERVAL_MONTH") {
     return new Intl.DateTimeFormat(currentLocale(), {
+      timeZone: MARKET_TIME_ZONE,
       month: "short",
       year: "2-digit",
     }).format(parsed);
@@ -280,6 +282,7 @@ function formatFullTime(value: string) {
 
   const options: Intl.DateTimeFormatOptions = isIntradayInterval()
     ? {
+        timeZone: MARKET_TIME_ZONE,
         year: "numeric",
         month: "2-digit",
         day: "2-digit",
@@ -287,6 +290,7 @@ function formatFullTime(value: string) {
         minute: "2-digit",
       }
     : {
+        timeZone: MARKET_TIME_ZONE,
         year: "numeric",
         month: "2-digit",
         day: "2-digit",
@@ -297,6 +301,7 @@ function formatFullTime(value: string) {
 
 function formatDatePart(value: Date) {
   return new Intl.DateTimeFormat(currentLocale(), {
+    timeZone: MARKET_TIME_ZONE,
     month: "short",
     day: "2-digit",
   }).format(value);
@@ -304,6 +309,7 @@ function formatDatePart(value: Date) {
 
 function formatTimePart(value: Date) {
   return new Intl.DateTimeFormat(currentLocale(), {
+    timeZone: MARKET_TIME_ZONE,
     hour: "2-digit",
     minute: "2-digit",
   }).format(value);

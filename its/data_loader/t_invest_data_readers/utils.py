@@ -1,10 +1,5 @@
 from t_tech.invest import (
     AsyncClient,
-)
-from t_tech.invest import (
-    AsyncClient,
-    CandleInterval,
-    Client,
     MoneyValue,
     Quotation,
     TradeDirection,
@@ -18,12 +13,14 @@ import types
 from decimal import Decimal
 from dataclasses import fields, is_dataclass
 import datetime
+from zoneinfo import ZoneInfo
 from t_tech.invest.schemas import (
-    IndicativesRequest,
     IndicativeResponse,
 )
 
 import pandas as pd
+
+MARKET_TIME_ZONE = ZoneInfo("Europe/Moscow")
 
 
 async def get_max_requests_per_second(token: str) -> float:
@@ -128,10 +125,10 @@ def _dataclass_to_dict(dataclass, dict_factory=dict) -> dict:
 
 
 def _datetime_to_timestamp(datetime_: datetime.datetime):
-    if datetime_.hour == 0 and datetime_.minute == 0:
+    if datetime_.tzinfo is None:
         return pd.Timestamp(datetime_.replace(tzinfo=None))
 
-    return pd.Timestamp(datetime_.astimezone(tz=None).replace(tzinfo=None))
+    return pd.Timestamp(datetime_.astimezone(MARKET_TIME_ZONE).replace(tzinfo=None))
 
 
 def _money_value_to_float(money_value: MoneyValue) -> float:

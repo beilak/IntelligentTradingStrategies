@@ -2,6 +2,11 @@ import pandas as pd
 from t_tech.invest import CandleInterval
 
 from its.data_loader.t_invest_data_readers.prices_reader import (
+    CACHE_COMPLETE_COLUMN,
+    CACHE_END_COLUMN,
+    CACHE_INTERVAL_COLUMN,
+    CACHE_MARKER_COLUMN,
+    CACHE_START_COLUMN,
     _build_cache_rows,
     _get_cache_path,
     _write_prices_cache,
@@ -101,3 +106,80 @@ def test_cache_files_are_isolated_by_interval(tmp_path) -> None:
     assert cached_day_prices.iloc[0]["close"] == 101
     assert cached_hour_prices.iloc[0]["close"] == 102
     assert cached_day_prices.iloc[0]["time"] != cached_hour_prices.iloc[0]["time"]
+
+
+def test_cache_read_ignores_unversioned_coverage_markers(tmp_path) -> None:
+    figi = "figi-1"
+    cache_path = tmp_path / "prices_moex_d.csv"
+    start = pd.Timestamp("2026-05-23")
+    end = pd.Timestamp("2026-05-24")
+
+    pd.DataFrame(
+        [
+            {
+                "figi": figi,
+                "time": pd.NaT,
+                CACHE_INTERVAL_COLUMN: CandleInterval.CANDLE_INTERVAL_DAY.name,
+                CACHE_START_COLUMN: start,
+                CACHE_END_COLUMN: end,
+                CACHE_COMPLETE_COLUMN: True,
+                CACHE_MARKER_COLUMN: True,
+            }
+        ]
+    ).to_csv(cache_path, index=False)
+
+    cached_prices, missing_ranges = read_prices_from_cache(
+        [figi],
+        start,
+        end,
+        interval=CandleInterval.CANDLE_INTERVAL_DAY,
+        is_complete=True,
+        cache_path=cache_path,
+    )
+
+    assert cached_prices.empty
+    assert missing_ranges == {figi: [(start, end)]}
+
+
+def test_cache_read_includes_exact_left_boundary(tmp_path) -> None:
+    figi = "figi-1"
+    cache_path = tmp_path / "prices_moex_d.csv"
+    start = pd.Timestamp("2026-05-23")
+    end = pd.Timestamp("2026-05-24")
+    prices = pd.DataFrame(
+        [
+            {
+                "figi": figi,
+                "time": start,
+                "open": 100,
+                "high": 103,
+                "low": 99,
+                "close": 102,
+                "is_complete": True,
+            }
+        ]
+    )
+
+    _write_prices_cache(
+        _build_cache_rows(
+            prices,
+            figi,
+            start,
+            end,
+            CandleInterval.CANDLE_INTERVAL_DAY,
+            True,
+        ),
+        cache_path=cache_path,
+    )
+
+    cached_prices, missing_ranges = read_prices_from_cache(
+        [figi],
+        start,
+        end,
+        interval=CandleInterval.CANDLE_INTERVAL_DAY,
+        is_complete=True,
+        cache_path=cache_path,
+    )
+
+    assert missing_ranges == {}
+    assert cached_prices["time"].tolist() == [start]

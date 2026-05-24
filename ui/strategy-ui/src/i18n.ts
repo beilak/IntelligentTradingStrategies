@@ -117,6 +117,13 @@ export const messages = {
     className: "Класс",
     module: "Модуль",
     middleLayerName: "Реестр",
+    productionState: "Статус продакшена",
+    prodReadyYes: "Готова к продакшену",
+    prodReadyNo: "Не готова к продакшену",
+    prodCommentPlaceholder: "Комментарий к статусу стратегии",
+    markProdReady: "Добавить в prod-ready",
+    unmarkProdReady: "Убрать из prod-ready",
+    updatedAt: "Обновлено",
   },
   en: {
     appTitle: "ITS Strategy Lab",
@@ -232,6 +239,13 @@ export const messages = {
     className: "Class",
     module: "Module",
     middleLayerName: "Registry",
+    productionState: "Production state",
+    prodReadyYes: "Prod-ready",
+    prodReadyNo: "Not prod-ready",
+    prodCommentPlaceholder: "Comment for this strategy state",
+    markProdReady: "Add to prod-ready",
+    unmarkProdReady: "Remove from prod-ready",
+    updatedAt: "Updated at",
   },
 } satisfies Record<Locale, Record<string, MessageValue>>;
 

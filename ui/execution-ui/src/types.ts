@@ -158,7 +158,7 @@ export interface AccountOverview {
   account_id: string;
   broker: string;
   as_of: string;
-  order_submission_mode: "stub";
+  order_submission_mode: "stub" | "real";
   operations_window: {
     from: string;
     to: string;
@@ -186,6 +186,7 @@ export interface OrderTicket {
   order_type: "limit" | "market";
   quantity: number;
   price?: number | null;
+  price_type?: "currency" | "point" | null;
   time_in_force: "day" | "fill_or_kill" | "fill_and_kill";
   client_order_id?: string | null;
   comment?: string | null;
@@ -199,6 +200,7 @@ export interface StopOrderTicket {
   quantity: number;
   stop_price: number;
   limit_price?: number | null;
+  price_type?: "currency" | "point" | null;
   expire_at?: string | null;
   client_order_id?: string | null;
   comment?: string | null;
@@ -206,13 +208,113 @@ export interface StopOrderTicket {
 
 export interface StubResponse {
   id: string;
+  broker_order_id?: string | null;
   broker: string;
   account_id: string;
   account_name?: string | null;
   created_at: string;
   status: string;
-  submission_mode: "stub";
+  submission_mode: "stub" | "real";
   would_submit: boolean;
+  submitted?: boolean;
   message: string;
   ticket: OrderTicket | StopOrderTicket;
+  broker_response?: Record<string, unknown> | null;
+}
+
+export interface TradableInstrument {
+  figi: string;
+  ticker: string;
+  uid?: string | null;
+  instrument_uid?: string | null;
+  position_uid?: string | null;
+  isin?: string | null;
+  name: string;
+  class_code: string;
+  instrument_type: string;
+  currency: string;
+  exchange?: string | null;
+  lot?: number | null;
+  trading_status?: string | number | null;
+  real_exchange?: string | number | null;
+  buy_available_flag?: boolean | null;
+  sell_available_flag?: boolean | null;
+  api_trade_available_flag?: boolean | null;
+}
+
+export interface InstrumentsResponse {
+  items: TradableInstrument[];
+  total: number;
+  limit: number;
+  offset: number;
+  filters: {
+    instrument_types: string[];
+    class_codes: string[];
+    exchanges: string[];
+    currencies: string[];
+    intervals: string[];
+  };
+}
+
+export interface Candle {
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume?: number | null;
+  time: string;
+  is_complete?: boolean;
+  figi: string;
+  ticker?: string | null;
+}
+
+export interface PricesResponse {
+  items: Candle[];
+  meta: {
+    figis: string[];
+    tickers: string[];
+    start_date: string;
+    end_date: string;
+    interval: string;
+    is_complete: boolean;
+  };
+  summary: Array<{
+    ticker: string;
+    figi: string;
+    last_close: number | null;
+    change_pct: number | null;
+    candles: number;
+    from: string | null;
+    to: string | null;
+  }>;
+}
+
+export interface LastPriceResponse {
+  figi?: string | null;
+  instrument_uid?: string | null;
+  instrument_id?: string | null;
+  time?: string | null;
+  last_price_type?: string | number | null;
+  price?: QuotationAmount | null;
+  price_value?: number | null;
+}
+
+export interface OrderBookLevel {
+  price: number | null;
+  quantity: number | null;
+}
+
+export interface OrderBookSnapshot {
+  type: "orderbook";
+  instrument_id?: string | null;
+  instrument_uid?: string | null;
+  figi?: string | null;
+  time?: string | null;
+  depth?: number | null;
+  is_consistent?: boolean | null;
+  order_book_type?: string | number | null;
+  limit_up?: number | null;
+  limit_down?: number | null;
+  bids: OrderBookLevel[];
+  asks: OrderBookLevel[];
 }

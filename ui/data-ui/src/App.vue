@@ -21,6 +21,7 @@ import CandlestickChartPanel from "./components/CandlestickChart.vue";
 import CloseLineChartPanel from "./components/CloseLineChart.vue";
 import MonteCarloPathsChartPanel from "./components/MonteCarloPathsChart.vue";
 import { messages } from "./i18n";
+import { MARKET_TIME_ZONE, formatMarketDateInput, parseMarketDateInput } from "./marketTime";
 import type { Candle, Currency, Dividend, DividendSummary, GoldBarType, Locale, MonteCarloClosePoint, MonteCarloDriftMode, MonteCarloResponse, RssItem, RssLoadResponse, Stock, StockFilters } from "./types";
 
 const savedLocale = localStorage.getItem("its-data-locale") as Locale | null;
@@ -478,13 +479,12 @@ function addDays(date: Date, days: number) {
 }
 
 function formatDate(date: Date) {
-  return date.toISOString().slice(0, 10);
+  return formatMarketDateInput(date);
 }
 
 function toDateInput(value: string) {
-  const isoDate = value.match(/^\d{4}-\d{2}-\d{2}/)?.[0];
-  if (isoDate) {
-    return isoDate;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return value;
   }
 
   const parsed = new Date(value);
@@ -495,8 +495,7 @@ function toDateInput(value: string) {
 }
 
 function parseDateInput(value: string) {
-  const parsed = new Date(`${value}T00:00:00`);
-  return Number.isNaN(parsed.getTime()) ? Number.NaN : parsed.getTime();
+  return parseMarketDateInput(value);
 }
 
 function formatError(err: unknown) {
@@ -524,6 +523,7 @@ function formatDateOnly(dateStr: string | null) {
   const parsed = new Date(dateStr);
   if (Number.isNaN(parsed.getTime())) return dateStr;
   return new Intl.DateTimeFormat(locale.value === "ru" ? "ru-RU" : "en-US", {
+    timeZone: MARKET_TIME_ZONE,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -535,6 +535,7 @@ function formatDateTime(dateStr: string | null) {
   const parsed = new Date(dateStr);
   if (Number.isNaN(parsed.getTime())) return dateStr;
   return new Intl.DateTimeFormat(locale.value === "ru" ? "ru-RU" : "en-US", {
+    timeZone: MARKET_TIME_ZONE,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",

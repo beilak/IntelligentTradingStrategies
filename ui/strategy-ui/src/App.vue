@@ -29,10 +29,12 @@ import {
     getWalkForwardTest,
     listBacktestTests,
     listCpcvTests,
+    listTradingStrategies,
     listTradingStrategyBacktestTests,
     listWalkForwardTests,
     runBacktestTest,
     runCpcvTest,
+    setTradingStrategyProdReady,
     runTradingStrategyBacktestTest,
     runWalkForwardTest,
 } from "./api";
@@ -50,6 +52,7 @@ import type {
     RegistryItem,
     RegistryResponse,
     StrategyComparisonResult,
+    TradingStrategyProductionState,
     WalkForwardResult,
     WalkForwardSavedTest,
     WalkForwardSettings,
@@ -80,6 +83,9 @@ const cpcvError = ref("");
 const walkForwardError = ref("");
 const backtestError = ref("");
 const comparisonError = ref("");
+const prodStateError = ref("");
+const isProdStateUpdating = ref(false);
+const prodCommentDraft = ref("");
 const savedCpcvTests = ref<CpcvSavedTest[]>([]);
 const savedWalkForwardTests = ref<WalkForwardSavedTest[]>([]);
 const savedBacktestTests = ref<BacktestSavedTest[]>([]);
@@ -212,6 +218,18 @@ const comparisonExplanations = computed(() =>
         ? t.value.comparisonExplanations
         : [],
 );
+const currentProdState = computed<TradingStrategyProductionState | null>(() => {
+    if (!isTradingStrategyTab.value || !modelDetail.value) return null;
+    return (
+        modelDetail.value.production_state ?? {
+            strategy_name: modelDetail.value.name,
+            is_prod_ready: false,
+            comment: null,
+            updated_by_user_id: null,
+            updated_at: null,
+        }
+    );
+});
 
 watch(locale, (value) => localStorage.setItem("its-strategy-locale", value));
 
@@ -227,6 +245,7 @@ async function loadRegistry() {
     error.value = "";
     try {
         registry.value = await getRegistry();
+        await loadTradingStrategyItems();
         selectedModelName.value = registry.value.models[0]?.name ?? "";
         if (selectedModelName.value) {
             await loadModel(selectedModelName.value);
@@ -236,6 +255,16 @@ async function loadRegistry() {
     } finally {
         isLoading.value = false;
     }
+}
+
+async function loadTradingStrategyItems() {
+    const response = await listTradingStrategies();
+    const tradingGroup = registry.value?.groups.find(
+        (group) => group.id === "trading_strategy_model",
+    );
+    if (!tradingGroup) return;
+    tradingGroup.items = response.items;
+    tradingGroup.count = response.items.length;
 }
 
 async function loadModel(modelName: string) {
@@ -267,6 +296,8 @@ async function loadTradingStrategy(strategyName: string) {
     error.value = "";
     try {
         modelDetail.value = await getTradingStrategyDetail(strategyName);
+        prodCommentDraft.value = modelDetail.value.production_state?.comment ?? "";
+        prodStateError.value = "";
         cpcvResult.value = null;
         walkForwardResult.value = null;
         backtestResult.value = null;
@@ -319,6 +350,26 @@ async function selectRegistryItem(itemName: string) {
         await loadModel(itemName);
     } else if (selectedGroupId.value === "trading_strategy_model") {
         await loadTradingStrategy(itemName);
+    }
+}
+
+async function updateProdReady(isProdReady: boolean) {
+    if (!isTradingStrategyTab.value || !selectedModelName.value) return;
+    isProdStateUpdating.value = true;
+    prodStateError.value = "";
+    try {
+        const response = await setTradingStrategyProdReady(selectedModelName.value, {
+            is_prod_ready: isProdReady,
+            comment: prodCommentDraft.value.trim() || null,
+        });
+        if (modelDetail.value) {
+            modelDetail.value.production_state = response.item;
+        }
+        await loadTradingStrategyItems();
+    } catch (err) {
+        prodStateError.value = formatError(err);
+    } finally {
+        isProdStateUpdating.value = false;
     }
 }
 
@@ -1096,7 +1147,11 @@ function polarPoint(cx: number, cy: number, radius: number, ratio: number) {
                             >
                                 <div class="card-title">
                                     <strong>{{ item.name }}</strong>
-                                    <span>{{ item.kind }}</span>
+                                    <span>{{
+                                        item.production_state?.is_prod_ready
+                                            ? "prod-ready"
+                                            : item.kind
+                                    }}</span>
                                 </div>
                                 <p>{{ item.description || t.empty }}</p>
                                 <code>{{ item.signature || item.module }}</code>
@@ -1142,6 +1197,53 @@ function polarPoint(cx: number, cy: number, radius: number, ratio: number) {
                                         <strong>{{ step.step }}</strong>
                                         <code>{{ step.component }}</code>
                                     </article>
+                                </div>
+                            </section>
+
+                            <section
+                                v-if="isTradingStrategyTab && currentProdState"
+                                class="detail-section"
+                            >
+                                <span>{{ t.productionState }}</span>
+                                <div class="prod-ready-block">
+                                    <strong>
+                                        {{
+                                            currentProdState.is_prod_ready
+                                                ? t.prodReadyYes
+                                                : t.prodReadyNo
+                                        }}
+                                    </strong>
+                                    <textarea
+                                        v-model="prodCommentDraft"
+                                        rows="3"
+                                        :placeholder="t.prodCommentPlaceholder"
+                                    />
+                                    <div class="prod-ready-actions">
+                                        <button
+                                            class="report-btn"
+                                            type="button"
+                                            :disabled="isProdStateUpdating"
+                                            @click="updateProdReady(true)"
+                                        >
+                                            {{ t.markProdReady }}
+                                        </button>
+                                        <button
+                                            class="report-btn"
+                                            type="button"
+                                            :disabled="isProdStateUpdating"
+                                            @click="updateProdReady(false)"
+                                        >
+                                            {{ t.unmarkProdReady }}
+                                        </button>
+                                    </div>
+                                    <small v-if="currentProdState.updated_at">
+                                        {{
+                                            `${t.updatedAt}: ${formatDateTime(currentProdState.updated_at)}`
+                                        }}
+                                    </small>
+                                    <p v-if="prodStateError" class="error-banner">
+                                        {{ prodStateError }}
+                                    </p>
                                 </div>
                             </section>
 

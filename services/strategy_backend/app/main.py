@@ -7,10 +7,15 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from its.authz.context import AuthContext
 from its.authz.dependencies import require_permissions
 from its.authz.permissions import Permissions
+from its.db.models.strategy import TradingStrategyProductionState
+from its.db.session import get_session
 from its.event_log.integration import install_event_log
 from services.strategy_backend.app.backtest import router as backtest_router
 from services.strategy_backend.app.comparison import router as comparison_router
@@ -54,6 +59,11 @@ REGISTRIES = [
         "role": "Full trading strategies: portfolio core plus execution rules such as stop loss and take profit.",
     },
 ]
+
+
+class TradingStrategyProductionStateRequest(BaseModel):
+    is_prod_ready: bool
+    comment: str | None = Field(default=None, max_length=1000)
 
 
 def create_app() -> FastAPI:
@@ -145,16 +155,33 @@ def create_app() -> FastAPI:
 
     @app.get(f"{API_PREFIX}/trading-strategies")
     async def trading_strategies(
+        session: Session = Depends(get_session),
         _auth: AuthContext = Depends(
             require_permissions(Permissions.STRATEGY_MODEL_READ)
         ),
     ) -> dict[str, Any]:
         group = load_registry_group(get_registry_info("trading_strategy_model"))
-        return {"items": group["items"]}
+        states = {
+            row.strategy_name: row
+            for row in session.execute(
+                select(TradingStrategyProductionState)
+            ).scalars()
+        }
+        items = [
+            {
+                **item,
+                "production_state": serialize_production_state(
+                    states.get(item["name"]), strategy_name=item["name"]
+                ),
+            }
+            for item in group["items"]
+        ]
+        return {"items": items}
 
     @app.get(f"{API_PREFIX}/trading-strategies/{{strategy_name}}")
     async def trading_strategy_detail(
         strategy_name: str,
+        session: Session = Depends(get_session),
         _auth: AuthContext = Depends(
             require_permissions(Permissions.STRATEGY_MODEL_READ)
         ),
@@ -183,17 +210,81 @@ def create_app() -> FastAPI:
             ),
         ]
         strategy_obj = import_object(strategy_item["module"], strategy_item["name"])
+        state = session.execute(
+            select(TradingStrategyProductionState).where(
+                TradingStrategyProductionState.strategy_name == strategy_name
+            )
+        ).scalar_one_or_none()
         return {
             **strategy_item,
             "composition": inspect_trading_strategy_composition(
                 strategy_obj,
                 component_groups,
             ),
+            "production_state": serialize_production_state(
+                state, strategy_name=strategy_name
+            ),
             "component_groups": component_groups,
             "future_reports": [
                 {"id": "backtesting", "title": "Backtesting", "status": "available"},
             ],
         }
+
+    @app.get(f"{API_PREFIX}/trading-strategies/prod-ready")
+    async def list_prod_ready_trading_strategies(
+        session: Session = Depends(get_session),
+        _auth: AuthContext = Depends(
+            require_permissions(Permissions.STRATEGY_MODEL_READ)
+        ),
+    ) -> dict[str, Any]:
+        rows = (
+            session.execute(
+                select(TradingStrategyProductionState).where(
+                    TradingStrategyProductionState.is_prod_ready.is_(True)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        items = sorted(
+            (serialize_production_state(row) for row in rows),
+            key=lambda item: item["strategy_name"],
+        )
+        return {"items": items}
+
+    @app.put(f"{API_PREFIX}/trading-strategies/{{strategy_name}}/prod-ready")
+    async def set_trading_strategy_prod_ready(
+        strategy_name: str,
+        payload: TradingStrategyProductionStateRequest,
+        session: Session = Depends(get_session),
+        auth: AuthContext = Depends(require_permissions(Permissions.STRATEGY_MODEL_UPDATE)),
+    ) -> dict[str, Any]:
+        strategy_group = load_registry_group(
+            get_registry_info("trading_strategy_model")
+        )
+        strategy_exists = any(
+            item["name"] == strategy_name for item in strategy_group["items"]
+        )
+        if not strategy_exists:
+            raise HTTPException(
+                status_code=404, detail="Trading strategy is not registered."
+            )
+
+        row = session.execute(
+            select(TradingStrategyProductionState).where(
+                TradingStrategyProductionState.strategy_name == strategy_name
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            row = TradingStrategyProductionState(strategy_name=strategy_name)
+            session.add(row)
+
+        row.is_prod_ready = payload.is_prod_ready
+        row.comment = payload.comment.strip() if payload.comment else None
+        row.updated_by_user_id = auth.user_id
+        session.commit()
+        session.refresh(row)
+        return {"item": serialize_production_state(row)}
 
     @app.get(f"{API_PREFIX}/strategy-type")
     async def strategy_type(
@@ -484,6 +575,29 @@ def describe_strategy_type() -> dict[str, Any]:
         "module": Strategy.__module__,
         "description": inspect.getdoc(Strategy) or "",
         "fields": fields,
+    }
+
+
+def serialize_production_state(
+    state: TradingStrategyProductionState | None,
+    strategy_name: str | None = None,
+) -> dict[str, Any]:
+    if state is None:
+        return {
+            "strategy_name": strategy_name,
+            "is_prod_ready": False,
+            "comment": None,
+            "updated_by_user_id": None,
+            "updated_at": None,
+        }
+    return {
+        "strategy_name": state.strategy_name,
+        "is_prod_ready": state.is_prod_ready,
+        "comment": state.comment,
+        "updated_by_user_id": str(state.updated_by_user_id)
+        if state.updated_by_user_id
+        else None,
+        "updated_at": state.updated_at.isoformat() if state.updated_at else None,
     }
 
 

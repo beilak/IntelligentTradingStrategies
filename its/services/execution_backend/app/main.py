@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Annotated, Any
 
-from fastapi import Depends, FastAPI, Query
+from fastapi import Depends, FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from its.authz.context import AuthContext
 from its.authz.dependencies import get_auth_context
+from its.authz.jwt import decode_access_context
 from its.event_log.integration import install_event_log
 from its.execution.schemas import OrderTicket, StopOrderTicket
 from its.execution.service import ExecutionService
+from its.tech_system.auth.security import AuthTokenError
 
 API_PREFIX = "/api/v1"
 
@@ -60,7 +63,7 @@ def create_app() -> FastAPI:
         ticket: OrderTicket,
         _auth: Annotated[AuthContext, Depends(get_auth_context)],
     ) -> dict[str, Any]:
-        return service.create_order_stub(account_id, ticket)
+        return await service.submit_order(account_id, ticket)
 
     @app.post(f"{API_PREFIX}/accounts/{{account_id}}/stop-orders")
     async def create_stop_order(
@@ -68,6 +71,73 @@ def create_app() -> FastAPI:
         ticket: StopOrderTicket,
         _auth: Annotated[AuthContext, Depends(get_auth_context)],
     ) -> dict[str, Any]:
-        return service.create_stop_order_stub(account_id, ticket)
+        return await service.submit_stop_order(account_id, ticket)
+
+    @app.get(f"{API_PREFIX}/market-data/last-price")
+    async def last_price(
+        _auth: Annotated[AuthContext, Depends(get_auth_context)],
+        instrument_id: str | None = None,
+        figi: str | None = None,
+    ) -> dict[str, Any]:
+        return await service.get_last_price(instrument_id=instrument_id, figi=figi)
+
+    @app.websocket(f"{API_PREFIX}/ws/orderbook")
+    async def orderbook_stream(websocket: WebSocket) -> None:
+        await websocket.accept()
+        try:
+            auth_payload = await asyncio.wait_for(
+                websocket.receive_json(),
+                timeout=10,
+            )
+            if not isinstance(auth_payload, dict) or auth_payload.get("type") != "auth":
+                await send_ws_error(websocket, "First message must be auth.")
+                await websocket.close(code=1008)
+                return
+
+            token = str(auth_payload.get("access_token") or "")
+            try:
+                decode_access_context(token)
+            except AuthTokenError:
+                await send_ws_error(websocket, "Authentication token is invalid.")
+                await websocket.close(code=1008)
+                return
+
+            instrument_id = optional_text(auth_payload.get("instrument_id"))
+            figi = optional_text(auth_payload.get("figi"))
+            if not instrument_id and not figi:
+                await send_ws_error(websocket, "Pass instrument_id or figi.")
+                await websocket.close(code=1008)
+                return
+
+            try:
+                depth = int(auth_payload.get("depth") or 20)
+            except (TypeError, ValueError):
+                await send_ws_error(websocket, "Depth must be an integer.")
+                await websocket.close(code=1008)
+                return
+
+            async for snapshot in service.stream_order_book(
+                instrument_id=instrument_id,
+                figi=figi,
+                depth=depth,
+            ):
+                await websocket.send_json(snapshot)
+        except WebSocketDisconnect:
+            return
+        except asyncio.TimeoutError:
+            await send_ws_error(websocket, "Auth message timeout.")
+            await websocket.close(code=1008)
+        except Exception as error:
+            await send_ws_error(websocket, str(error))
+            await websocket.close(code=1011)
 
     return app
+
+
+async def send_ws_error(websocket: WebSocket, message: str) -> None:
+    await websocket.send_json({"type": "error", "message": message})
+
+
+def optional_text(value: object) -> str | None:
+    text = str(value or "").strip()
+    return text or None

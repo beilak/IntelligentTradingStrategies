@@ -14,6 +14,7 @@ export interface RegistryItem {
     kind: string;
   }>;
   source_path: string;
+  production_state?: TradingStrategyProductionState;
 }
 
 export interface RegistryGroup {
@@ -44,6 +45,7 @@ export interface RegistryResponse {
 }
 
 export interface ModelDetail extends RegistryItem {
+  production_state?: TradingStrategyProductionState;
   composition: {
     steps: Array<{
       step: string;
@@ -59,6 +61,18 @@ export interface ModelDetail extends RegistryItem {
     title: string;
     status: string;
   }>;
+}
+
+export interface TradingStrategyProductionState {
+  strategy_name: string | null;
+  is_prod_ready: boolean;
+  comment: string | null;
+  updated_by_user_id: string | null;
+  updated_at: string | null;
+}
+
+export interface TradingStrategyListItem extends RegistryItem {
+  production_state: TradingStrategyProductionState;
 }
 
 export interface CpcvSettings {

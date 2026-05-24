@@ -5,6 +5,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from enum import Enum
 from typing import Annotated
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 from fastapi import Depends, FastAPI, HTTPException, Query
@@ -12,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import Select, func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
-from t_tech.invest import CandleInterval
+from t_tech.invest import AsyncClient, CandleInterval
 
 from its.data_loader.custom_bar.gold_bar import (
     build_custom_gold_bars,
@@ -47,6 +48,8 @@ DEFAULT_GOLD_CLASS_CODE = "CETS"
 DEFAULT_INSTRUMENT_TYPE = "stocks"
 DEFAULT_MONTE_CARLO_PATH_COUNT = 100
 MAX_MONTE_CARLO_PATH_COUNT = 500
+MARKET_TIME_ZONE = ZoneInfo("Europe/Moscow")
+END_OF_DAY_DELTA = pd.Timedelta(days=1) - pd.Timedelta(microseconds=1)
 
 DIVIDEND_COLUMNS = [
     "dividend_net",
@@ -108,6 +111,26 @@ CURRENCY_COLUMNS = [
     "weekend_flag",
 ]
 
+INSTRUMENT_COLUMNS = [
+    "figi",
+    "ticker",
+    "uid",
+    "instrument_uid",
+    "position_uid",
+    "isin",
+    "name",
+    "class_code",
+    "instrument_type",
+    "currency",
+    "exchange",
+    "lot",
+    "trading_status",
+    "real_exchange",
+    "buy_available_flag",
+    "sell_available_flag",
+    "api_trade_available_flag",
+]
+
 PRICE_COLUMNS = [
     "open",
     "high",
@@ -135,6 +158,46 @@ SUPPORTED_INTERVALS = {
     "CANDLE_INTERVAL_WEEK": CandleInterval.CANDLE_INTERVAL_WEEK,
     "CANDLE_INTERVAL_MONTH": CandleInterval.CANDLE_INTERVAL_MONTH,
 }
+
+SUPPORTED_INSTRUMENT_TYPES = {
+    "share": "share",
+    "shares": "share",
+    "stock": "share",
+    "stocks": "share",
+    "etf": "etf",
+    "etfs": "etf",
+    "bond": "bond",
+    "bonds": "bond",
+    "currency": "currency",
+    "currencies": "currency",
+    "future": "future",
+    "futures": "future",
+}
+
+
+def market_today() -> date:
+    return datetime.now(MARKET_TIME_ZONE).date()
+
+
+def build_inclusive_day_range(
+    start_date: date | None,
+    end_date: date | None,
+    *,
+    default_days: int,
+    max_end_date: date | None = None,
+) -> tuple[pd.Timestamp, pd.Timestamp]:
+    selected_end = end_date or max_end_date or market_today()
+    if max_end_date is not None and selected_end > max_end_date:
+        selected_end = max_end_date
+
+    default_start = (
+        pd.Timestamp(selected_end) - pd.Timedelta(days=default_days)
+    ).date()
+    current_start = pd.Timestamp(
+        start_date or default_start
+    )
+    current_end = pd.Timestamp(selected_end) + END_OF_DAY_DELTA
+    return current_start, current_end
 
 
 def create_app() -> FastAPI:
@@ -172,7 +235,12 @@ def create_app() -> FastAPI:
                     "id": "tinkoff-invest",
                     "name": "Tinkoff Invest",
                     "status": "active",
-                    "resources": ["stocks", "currencies", "prices"],
+                    "resources": [
+                        "stocks",
+                        "currencies",
+                        "instruments",
+                        "prices",
+                    ],
                     "intervals": list(SUPPORTED_INTERVALS),
                 },
                 {
@@ -264,6 +332,43 @@ def create_app() -> FastAPI:
             "filters": build_currency_filters(currencies_df),
         }
 
+    @app.get(f"{API_PREFIX}/instruments")
+    async def instruments(
+        _auth: Annotated[
+            AuthContext,
+            Depends(require_permissions(Permissions.DATA_INSTRUMENTS_READ)),
+        ],
+        search: str | None = None,
+        instrument_types: Annotated[list[str] | None, Query()] = None,
+        class_code: str | None = None,
+        exchange: str | None = None,
+        currency: str | None = None,
+        api_trade_available: bool | None = True,
+        limit: Annotated[int, Query(ge=1, le=500)] = 200,
+        offset: Annotated[int, Query(ge=0)] = 0,
+    ) -> dict[str, object]:
+        token = get_tinvest_token()
+        instruments_df = await gateway.get_tradable_instruments(token)
+        filtered = filter_instruments(
+            instruments_df=instruments_df,
+            search=search,
+            instrument_types=split_query_list(instrument_types),
+            class_code=class_code,
+            exchange=exchange,
+            currency=currency,
+            api_trade_available=api_trade_available,
+        )
+        total = len(filtered)
+        page = filtered.iloc[offset : offset + limit]
+
+        return {
+            "items": dataframe_to_records(page, INSTRUMENT_COLUMNS),
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "filters": build_instrument_filters(instruments_df),
+        }
+
     @app.get(f"{API_PREFIX}/prices")
     async def prices(
         _auth: Annotated[
@@ -289,9 +394,10 @@ def create_app() -> FastAPI:
                 detail="Pass at least one figi or ticker.",
             )
 
-        current_end = pd.Timestamp(end_date or datetime.utcnow().date())
-        current_start = pd.Timestamp(
-            start_date or (current_end - pd.Timedelta(days=180)).date()
+        current_start, current_end = build_inclusive_day_range(
+            start_date,
+            end_date,
+            default_days=180,
         )
         if current_start > current_end:
             raise HTTPException(
@@ -383,9 +489,10 @@ def create_app() -> FastAPI:
                 detail="Pass at least one figi or ticker.",
             )
 
-        current_end = pd.Timestamp(end_date or datetime.utcnow().date())
-        current_start = pd.Timestamp(
-            start_date or (current_end - pd.Timedelta(days=180)).date()
+        current_start, current_end = build_inclusive_day_range(
+            start_date,
+            end_date,
+            default_days=180,
         )
         if current_start > current_end:
             raise HTTPException(
@@ -507,14 +614,19 @@ def create_app() -> FastAPI:
                 detail="train_until_date is required.",
             )
 
-        current_today = pd.Timestamp(datetime.utcnow().date())
+        current_today = market_today()
         requested_simulation_end = pd.Timestamp(
-            simulation_end_date or end_date or current_today.date()
+            simulation_end_date or end_date or current_today
         )
-        current_end = pd.Timestamp(end_date or requested_simulation_end.date())
-        current_end = min(current_end, current_today)
-        current_start = pd.Timestamp(
-            start_date or (current_end - pd.Timedelta(days=180)).date()
+        current_end_date = min(
+            end_date or requested_simulation_end.date(),
+            current_today,
+        )
+        current_start, current_end = build_inclusive_day_range(
+            start_date,
+            current_end_date,
+            default_days=180,
+            max_end_date=current_today,
         )
         if current_start > current_end:
             raise HTTPException(
@@ -613,13 +725,14 @@ def create_app() -> FastAPI:
                 detail="Pass at least one figi or ticker.",
             )
 
-        current_end = pd.Timestamp(end_date or datetime.utcnow().date())
+        today = market_today()
+        current_end = pd.Timestamp(end_date or today)
         current_start = pd.Timestamp(
             start_date
             or (
                 current_end
                 - pd.Timedelta(
-                    days=365 * (datetime.utcnow().year - DEFAULT_DIVIDEND_START_YEAR)
+                    days=365 * (today.year - DEFAULT_DIVIDEND_START_YEAR)
                 )
             ).date()
         )
@@ -772,6 +885,8 @@ class TInvestGateway:
         self._stocks_loaded_at: datetime | None = None
         self._currencies_cache: pd.DataFrame | None = None
         self._currencies_loaded_at: datetime | None = None
+        self._tradable_instruments_cache: pd.DataFrame | None = None
+        self._tradable_instruments_loaded_at: datetime | None = None
         self._lock = asyncio.Lock()
 
     async def get_stocks(self, token: str) -> pd.DataFrame:
@@ -802,6 +917,21 @@ class TInvestGateway:
             self._currencies_loaded_at = datetime.utcnow()
             return self._currencies_cache.copy()
 
+    async def get_tradable_instruments(self, token: str) -> pd.DataFrame:
+        if self._is_tradable_instruments_cache_fresh():
+            return self._tradable_instruments_cache.copy()  # type: ignore[union-attr]
+
+        async with self._lock:
+            if self._is_tradable_instruments_cache_fresh():
+                return self._tradable_instruments_cache.copy()  # type: ignore[union-attr]
+
+            instruments_df = await fetch_tradable_instruments(token)
+            self._tradable_instruments_cache = normalize_instruments_frame(
+                instruments_df
+            )
+            self._tradable_instruments_loaded_at = datetime.utcnow()
+            return self._tradable_instruments_cache.copy()
+
     def _is_stocks_cache_fresh(self) -> bool:
         if self._stocks_cache is None or self._stocks_loaded_at is None:
             return False
@@ -811,6 +941,14 @@ class TInvestGateway:
         if self._currencies_cache is None or self._currencies_loaded_at is None:
             return False
         return datetime.utcnow() - self._currencies_loaded_at < self._stocks_ttl
+
+    def _is_tradable_instruments_cache_fresh(self) -> bool:
+        if (
+            self._tradable_instruments_cache is None
+            or self._tradable_instruments_loaded_at is None
+        ):
+            return False
+        return datetime.utcnow() - self._tradable_instruments_loaded_at < self._stocks_ttl
 
 
 def get_tinvest_token() -> str:
@@ -842,10 +980,16 @@ def parse_interval(interval: str) -> CandleInterval:
 
 def parse_instrument_type(instrument_type: str) -> str:
     normalized = instrument_type.strip().lower()
-    if normalized not in {"stocks", "currencies"}:
+    supported = {"stocks", "currencies", "tradable", "all", "instruments"} | set(
+        SUPPORTED_INSTRUMENT_TYPES
+    )
+    if normalized not in supported:
         raise HTTPException(
             status_code=422,
-            detail="Unsupported instrument_type. Use stocks or currencies.",
+            detail=(
+                "Unsupported instrument_type. Use stocks, currencies, "
+                "tradable, all, or a T-Invest instrument type."
+            ),
         )
     return normalized
 
@@ -858,7 +1002,17 @@ async def get_instruments_frame(
     normalized = parse_instrument_type(instrument_type)
     if normalized == "currencies":
         return await gateway.get_currencies(token)
-    return await gateway.get_stocks(token)
+    if normalized == "stocks":
+        return await gateway.get_stocks(token)
+
+    instruments_df = await gateway.get_tradable_instruments(token)
+    if normalized in {"tradable", "all", "instruments"}:
+        return instruments_df
+
+    canonical_type = SUPPORTED_INSTRUMENT_TYPES[normalized]
+    return instruments_df.loc[
+        instruments_df["instrument_type"].astype(str).str.lower() == canonical_type
+    ].reset_index(drop=True)
 
 
 def parse_gold_bar_type(bar_type: str):
@@ -908,6 +1062,72 @@ def normalize_currencies_frame(currencies_df: pd.DataFrame) -> pd.DataFrame:
     return prepared.sort_values(["ticker", "figi"], na_position="last").reset_index(
         drop=True
     )
+
+
+async def fetch_tradable_instruments(token: str) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    async with AsyncClient(token) as client:
+        for instrument_type, instruments in [
+            ("share", (await client.instruments.shares()).instruments),
+            ("etf", (await client.instruments.etfs()).instruments),
+            ("bond", (await client.instruments.bonds()).instruments),
+            ("currency", (await client.instruments.currencies()).instruments),
+            ("future", (await client.instruments.futures()).instruments),
+        ]:
+            rows.extend(
+                normalize_tradable_instrument(instrument, instrument_type)
+                for instrument in instruments
+            )
+
+    return pd.DataFrame(rows, columns=INSTRUMENT_COLUMNS)
+
+
+def normalize_instruments_frame(instruments_df: pd.DataFrame) -> pd.DataFrame:
+    if instruments_df.empty:
+        return pd.DataFrame(columns=INSTRUMENT_COLUMNS)
+
+    prepared = instruments_df.copy()
+    for column in INSTRUMENT_COLUMNS:
+        if column not in prepared.columns:
+            prepared[column] = None
+
+    return prepared.sort_values(
+        ["instrument_type", "ticker", "figi"],
+        na_position="last",
+    ).reset_index(drop=True)
+
+
+def normalize_tradable_instrument(
+    instrument: object,
+    instrument_type: str,
+) -> dict[str, object]:
+    uid = instrument_attr(instrument, "uid")
+    return {
+        "figi": instrument_attr(instrument, "figi"),
+        "ticker": instrument_attr(instrument, "ticker"),
+        "uid": uid,
+        "instrument_uid": uid,
+        "position_uid": instrument_attr(instrument, "position_uid"),
+        "isin": instrument_attr(instrument, "isin"),
+        "name": instrument_attr(instrument, "name"),
+        "class_code": instrument_attr(instrument, "class_code"),
+        "instrument_type": instrument_type,
+        "currency": instrument_attr(instrument, "currency"),
+        "exchange": instrument_attr(instrument, "exchange"),
+        "lot": instrument_attr(instrument, "lot"),
+        "trading_status": instrument_attr(instrument, "trading_status"),
+        "real_exchange": instrument_attr(instrument, "real_exchange"),
+        "buy_available_flag": instrument_attr(instrument, "buy_available_flag"),
+        "sell_available_flag": instrument_attr(instrument, "sell_available_flag"),
+        "api_trade_available_flag": instrument_attr(
+            instrument, "api_trade_available_flag"
+        ),
+    }
+
+
+def instrument_attr(instrument: object, name: str) -> object:
+    value = getattr(instrument, name, None)
+    return sanitize_scalar(value)
 
 
 def filter_stocks(
@@ -995,6 +1215,92 @@ def filter_currencies(
     return filtered.reset_index(drop=True)
 
 
+def filter_instruments(
+    instruments_df: pd.DataFrame,
+    search: str | None,
+    instrument_types: list[str],
+    class_code: str | None,
+    exchange: str | None,
+    currency: str | None,
+    api_trade_available: bool | None,
+) -> pd.DataFrame:
+    filtered = instruments_df.copy()
+
+    normalized_types = normalize_instrument_type_filters(instrument_types)
+    if normalized_types:
+        filtered = filtered.loc[
+            filtered["instrument_type"].astype(str).str.lower().isin(normalized_types)
+        ]
+    if class_code:
+        filtered = filtered.loc[
+            filtered["class_code"].astype(str).str.upper() == class_code.upper()
+        ]
+    if exchange:
+        filtered = filtered.loc[
+            filtered["exchange"].astype(str).str.upper() == exchange.upper()
+        ]
+    if currency:
+        filtered = filtered.loc[
+            filtered["currency"].astype(str).str.lower() == currency.lower()
+        ]
+    if api_trade_available is not None:
+        filtered = filtered.loc[
+            filtered["api_trade_available_flag"].map(coerce_bool)
+            == api_trade_available
+        ]
+    if search:
+        needle = search.strip().lower()
+        filtered = filtered.loc[
+            filtered["ticker"]
+            .astype(str)
+            .str.lower()
+            .str.contains(needle, na=False, regex=False)
+            | filtered["name"]
+            .astype(str)
+            .str.lower()
+            .str.contains(needle, na=False, regex=False)
+            | filtered["figi"]
+            .astype(str)
+            .str.lower()
+            .str.contains(needle, na=False, regex=False)
+            | filtered["uid"]
+            .astype(str)
+            .str.lower()
+            .str.contains(needle, na=False, regex=False)
+            | filtered["isin"]
+            .astype(str)
+            .str.lower()
+            .str.contains(needle, na=False, regex=False)
+        ]
+
+    return filtered.reset_index(drop=True)
+
+
+def normalize_instrument_type_filters(instrument_types: list[str]) -> list[str]:
+    normalized: list[str] = []
+    for instrument_type in instrument_types:
+        key = instrument_type.strip().lower()
+        if not key:
+            continue
+        canonical = SUPPORTED_INSTRUMENT_TYPES.get(key)
+        if canonical:
+            normalized.append(canonical)
+    return list(dict.fromkeys(normalized))
+
+
+def coerce_bool(value: object) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if text in {"true", "1", "yes"}:
+        return True
+    if text in {"false", "0", "no"}:
+        return False
+    return None
+
+
 def resolve_instruments(
     instruments_df: pd.DataFrame,
     figis: list[str],
@@ -1048,6 +1354,16 @@ def build_currency_filters(currencies_df: pd.DataFrame) -> dict[str, list[str]]:
         "class_codes": unique_values(currencies_df, "class_code"),
         "exchanges": unique_values(currencies_df, "exchange"),
         "countries": unique_values(currencies_df, "country_of_risk"),
+        "intervals": list(SUPPORTED_INTERVALS),
+    }
+
+
+def build_instrument_filters(instruments_df: pd.DataFrame) -> dict[str, list[str]]:
+    return {
+        "instrument_types": unique_values(instruments_df, "instrument_type"),
+        "class_codes": unique_values(instruments_df, "class_code"),
+        "exchanges": unique_values(instruments_df, "exchange"),
+        "currencies": unique_values(instruments_df, "currency"),
         "intervals": list(SUPPORTED_INTERVALS),
     }
 
@@ -1205,6 +1521,8 @@ def dataframe_to_records(
 
 
 def sanitize_scalar(value: object) -> object:
+    if type(value) is object:
+        return None
     if value is None:
         return None
     if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):

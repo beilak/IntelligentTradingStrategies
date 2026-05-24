@@ -15,6 +15,7 @@ class ExecutionAccountConfig:
 class ExecutionSettings:
     token: str | None
     accounts: tuple[ExecutionAccountConfig, ...]
+    order_submission_mode: str = "real"
 
     @property
     def token_configured(self) -> bool:
@@ -46,11 +47,28 @@ ACCOUNT_ID_PREFIXES = (
     "tinvest_account_id",
 )
 
+ORDER_SUBMISSION_MODE_ENV_NAMES = (
+    "EXECUTION_ORDER_SUBMISSION_MODE",
+    "EXECUTION_TINVEST_ORDER_SUBMISSION_MODE",
+)
+
+ORDER_SUBMISSION_MODE_ALIASES = {
+    "broker": "real",
+    "live": "real",
+    "real": "real",
+    "t-invest": "real",
+    "tinvest": "real",
+    "dry-run": "stub",
+    "dry_run": "stub",
+    "stub": "stub",
+}
+
 
 def load_execution_settings() -> ExecutionSettings:
     return ExecutionSettings(
         token=_first_env_value(TOKEN_ENV_NAMES),
         accounts=parse_account_configs(os.environ),
+        order_submission_mode=parse_order_submission_mode(os.environ),
     )
 
 
@@ -88,6 +106,17 @@ def _first_env_value(names: tuple[str, ...]) -> str | None:
         if value:
             return value
     return None
+
+
+def parse_order_submission_mode(
+    environ: os._Environ[str] | dict[str, str],
+) -> str:
+    for name in ORDER_SUBMISSION_MODE_ENV_NAMES:
+        value = environ.get(name)
+        if not value:
+            continue
+        return ORDER_SUBMISSION_MODE_ALIASES.get(value.strip().lower(), "real")
+    return "real"
 
 
 def _parse_account_value(raw_value: str) -> list[ExecutionAccountConfig]:

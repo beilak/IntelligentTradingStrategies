@@ -1,13 +1,17 @@
 import type {
   AccountOverview,
   AccountsResponse,
+  InstrumentsResponse,
+  LastPriceResponse,
   OrderTicket,
+  PricesResponse,
   StopOrderTicket,
   StubResponse,
   User,
 } from "./types";
 
 const API_BASE = import.meta.env.VITE_EXECUTION_API_BASE ?? "/api/execution";
+const DATA_API_BASE = import.meta.env.VITE_DATA_API_BASE ?? "/api/data";
 const ACCESS_TOKEN_KEY = "its-auth-access-token";
 const REFRESH_TOKEN_KEY = "its-auth-refresh-token";
 
@@ -50,13 +54,58 @@ export async function createStopOrder(
   return post<StubResponse>(`/accounts/${encodeURIComponent(accountId)}/stop-orders`, ticket);
 }
 
+export async function getLastPrice(params: {
+  instrument_id?: string | null;
+  figi?: string | null;
+}): Promise<LastPriceResponse> {
+  return request<LastPriceResponse>("/market-data/last-price", params);
+}
+
+export async function getTradableInstruments(params: {
+  search?: string;
+  instrument_types?: string[];
+  class_code?: string;
+  exchange?: string;
+  currency?: string;
+  api_trade_available?: boolean;
+  limit?: number;
+  offset?: number;
+}): Promise<InstrumentsResponse> {
+  return requestFrom<InstrumentsResponse>(DATA_API_BASE, "/instruments", params);
+}
+
+export async function getPrices(params: {
+  figis?: string[];
+  tickers?: string[];
+  class_code?: string | null;
+  instrument_type?: string;
+  start_date?: string;
+  end_date?: string;
+  interval?: string;
+  is_complete?: boolean;
+}): Promise<PricesResponse> {
+  return requestFrom<PricesResponse>(DATA_API_BASE, "/prices", params);
+}
+
+export async function accessTokenForWebSocket(): Promise<string | null> {
+  return accessTokenForRequest();
+}
+
 export function clearAuthTokens() {
   localStorage.removeItem(ACCESS_TOKEN_KEY);
   localStorage.removeItem(REFRESH_TOKEN_KEY);
 }
 
 async function request<T>(path: string, params?: Record<string, unknown>): Promise<T> {
-  const url = new URL(`${API_BASE}${path}`, window.location.origin);
+  return requestFrom<T>(API_BASE, path, params);
+}
+
+async function requestFrom<T>(
+  baseUrl: string,
+  path: string,
+  params?: Record<string, unknown>,
+): Promise<T> {
+  const url = new URL(`${baseUrl}${path}`, window.location.origin);
   appendParams(url, params ?? {});
 
   const response = await fetch(url, { headers: await authHeaders() });
@@ -93,6 +142,10 @@ async function handleResponse<T>(response: Response): Promise<T> {
 function appendParams(url: URL, params: Record<string, unknown>) {
   Object.entries(params).forEach(([key, value]) => {
     if (value === undefined || value === null || value === "") return;
+    if (Array.isArray(value)) {
+      value.forEach((item) => url.searchParams.append(key, String(item)));
+      return;
+    }
     url.searchParams.set(key, String(value));
   });
 }

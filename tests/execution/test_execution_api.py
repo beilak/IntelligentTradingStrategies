@@ -20,6 +20,7 @@ def auth_headers(*permissions: str) -> dict[str, str]:
 
 def test_order_stub_requires_auth_but_not_execution_permission(monkeypatch) -> None:
     monkeypatch.setenv("EXECUTION_TINVEST_ACCOUNT_IDS", "acc-1:Main")
+    monkeypatch.setenv("EXECUTION_ORDER_SUBMISSION_MODE", "stub")
     client = TestClient(create_app())
 
     payload = {
@@ -47,6 +48,7 @@ def test_order_stub_requires_auth_but_not_execution_permission(monkeypatch) -> N
 
 def test_limit_order_stub_validates_price(monkeypatch) -> None:
     monkeypatch.setenv("EXECUTION_TINVEST_ACCOUNT_IDS", "acc-1")
+    monkeypatch.setenv("EXECUTION_ORDER_SUBMISSION_MODE", "stub")
     client = TestClient(create_app())
 
     response = client.post(
@@ -61,3 +63,15 @@ def test_limit_order_stub_validates_price(monkeypatch) -> None:
     )
 
     assert response.status_code == 422
+
+
+def test_orderbook_websocket_rejects_missing_auth_message(monkeypatch) -> None:
+    monkeypatch.setenv("EXECUTION_TINVEST_ACCOUNT_IDS", "acc-1")
+    client = TestClient(create_app())
+
+    with client.websocket_connect("/api/v1/ws/orderbook") as websocket:
+        websocket.send_json({"type": "subscribe"})
+        assert websocket.receive_json() == {
+            "type": "error",
+            "message": "First message must be auth.",
+        }

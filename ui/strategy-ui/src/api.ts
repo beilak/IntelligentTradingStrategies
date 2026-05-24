@@ -7,6 +7,8 @@ import type {
   CpcvSettings,
   ModelDetail,
   RegistryResponse,
+  TradingStrategyListItem,
+  TradingStrategyProductionState,
   StrategyComparisonResult,
   WalkForwardResult,
   WalkForwardSavedTest,
@@ -31,6 +33,23 @@ export async function getModelDetail(modelName: string): Promise<ModelDetail> {
 
 export async function getTradingStrategyDetail(strategyName: string): Promise<ModelDetail> {
   return request<ModelDetail>(`/trading-strategies/${encodeURIComponent(strategyName)}`);
+}
+
+export async function listTradingStrategies(): Promise<{ items: TradingStrategyListItem[] }> {
+  return request<{ items: TradingStrategyListItem[] }>("/trading-strategies");
+}
+
+export async function setTradingStrategyProdReady(
+  strategyName: string,
+  payload: { is_prod_ready: boolean; comment: string | null },
+): Promise<{ item: TradingStrategyProductionState }> {
+  return request<{ item: TradingStrategyProductionState }>(
+    `/trading-strategies/${encodeURIComponent(strategyName)}/prod-ready`,
+    {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
 export async function listCpcvTests(modelName: string): Promise<{ items: CpcvSavedTest[] }> {

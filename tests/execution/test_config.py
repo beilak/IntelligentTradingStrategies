@@ -1,4 +1,4 @@
-from its.execution.config import parse_account_configs
+from its.execution.config import parse_account_configs, parse_order_submission_mode
 
 
 def test_parse_account_configs_from_list_and_legacy_keys() -> None:
@@ -31,3 +31,9 @@ def test_parse_account_configs_from_json() -> None:
         ("111", "Main"),
         ("222", "Second"),
     ]
+
+
+def test_parse_order_submission_mode_defaults_to_real() -> None:
+    assert parse_order_submission_mode({}) == "real"
+    assert parse_order_submission_mode({"EXECUTION_ORDER_SUBMISSION_MODE": "stub"}) == "stub"
+    assert parse_order_submission_mode({"EXECUTION_ORDER_SUBMISSION_MODE": "live"}) == "real"

@@ -10,8 +10,7 @@ import {
 import { init, use, type ECharts, type EChartsCoreOption } from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { MARKET_TIME_ZONE } from "../marketTime";
-import type { Candle, Locale } from "../types";
+import type { Candle } from "../types";
 
 use([
   AxisPointerComponent,
@@ -26,7 +25,6 @@ use([
 
 const props = defineProps<{
   candles: Candle[];
-  locale: Locale;
   interval: string;
 }>();
 
@@ -40,21 +38,14 @@ const orderedCandles = computed(() =>
 
 onMounted(async () => {
   await nextTick();
-  if (!chartEl.value) {
-    return;
-  }
-
+  if (!chartEl.value) return;
   chart = init(chartEl.value, "dark", { renderer: "canvas" });
   resizeObserver = new ResizeObserver(() => chart?.resize());
   resizeObserver.observe(chartEl.value);
   renderChart();
 });
 
-watch(
-  () => [props.candles, props.locale, props.interval],
-  () => renderChart(),
-  { deep: true },
-);
+watch(() => [props.candles, props.interval], () => renderChart(), { deep: true });
 
 onBeforeUnmount(() => {
   resizeObserver?.disconnect();
@@ -62,16 +53,14 @@ onBeforeUnmount(() => {
 });
 
 function renderChart() {
-  if (!chart) {
-    return;
-  }
+  if (!chart) return;
 
   if (!orderedCandles.value.length) {
     chart.setOption(
       {
         backgroundColor: "transparent",
         title: {
-          text: props.locale === "ru" ? "Нет данных" : "No data",
+          text: "Нет свечей",
           left: "center",
           top: "center",
           textStyle: { color: "#7d8596", fontSize: 14, fontWeight: 500 },
@@ -92,7 +81,10 @@ function renderChart() {
   const volumes = orderedCandles.value.map((candle) => ({
     value: candle.volume ?? 0,
     itemStyle: {
-      color: candle.close >= candle.open ? "rgba(84, 214, 164, 0.42)" : "rgba(255, 107, 138, 0.42)",
+      color:
+        candle.close >= candle.open
+          ? "rgba(84, 214, 164, 0.42)"
+          : "rgba(255, 107, 138, 0.42)",
     },
   }));
 
@@ -127,10 +119,7 @@ function renderChart() {
           data: labels,
           boundaryGap: true,
           axisLine: { lineStyle: { color: "#2b3342" } },
-          axisLabel: {
-            color: "#7d8596",
-            hideOverlap: true,
-          },
+          axisLabel: { color: "#7d8596", hideOverlap: true },
           axisTick: { show: false },
           splitLine: { show: false },
           min: "dataMin",
@@ -142,10 +131,7 @@ function renderChart() {
           data: labels,
           boundaryGap: true,
           axisLine: { lineStyle: { color: "#2b3342" } },
-          axisLabel: {
-            color: "#7d8596",
-            hideOverlap: true,
-          },
+          axisLabel: { color: "#7d8596", hideOverlap: true },
           axisTick: { show: false },
           splitLine: { show: false },
           min: "dataMin",
@@ -188,7 +174,7 @@ function renderChart() {
       ],
       series: [
         {
-          name: props.locale === "ru" ? "Цена" : "Price",
+          name: "Цена",
           type: "candlestick",
           data: candles,
           itemStyle: {
@@ -199,7 +185,7 @@ function renderChart() {
           },
         },
         {
-          name: props.locale === "ru" ? "Объем" : "Volume",
+          name: "Объем",
           type: "bar",
           xAxisIndex: 1,
           yAxisIndex: 1,
@@ -212,42 +198,11 @@ function renderChart() {
   );
 }
 
-function formatAxisTime(value: string) {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-
-  if (isIntradayInterval()) {
-    return `${formatDatePart(parsed)}\n${formatTimePart(parsed)}`;
-  }
-
-  if (props.interval === "CANDLE_INTERVAL_MONTH") {
-    return new Intl.DateTimeFormat(currentLocale(), {
-      timeZone: MARKET_TIME_ZONE,
-      month: "short",
-      year: "2-digit",
-    }).format(parsed);
-  }
-
-  if (props.interval === "CANDLE_INTERVAL_WEEK") {
-    return new Intl.DateTimeFormat(currentLocale(), {
-      timeZone: MARKET_TIME_ZONE,
-      month: "short",
-      day: "2-digit",
-      year: "2-digit",
-    }).format(parsed);
-  }
-
-  return formatDatePart(parsed);
-}
-
 function formatTooltip(params: unknown) {
   const rows = Array.isArray(params) ? params : [];
   const firstRow = rows[0] as { dataIndex?: number } | undefined;
   const candle = orderedCandles.value[firstRow?.dataIndex ?? 0];
   const title = candle ? formatFullTime(candle.time) : "";
-
   const body = rows
     .map((row) => {
       const item = row as { marker?: string; seriesName?: string; data?: unknown };
@@ -261,84 +216,63 @@ function formatTooltip(params: unknown) {
       return "";
     })
     .filter(Boolean)
-    .join("<br />");
+    .join("<br/>");
+  return [title, body].filter(Boolean).join("<br/>");
+}
 
-  return [title, body].filter(Boolean).join("<br />");
+function formatAxisTime(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  if (isIntradayInterval()) {
+    return `${formatDatePart(parsed)}\n${formatTimePart(parsed)}`;
+  }
+  if (props.interval === "CANDLE_INTERVAL_MONTH") {
+    return new Intl.DateTimeFormat("ru-RU", { month: "short", year: "2-digit" }).format(parsed);
+  }
+  if (props.interval === "CANDLE_INTERVAL_WEEK") {
+    return new Intl.DateTimeFormat("ru-RU", {
+      month: "short",
+      day: "2-digit",
+      year: "2-digit",
+    }).format(parsed);
+  }
+  return formatDatePart(parsed);
 }
 
 function formatFullTime(value: string) {
   const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-
-  const options: Intl.DateTimeFormatOptions = isIntradayInterval()
-    ? {
-        timeZone: MARKET_TIME_ZONE,
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: isSecondsInterval() ? "2-digit" : undefined,
-      }
-    : {
-        timeZone: MARKET_TIME_ZONE,
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-      };
-
-  return new Intl.DateTimeFormat(currentLocale(), options).format(parsed);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(parsed);
 }
 
 function formatDatePart(value: Date) {
-  return new Intl.DateTimeFormat(currentLocale(), {
-    timeZone: MARKET_TIME_ZONE,
-    month: "short",
+  return new Intl.DateTimeFormat("ru-RU", {
     day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
   }).format(value);
 }
 
 function formatTimePart(value: Date) {
-  return new Intl.DateTimeFormat(currentLocale(), {
-    timeZone: MARKET_TIME_ZONE,
+  return new Intl.DateTimeFormat("ru-RU", {
     hour: "2-digit",
     minute: "2-digit",
-    second: isSecondsInterval() ? "2-digit" : undefined,
   }).format(value);
 }
 
 function isIntradayInterval() {
-  return (
-    props.interval.includes("_SEC") ||
-    props.interval.includes("_MIN") ||
-    props.interval.includes("_HOUR")
+  return ["CANDLE_INTERVAL_1_MIN", "CANDLE_INTERVAL_5_MIN", "CANDLE_INTERVAL_15_MIN", "CANDLE_INTERVAL_HOUR"].includes(
+    props.interval,
   );
-}
-
-function isSecondsInterval() {
-  return props.interval.includes("_SEC");
-}
-
-function currentLocale() {
-  return props.locale === "ru" ? "ru-RU" : "en-US";
 }
 </script>
 
 <template>
-  <div ref="chartEl" class="chart"></div>
+  <div ref="chartEl" class="ticket-chart-host"></div>
 </template>
-
-<style scoped>
-.chart {
-  min-height: 420px;
-  width: 100%;
-}
-
-@media (max-width: 780px) {
-  .chart {
-    min-height: 360px;
-  }
-}
-</style>

@@ -9,12 +9,15 @@ import {
   ClipboardCheck,
   Home,
   Landmark,
+  Link2,
   Loader2,
   LogOut,
+  Play,
   RefreshCw,
   Search,
   Send,
   ShieldCheck,
+  Trash2,
   X,
   WalletCards,
 } from "lucide-vue-next";
@@ -24,23 +27,31 @@ import {
   clearAuthTokens,
   createOrder,
   createStopOrder,
+  assignExecutionStrategy,
   getAccounts,
   getCurrentUser,
+  getExecutionStrategies,
   getLastPrice,
   getOverview,
   getPrices,
   getTradableInstruments,
+  runExecutionStrategy,
+  unassignExecutionStrategy,
 } from "./api";
 import AllocationBarChart from "./components/AllocationBarChart.vue";
 import AllocationChart from "./components/AllocationChart.vue";
 import OrderBookPanel from "./components/OrderBookPanel.vue";
 import TicketCandlestickChart from "./components/TicketCandlestickChart.vue";
 import OperationsCashflowChart from "./components/OperationsCashflowChart.vue";
+import StrategyPlanChart from "./components/StrategyPlanChart.vue";
 import { MARKET_TIME_ZONE, formatMarketDateInput } from "./marketTime";
 import type {
   AccountItem,
   AccountOverview,
   Candle,
+  ExecutionStrategiesResponse,
+  ExecutionStrategyAssignment,
+  ExecutionStrategyItem,
   InstrumentsResponse,
   MoneyAmount,
   OperationItem,
@@ -48,6 +59,8 @@ import type {
   OrderTicket,
   PortfolioPosition,
   StopOrderTicket,
+  StrategyRunRequest,
+  StrategyRunResult,
   StubResponse,
   TradableInstrument,
   User,
@@ -84,6 +97,26 @@ const activeTicket = ref<"order" | "stop">("order");
 const latestStub = ref<StubResponse | null>(null);
 const selectedInstrument = ref<TradableInstrument | null>(null);
 const isInstrumentPickerOpen = ref(false);
+const isStrategyModalOpen = ref(false);
+const isLoadingStrategies = ref(false);
+const isAssigningStrategy = ref(false);
+const isRunningStrategy = ref(false);
+const strategyError = ref("");
+const strategyAssignments = ref<ExecutionStrategyAssignment[]>([]);
+const availableStrategies = ref<ExecutionStrategyItem[]>([]);
+const strategyTotal = ref(0);
+const selectedStrategyName = ref("");
+const strategyAssignComment = ref("");
+const strategyRunResult = ref<StrategyRunResult | null>(null);
+const strategyRunSettings = ref<StrategyRunRequest>({
+  start_date: formatDateInput(addDays(new Date(), -365)),
+  end_date: formatDateInput(new Date()),
+  interval: "CANDLE_INTERVAL_DAY",
+  class_code: "TQBR",
+  order_type: "limit",
+  limit_offset_pct: 0.001,
+  min_order_value: 100,
+});
 const isLoadingInstruments = ref(false);
 const instrumentError = ref("");
 const instrumentSearch = ref("");
@@ -186,6 +219,15 @@ const submitOrderLabel = computed(() =>
 const submitStopOrderLabel = computed(() =>
   overview.value?.order_submission_mode === "stub" ? "Создать stub" : "Отправить стоп",
 );
+const selectedStrategyAssignment = computed(() =>
+  strategyAssignments.value.find((item) => item.strategy_name === selectedStrategyName.value) ?? null,
+);
+const selectedAvailableStrategy = computed(() =>
+  availableStrategies.value.find((item) => item.name === selectedStrategyName.value) ?? null,
+);
+const assignedStrategyNames = computed(() =>
+  new Set(strategyAssignments.value.map((item) => item.strategy_name)),
+);
 
 watch(
   () => orderTicket.value.order_type,
@@ -257,6 +299,9 @@ async function selectAccount(account: AccountItem) {
   if (!account.is_available) return;
   selectedAccountId.value = account.id;
   await loadOverview();
+  if (isStrategyModalOpen.value) {
+    await loadExecutionStrategies();
+  }
 }
 
 async function openInstrumentPicker() {
@@ -296,6 +341,104 @@ async function loadInstruments() {
       isLoadingInstruments.value = false;
     }
   }
+}
+
+async function openStrategyModal() {
+  isStrategyModalOpen.value = true;
+  strategyError.value = "";
+  await loadExecutionStrategies();
+}
+
+async function loadExecutionStrategies() {
+  if (!selectedAccountId.value) return;
+  isLoadingStrategies.value = true;
+  strategyError.value = "";
+  try {
+    const response: ExecutionStrategiesResponse = await getExecutionStrategies(selectedAccountId.value);
+    strategyAssignments.value = response.items;
+    availableStrategies.value = response.available;
+    strategyTotal.value = response.total;
+    if (!selectedStrategyName.value || !strategyNameExists(selectedStrategyName.value)) {
+      selectedStrategyName.value =
+        strategyAssignments.value[0]?.strategy_name ?? availableStrategies.value[0]?.name ?? "";
+    }
+  } catch (cause) {
+    strategyError.value = errorMessage(cause);
+    strategyAssignments.value = [];
+    availableStrategies.value = [];
+    strategyTotal.value = 0;
+  } finally {
+    isLoadingStrategies.value = false;
+  }
+}
+
+async function assignSelectedStrategy() {
+  if (!selectedAccountId.value || !selectedStrategyName.value) return;
+  isAssigningStrategy.value = true;
+  strategyError.value = "";
+  try {
+    await assignExecutionStrategy(selectedAccountId.value, selectedStrategyName.value, {
+      comment: textOrNull(strategyAssignComment.value),
+    });
+    strategyAssignComment.value = "";
+    await loadExecutionStrategies();
+  } catch (cause) {
+    strategyError.value = errorMessage(cause);
+  } finally {
+    isAssigningStrategy.value = false;
+  }
+}
+
+async function unassignStrategy(strategyName: string) {
+  if (!selectedAccountId.value) return;
+  isAssigningStrategy.value = true;
+  strategyError.value = "";
+  try {
+    await unassignExecutionStrategy(selectedAccountId.value, strategyName);
+    if (selectedStrategyName.value === strategyName) {
+      strategyRunResult.value = null;
+    }
+    await loadExecutionStrategies();
+  } catch (cause) {
+    strategyError.value = errorMessage(cause);
+  } finally {
+    isAssigningStrategy.value = false;
+  }
+}
+
+async function runSelectedStrategy() {
+  if (!selectedAccountId.value || !selectedStrategyName.value) return;
+  isRunningStrategy.value = true;
+  strategyError.value = "";
+  try {
+    strategyRunResult.value = await runExecutionStrategy(
+      selectedAccountId.value,
+      selectedStrategyName.value,
+      normalizeStrategyRunSettings(),
+    );
+  } catch (cause) {
+    strategyError.value = errorMessage(cause);
+    strategyRunResult.value = null;
+  } finally {
+    isRunningStrategy.value = false;
+  }
+}
+
+function normalizeStrategyRunSettings(): StrategyRunRequest {
+  return {
+    ...strategyRunSettings.value,
+    start_date: textOrNull(strategyRunSettings.value.start_date),
+    end_date: textOrNull(strategyRunSettings.value.end_date),
+    limit_offset_pct: Number(strategyRunSettings.value.limit_offset_pct),
+    min_order_value: Number(strategyRunSettings.value.min_order_value),
+  };
+}
+
+function strategyNameExists(strategyName: string): boolean {
+  return (
+    strategyAssignments.value.some((item) => item.strategy_name === strategyName) ||
+    availableStrategies.value.some((item) => item.name === strategyName)
+  );
 }
 
 async function chooseInstrument(instrument: TradableInstrument) {
@@ -630,6 +773,26 @@ function flagLabel(value?: boolean | null): string {
   return value ? "yes" : "no";
 }
 
+function strategySideLabel(value: string): string {
+  return value === "buy" ? "Покупка" : "Продажа";
+}
+
+function strategyStopKindLabel(value: string): string {
+  if (value === "stop_loss") return "Стоп-лосс";
+  if (value === "take_profit") return "Тейк-профит";
+  return value;
+}
+
+function formatDateOnly(value?: string | null): string {
+  if (!value) return "n/a";
+  return new Intl.DateTimeFormat("ru-RU", {
+    timeZone: MARKET_TIME_ZONE,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(new Date(value));
+}
+
 function addDays(value: Date, days: number): Date {
   const next = new Date(value);
   next.setDate(next.getDate() + days);
@@ -723,6 +886,9 @@ function clearOrderBookStaleTimer() {
         </select>
         <button class="icon-button" type="button" title="Обновить" aria-label="Обновить" @click="loadOverview">
           <RefreshCw :class="{ spin: isLoadingOverview }" :size="18" />
+        </button>
+        <button class="icon-button" type="button" title="Стратегии" aria-label="Стратегии" @click="openStrategyModal">
+          <Link2 :size="18" />
         </button>
         <a class="icon-button" href="/launchpad/" title="Launchpad" aria-label="Launchpad">
           <Home :size="18" />
@@ -1340,6 +1506,304 @@ function clearOrderBookStaleTimer() {
         <footer class="instrument-modal-foot">
           <span>{{ instruments.length }} / {{ instrumentTotal }}</span>
         </footer>
+      </section>
+    </div>
+
+    <div v-if="isStrategyModalOpen" class="instrument-modal-backdrop" @click.self="isStrategyModalOpen = false">
+      <section class="strategy-modal" role="dialog" aria-modal="true" aria-label="Стратегии счета">
+        <header class="instrument-modal-head">
+          <div>
+            <span>Execution</span>
+            <strong>Стратегии счета</strong>
+          </div>
+          <button class="icon-button" type="button" title="Закрыть" aria-label="Закрыть" @click="isStrategyModalOpen = false">
+            <X :size="18" />
+          </button>
+        </header>
+
+        <div class="strategy-modal-body">
+          <aside class="strategy-control-panel">
+            <section class="strategy-account-card">
+              <span>Счет</span>
+              <strong>{{ selectedAccount?.name ?? selectedAccountId }}</strong>
+              <small>{{ shortId(selectedAccountId) }} / {{ strategyTotal }} стратегий</small>
+            </section>
+
+            <section class="strategy-box">
+              <header>
+                <span>Назначить</span>
+                <button class="icon-button compact-icon" type="button" title="Обновить" aria-label="Обновить" @click="loadExecutionStrategies">
+                  <RefreshCw :class="{ spin: isLoadingStrategies }" :size="15" />
+                </button>
+              </header>
+              <label>
+                <span>Prod-ready стратегия</span>
+                <select v-model="selectedStrategyName">
+                  <option v-for="strategy in availableStrategies" :key="strategy.name" :value="strategy.name">
+                    {{ strategy.name }}{{ assignedStrategyNames.has(strategy.name) ? " / assigned" : "" }}
+                  </option>
+                </select>
+              </label>
+              <label>
+                <span>Комментарий</span>
+                <input v-model.trim="strategyAssignComment" placeholder="например: основной счет" />
+              </label>
+              <button class="primary-button" type="button" :disabled="isAssigningStrategy || !selectedStrategyName" @click="assignSelectedStrategy">
+                <Link2 :size="16" />
+                Присвоить
+              </button>
+            </section>
+
+            <section class="strategy-box">
+              <header>
+                <span>Ручной запуск</span>
+                <strong>{{ selectedStrategyAssignment?.strategy_name ?? (selectedStrategyName || "n/a") }}</strong>
+              </header>
+              <div class="strategy-run-grid">
+                <label>
+                  <span>Дата с</span>
+                  <input v-model="strategyRunSettings.start_date" type="date" />
+                </label>
+                <label>
+                  <span>Дата по</span>
+                  <input v-model="strategyRunSettings.end_date" type="date" />
+                </label>
+                <label>
+                  <span>Интервал</span>
+                  <select v-model="strategyRunSettings.interval">
+                    <option value="CANDLE_INTERVAL_DAY">1d</option>
+                    <option value="CANDLE_INTERVAL_WEEK">1w</option>
+                    <option value="CANDLE_INTERVAL_MONTH">1M</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Класс</span>
+                  <input v-model.trim="strategyRunSettings.class_code" />
+                </label>
+                <label>
+                  <span>Приказы</span>
+                  <select v-model="strategyRunSettings.order_type">
+                    <option value="limit">Limit</option>
+                    <option value="market">Market</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Offset limit</span>
+                  <input v-model.number="strategyRunSettings.limit_offset_pct" min="0" max="0.1" step="0.0005" type="number" />
+                </label>
+                <label>
+                  <span>Мин. сумма</span>
+                  <input v-model.number="strategyRunSettings.min_order_value" min="0" step="100" type="number" />
+                </label>
+              </div>
+              <button
+                class="primary-button"
+                type="button"
+                :disabled="isRunningStrategy || !selectedStrategyAssignment"
+                @click="runSelectedStrategy"
+              >
+                <Play :class="{ spin: isRunningStrategy }" :size="16" />
+                Запустить dry-run
+              </button>
+            </section>
+          </aside>
+
+          <section class="strategy-result-panel">
+            <div v-if="strategyError" class="inline-error">{{ strategyError }}</div>
+
+            <section class="strategy-box assigned-box">
+              <header>
+                <span>Присвоено счету</span>
+                <strong>{{ strategyAssignments.length }}</strong>
+              </header>
+              <div class="strategy-table-shell">
+                <table class="strategy-table">
+                  <thead>
+                    <tr>
+                      <th>Стратегия</th>
+                      <th>Prod</th>
+                      <th>Комментарий</th>
+                      <th>Назначена</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="assignment in strategyAssignments"
+                      :key="assignment.id"
+                      :class="{ selected: selectedStrategyName === assignment.strategy_name }"
+                      @click="selectedStrategyName = assignment.strategy_name"
+                    >
+                      <td>
+                        <strong>{{ assignment.strategy_name }}</strong>
+                        <small>{{ assignment.strategy.description }}</small>
+                      </td>
+                      <td>
+                        <span class="flag on">ready</span>
+                      </td>
+                      <td>{{ assignment.comment || "n/a" }}</td>
+                      <td>{{ formatDateOnly(assignment.created_at) }}</td>
+                      <td>
+                        <button class="mini-button danger" type="button" @click.stop="unassignStrategy(assignment.strategy_name)">
+                          <Trash2 :size="14" />
+                        </button>
+                      </td>
+                    </tr>
+                    <tr v-if="!strategyAssignments.length">
+                      <td colspan="5">Стратегии еще не присвоены</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="strategy-summary-grid">
+              <article>
+                <span>Портфель</span>
+                <strong>{{ formatValue(strategyRunResult?.portfolio.value) }}</strong>
+              </article>
+              <article>
+                <span>Целевые бумаги</span>
+                <strong>{{ strategyRunResult?.summary.target_positions ?? 0 }}</strong>
+              </article>
+              <article>
+                <span>Приказы</span>
+                <strong>{{ strategyRunResult?.summary.orders ?? 0 }}</strong>
+              </article>
+              <article>
+                <span>Стоп/тейк</span>
+                <strong>{{ strategyRunResult?.summary.stop_orders ?? 0 }}</strong>
+              </article>
+              <article>
+                <span>Net cash</span>
+                <strong :class="{ positive: Number(strategyRunResult?.summary.net_cash_need ?? 0) <= 0, negative: Number(strategyRunResult?.summary.net_cash_need ?? 0) > 0 }">
+                  {{ formatValue(strategyRunResult?.summary.net_cash_need) }}
+                </strong>
+              </article>
+            </section>
+
+            <section class="strategy-box chart-box">
+              <header>
+                <span>Графики</span>
+                <strong>{{ strategyRunResult?.strategy_name ?? "Dry-run" }}</strong>
+              </header>
+              <StrategyPlanChart :result="strategyRunResult" />
+            </section>
+
+            <section class="strategy-result-grid">
+              <article class="strategy-box">
+                <header>
+                  <span>Целевые веса</span>
+                  <strong>{{ strategyRunResult?.target_weights.length ?? 0 }}</strong>
+                </header>
+                <div class="strategy-table-shell compact-strategy-table">
+                  <table class="strategy-table">
+                    <thead>
+                      <tr>
+                        <th>Ticker</th>
+                        <th>Сейчас</th>
+                        <th>Цель</th>
+                        <th>Лоты</th>
+                        <th>Delta</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="row in strategyRunResult?.target_weights ?? []" :key="row.ticker">
+                        <td>
+                          <strong>{{ row.ticker }}</strong>
+                          <small>{{ row.name }}</small>
+                        </td>
+                        <td>{{ formatPercent(row.current_weight) }}</td>
+                        <td>{{ formatPercent(row.target_weight) }}</td>
+                        <td>{{ formatNumber(row.current_lots, 0) }} -> {{ row.target_lots }}</td>
+                        <td :class="{ positive: row.delta_lots > 0, negative: row.delta_lots < 0 }">
+                          {{ row.delta_lots }}
+                        </td>
+                      </tr>
+                      <tr v-if="!strategyRunResult?.target_weights.length">
+                        <td colspan="5">Нет расчета</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </article>
+
+              <article class="strategy-box">
+                <header>
+                  <span>Приказы</span>
+                  <strong>{{ strategyRunResult?.orders.length ?? 0 }}</strong>
+                </header>
+                <div class="strategy-table-shell compact-strategy-table">
+                  <table class="strategy-table">
+                    <thead>
+                      <tr>
+                        <th>Ticker</th>
+                        <th>Side</th>
+                        <th>Type</th>
+                        <th>Lots</th>
+                        <th>Price</th>
+                        <th>Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="row in strategyRunResult?.orders ?? []" :key="`${row.ticker}-${row.side}`">
+                        <td>
+                          <strong>{{ row.ticker }}</strong>
+                          <small>{{ row.name }}</small>
+                        </td>
+                        <td :class="{ positive: row.side === 'buy', negative: row.side === 'sell' }">
+                          {{ strategySideLabel(row.side) }}
+                        </td>
+                        <td>{{ row.order_type }}</td>
+                        <td>{{ row.quantity_lots }}</td>
+                        <td>{{ formatNumber(row.limit_price ?? row.last_price, 4) }}</td>
+                        <td>{{ formatValue(row.estimated_amount) }}</td>
+                      </tr>
+                      <tr v-if="!strategyRunResult?.orders.length">
+                        <td colspan="6">Нет приказов</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </article>
+            </section>
+
+            <section class="strategy-box">
+              <header>
+                <span>Стопы и тейки</span>
+                <strong>{{ strategyRunResult?.stop_orders.length ?? 0 }}</strong>
+              </header>
+              <div class="strategy-table-shell compact-strategy-table">
+                <table class="strategy-table">
+                  <thead>
+                    <tr>
+                      <th>Ticker</th>
+                      <th>Тип</th>
+                      <th>Lots</th>
+                      <th>Trigger</th>
+                      <th>Distance</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="row in strategyRunResult?.stop_orders ?? []" :key="`${row.ticker}-${row.kind}`">
+                      <td>
+                        <strong>{{ row.ticker }}</strong>
+                        <small>{{ row.name }}</small>
+                      </td>
+                      <td>{{ strategyStopKindLabel(row.kind) }}</td>
+                      <td>{{ row.quantity_lots }}</td>
+                      <td>{{ formatNumber(row.stop_price, 4) }}</td>
+                      <td>{{ formatPercent(row.distance_pct) }}</td>
+                    </tr>
+                    <tr v-if="!strategyRunResult?.stop_orders.length">
+                      <td colspan="5">Стратегия не вернула стоп/тейк уровни</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </section>
+        </div>
       </section>
     </div>
   </div>

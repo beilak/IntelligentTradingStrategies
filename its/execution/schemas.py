@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
-
 
 OrderSide = Literal["buy", "sell"]
 OrderKind = Literal["limit", "market"]
 StopOrderKind = Literal["stop_loss", "take_profit"]
 TimeInForce = Literal["day", "fill_or_kill", "fill_and_kill"]
 PriceTypeKind = Literal["currency", "point"]
+StrategyOrderKind = Literal["limit", "market"]
 
 
 class OrderTicket(BaseModel):
@@ -44,3 +44,17 @@ class StopOrderTicket(BaseModel):
     expire_at: datetime | None = None
     client_order_id: str | None = Field(default=None, max_length=80)
     comment: str | None = Field(default=None, max_length=500)
+
+
+class StrategyAssignmentRequest(BaseModel):
+    comment: str | None = Field(default=None, max_length=1000)
+
+
+class StrategyRunRequest(BaseModel):
+    start_date: date | None = None
+    end_date: date | None = None
+    interval: str = "CANDLE_INTERVAL_DAY"
+    class_code: str = Field(default="TQBR", min_length=1, max_length=32)
+    order_type: StrategyOrderKind = "limit"
+    limit_offset_pct: float = Field(default=0.001, ge=0, le=0.1)
+    min_order_value: float = Field(default=100.0, ge=0)

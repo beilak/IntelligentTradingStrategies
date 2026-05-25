@@ -8,7 +8,10 @@ from its.db.models.auth import (
     AuthUserRole,
 )
 from its.db.models.rss import RSSItem
-from its.db.models.strategy import TradingStrategyProductionState
+from its.db.models.strategy import (
+    TradingStrategyAccountAssignment,
+    TradingStrategyProductionState,
+)
 
 __all__ = [
     "AuthAuditLog",
@@ -19,5 +22,6 @@ __all__ = [
     "AuthUser",
     "AuthUserRole",
     "RSSItem",
+    "TradingStrategyAccountAssignment",
     "TradingStrategyProductionState",
 ]

@@ -3,14 +3,21 @@ from __future__ import annotations
 import asyncio
 from typing import Annotated, Any
 
-from fastapi import Depends, FastAPI, Query, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
 
 from its.authz.context import AuthContext
 from its.authz.dependencies import get_auth_context
 from its.authz.jwt import decode_access_context
+from its.db.session import get_session
 from its.event_log.integration import install_event_log
-from its.execution.schemas import OrderTicket, StopOrderTicket
+from its.execution.schemas import (
+    OrderTicket,
+    StopOrderTicket,
+    StrategyAssignmentRequest,
+    StrategyRunRequest,
+)
 from its.execution.service import ExecutionService
 from its.tech_system.auth.security import AuthTokenError
 
@@ -80,6 +87,56 @@ def create_app() -> FastAPI:
         figi: str | None = None,
     ) -> dict[str, Any]:
         return await service.get_last_price(instrument_id=instrument_id, figi=figi)
+
+    @app.get(f"{API_PREFIX}/accounts/{{account_id}}/strategies")
+    async def account_strategies(
+        account_id: str,
+        _auth: Annotated[AuthContext, Depends(get_auth_context)],
+        session: Annotated[Session, Depends(get_session)],
+    ) -> dict[str, Any]:
+        return service.list_strategy_assignments(account_id, session)
+
+    @app.put(f"{API_PREFIX}/accounts/{{account_id}}/strategies/{{strategy_name}}")
+    async def assign_strategy(
+        account_id: str,
+        strategy_name: str,
+        payload: StrategyAssignmentRequest,
+        auth: Annotated[AuthContext, Depends(get_auth_context)],
+        session: Annotated[Session, Depends(get_session)],
+    ) -> dict[str, Any]:
+        return service.assign_strategy(
+            account_id,
+            strategy_name,
+            payload,
+            session,
+            assigned_by_user_id=auth.user_id,
+        )
+
+    @app.delete(f"{API_PREFIX}/accounts/{{account_id}}/strategies/{{strategy_name}}")
+    async def unassign_strategy(
+        account_id: str,
+        strategy_name: str,
+        _auth: Annotated[AuthContext, Depends(get_auth_context)],
+        session: Annotated[Session, Depends(get_session)],
+    ) -> dict[str, Any]:
+        return service.unassign_strategy(account_id, strategy_name, session)
+
+    @app.post(f"{API_PREFIX}/accounts/{{account_id}}/strategies/{{strategy_name}}/runs")
+    async def run_assigned_strategy(
+        account_id: str,
+        strategy_name: str,
+        payload: StrategyRunRequest,
+        http_request: Request,
+        _auth: Annotated[AuthContext, Depends(get_auth_context)],
+        session: Annotated[Session, Depends(get_session)],
+    ) -> dict[str, Any]:
+        return await service.run_assigned_strategy(
+            account_id,
+            strategy_name,
+            payload,
+            session,
+            authorization=http_request.headers.get("authorization"),
+        )
 
     @app.websocket(f"{API_PREFIX}/ws/orderbook")
     async def orderbook_stream(websocket: WebSocket) -> None:

@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import uuid
+import importlib
+import inspect
+import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, AsyncIterator
 
 from fastapi import HTTPException
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 from t_tech.invest import (
     AsyncClient,
     ExchangeOrderType,
@@ -24,8 +30,21 @@ from t_tech.invest import (
 from t_tech.invest.exceptions import AioRequestError, InvestError
 
 from its.execution.config import ExecutionAccountConfig, load_execution_settings
-from its.execution.schemas import OrderTicket, StopOrderTicket
+from its.execution.schemas import (
+    OrderTicket,
+    StopOrderTicket,
+    StrategyAssignmentRequest,
+    StrategyRunRequest,
+)
 from its.execution.serialization import serialize_quotation, serialize_sdk_value
+from its.execution.strategy_runner import (
+    StrategyRunSettings,
+    build_strategy_run_preview,
+)
+from its.db.models.strategy import (
+    TradingStrategyAccountAssignment,
+    TradingStrategyProductionState,
+)
 
 
 @dataclass(frozen=True)
@@ -249,9 +268,11 @@ class ExecutionService:
                     instrument_id=ticket.instrument_id,
                     figi=ticket.figi or "",
                     quantity=ticket.quantity,
-                    price=quotation_from_float(ticket.price)
-                    if ticket.order_type == "limit"
-                    else None,
+                    price=(
+                        quotation_from_float(ticket.price)
+                        if ticket.order_type == "limit"
+                        else None
+                    ),
                     direction=order_direction(ticket.side),
                     order_type=order_type(ticket.order_type),
                     order_id=order_id,
@@ -359,11 +380,14 @@ class ExecutionService:
         return {
             "figi": none_if_missing(last_price.figi),
             "instrument_uid": none_if_missing(last_price.instrument_uid),
-            "instrument_id": instrument_id or none_if_missing(last_price.instrument_uid),
+            "instrument_id": instrument_id
+            or none_if_missing(last_price.instrument_uid),
             "time": serialize_sdk_value(last_price.time),
             "last_price_type": serialize_sdk_value(last_price.last_price_type),
             "price": serialized_price,
-            "price_value": None if serialized_price is None else serialized_price["value"],
+            "price_value": (
+                None if serialized_price is None else serialized_price["value"]
+            ),
         }
 
     async def stream_order_book(
@@ -406,6 +430,173 @@ class ExecutionService:
         except (AioRequestError, InvestError) as error:
             raise self._broker_error(error) from error
 
+    def list_strategy_assignments(
+        self,
+        account_id: str,
+        session: Session,
+    ) -> dict[str, Any]:
+        account = self._require_account(account_id)
+        registered = registered_trading_strategy_items()
+        states = load_production_states(session)
+        assignments = (
+            session.execute(
+                select(TradingStrategyAccountAssignment)
+                .where(
+                    TradingStrategyAccountAssignment.account_id == account.account_id
+                )
+                .order_by(TradingStrategyAccountAssignment.created_at.desc())
+            )
+            .scalars()
+            .all()
+        )
+        assigned_items = [
+            serialize_strategy_assignment(row, registered, states)
+            for row in assignments
+        ]
+        available = [
+            {
+                **item,
+                "production_state": serialize_strategy_production_state(
+                    states.get(item["name"]), strategy_name=item["name"]
+                ),
+                "is_assigned": any(
+                    assignment.strategy_name == item["name"]
+                    for assignment in assignments
+                ),
+            }
+            for item in registered.values()
+            if (states.get(item["name"]) and states[item["name"]].is_prod_ready)
+        ]
+        available.sort(key=lambda item: item["name"])
+        return {
+            "account_id": account.account_id,
+            "items": assigned_items,
+            "available": available,
+            "total": len(assigned_items),
+        }
+
+    def assign_strategy(
+        self,
+        account_id: str,
+        strategy_name: str,
+        payload: StrategyAssignmentRequest,
+        session: Session,
+        assigned_by_user_id: Any,
+    ) -> dict[str, Any]:
+        account = self._require_account(account_id)
+        registered = registered_trading_strategy_items()
+        if strategy_name not in registered:
+            raise HTTPException(
+                status_code=404, detail="Trading strategy is not registered."
+            )
+
+        states = load_production_states(session)
+        state = states.get(strategy_name)
+        if state is None or not state.is_prod_ready:
+            raise HTTPException(
+                status_code=422,
+                detail="Trading strategy is not marked as production-ready.",
+            )
+
+        row = (
+            session.execute(
+                select(TradingStrategyAccountAssignment).where(
+                    TradingStrategyAccountAssignment.account_id == account.account_id,
+                    TradingStrategyAccountAssignment.strategy_name == strategy_name,
+                )
+            )
+            .scalars()
+            .one_or_none()
+        )
+        if row is None:
+            row = TradingStrategyAccountAssignment(
+                account_id=account.account_id,
+                strategy_name=strategy_name,
+            )
+            session.add(row)
+
+        row.comment = payload.comment.strip() if payload.comment else None
+        row.assigned_by_user_id = assigned_by_user_id
+        try:
+            session.commit()
+        except IntegrityError as error:
+            session.rollback()
+            raise HTTPException(
+                status_code=409,
+                detail="Trading strategy is already assigned to this account.",
+            ) from error
+        session.refresh(row)
+        return {
+            "item": serialize_strategy_assignment(row, registered, states),
+        }
+
+    def unassign_strategy(
+        self,
+        account_id: str,
+        strategy_name: str,
+        session: Session,
+    ) -> dict[str, Any]:
+        account = self._require_account(account_id)
+        row = (
+            session.execute(
+                select(TradingStrategyAccountAssignment).where(
+                    TradingStrategyAccountAssignment.account_id == account.account_id,
+                    TradingStrategyAccountAssignment.strategy_name == strategy_name,
+                )
+            )
+            .scalars()
+            .one_or_none()
+        )
+        if row is None:
+            raise HTTPException(status_code=404, detail="Assignment was not found.")
+        session.delete(row)
+        session.commit()
+        return {"status": "deleted"}
+
+    async def run_assigned_strategy(
+        self,
+        account_id: str,
+        strategy_name: str,
+        request: StrategyRunRequest,
+        session: Session,
+        authorization: str | None,
+    ) -> dict[str, Any]:
+        account = self._require_account(account_id)
+        assignment = (
+            session.execute(
+                select(TradingStrategyAccountAssignment).where(
+                    TradingStrategyAccountAssignment.account_id == account.account_id,
+                    TradingStrategyAccountAssignment.strategy_name == strategy_name,
+                )
+            )
+            .scalars()
+            .one_or_none()
+        )
+        if assignment is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Assign this strategy to the account before running it.",
+            )
+
+        overview = await self.get_account_overview(
+            account.account_id, operations_days=1
+        )
+        return await build_strategy_run_preview(
+            strategy_name=strategy_name,
+            account_id=account.account_id,
+            account_overview=overview,
+            settings=StrategyRunSettings(
+                start_date=request.start_date,
+                end_date=request.end_date,
+                interval=request.interval,
+                class_code=request.class_code,
+                order_type=request.order_type,
+                limit_offset_pct=request.limit_offset_pct,
+                min_order_value=request.min_order_value,
+            ),
+            authorization=authorization,
+        )
+
     async def _safe_call(
         self,
         section: str,
@@ -445,7 +636,9 @@ class ExecutionService:
         configured = self._require_configured_accounts()
         for account in configured:
             if account.account_id == account_id:
-                return AccountReference(account_id=account.account_id, name=account.name)
+                return AccountReference(
+                    account_id=account.account_id, name=account.name
+                )
         raise HTTPException(
             status_code=404,
             detail="Account is not configured for execution.",
@@ -472,7 +665,9 @@ class ExecutionService:
 
         payload = serialize_sdk_value(account)
         payload["broker_name"] = payload.get("name")
-        payload["name"] = config.name or payload.get("name") or mask_account_id(account.id)
+        payload["name"] = (
+            config.name or payload.get("name") or mask_account_id(account.id)
+        )
         payload["is_configured"] = True
         payload["is_available"] = True
         return payload
@@ -483,6 +678,99 @@ class ExecutionService:
             status_code=502,
             detail=f"T-Invest request failed: {error}",
         )
+
+
+def registered_trading_strategy_items() -> dict[str, dict[str, Any]]:
+    module_name = "its.strategies_model.model"
+    for name in sorted(sys.modules, reverse=True):
+        if name == module_name or name.startswith(f"{module_name}."):
+            del sys.modules[name]
+    module = importlib.import_module(module_name)
+    result: dict[str, dict[str, Any]] = {}
+    for strategy_name in getattr(module, "__all__", []):
+        obj = getattr(module, strategy_name, None)
+        if obj is None:
+            continue
+        result[strategy_name] = {
+            "name": strategy_name,
+            "module": getattr(obj, "__module__", module_name),
+            "description": compact_doc(inspect.getdoc(obj) or ""),
+            "source_path": inspect.getsourcefile(obj) or "",
+        }
+    return result
+
+
+def load_production_states(
+    session: Session,
+) -> dict[str, TradingStrategyProductionState]:
+    return {
+        row.strategy_name: row
+        for row in session.execute(select(TradingStrategyProductionState)).scalars()
+    }
+
+
+def serialize_strategy_assignment(
+    assignment: TradingStrategyAccountAssignment,
+    registered: dict[str, dict[str, Any]],
+    states: dict[str, TradingStrategyProductionState],
+) -> dict[str, Any]:
+    strategy = registered.get(assignment.strategy_name, {})
+    return {
+        "id": str(assignment.id),
+        "account_id": assignment.account_id,
+        "strategy_name": assignment.strategy_name,
+        "comment": assignment.comment,
+        "assigned_by_user_id": (
+            str(assignment.assigned_by_user_id)
+            if assignment.assigned_by_user_id
+            else None
+        ),
+        "created_at": (
+            assignment.created_at.isoformat() if assignment.created_at else None
+        ),
+        "updated_at": (
+            assignment.updated_at.isoformat() if assignment.updated_at else None
+        ),
+        "strategy": {
+            **strategy,
+            "production_state": serialize_strategy_production_state(
+                states.get(assignment.strategy_name),
+                strategy_name=assignment.strategy_name,
+            ),
+        },
+    }
+
+
+def serialize_strategy_production_state(
+    state: TradingStrategyProductionState | None,
+    strategy_name: str | None = None,
+) -> dict[str, Any]:
+    if state is None:
+        return {
+            "strategy_name": strategy_name,
+            "is_prod_ready": False,
+            "comment": None,
+            "updated_by_user_id": None,
+            "updated_at": None,
+        }
+    return {
+        "strategy_name": state.strategy_name,
+        "is_prod_ready": state.is_prod_ready,
+        "comment": state.comment,
+        "updated_by_user_id": (
+            str(state.updated_by_user_id) if state.updated_by_user_id else None
+        ),
+        "updated_at": state.updated_at.isoformat() if state.updated_at else None,
+    }
+
+
+def compact_doc(doc: str, limit: int = 500) -> str:
+    paragraphs = [part.strip() for part in doc.split("\n\n") if part.strip()]
+    text = paragraphs[0] if paragraphs else doc.strip()
+    text = " ".join(line.strip() for line in text.splitlines() if line.strip())
+    if len(text) <= limit:
+        return text
+    return f"{text[: limit - 1].rstrip()}..."
 
 
 def build_account_summary(sections: dict[str, Any]) -> dict[str, Any]:
@@ -645,7 +933,8 @@ def normalize_order_book(
 ) -> dict[str, Any]:
     return {
         "type": "orderbook",
-        "instrument_id": requested_instrument_id or none_if_missing(order_book.instrument_uid),
+        "instrument_id": requested_instrument_id
+        or none_if_missing(order_book.instrument_uid),
         "instrument_uid": none_if_missing(order_book.instrument_uid),
         "figi": none_if_missing(order_book.figi),
         "time": serialize_sdk_value(order_book.time),
@@ -659,7 +948,9 @@ def normalize_order_book(
     }
 
 
-def normalize_order_book_rows(rows: list[Any], *, reverse: bool) -> list[dict[str, Any]]:
+def normalize_order_book_rows(
+    rows: list[Any], *, reverse: bool
+) -> list[dict[str, Any]]:
     normalized = [
         {
             "price": quotation_value(row.price),

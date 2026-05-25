@@ -318,3 +318,123 @@ export interface OrderBookSnapshot {
   bids: OrderBookLevel[];
   asks: OrderBookLevel[];
 }
+
+export interface TradingStrategyProductionState {
+  strategy_name: string | null;
+  is_prod_ready: boolean;
+  comment: string | null;
+  updated_by_user_id: string | null;
+  updated_at: string | null;
+}
+
+export interface ExecutionStrategyItem {
+  name: string;
+  module: string;
+  description: string;
+  source_path?: string | null;
+  production_state: TradingStrategyProductionState;
+  is_assigned?: boolean;
+}
+
+export interface ExecutionStrategyAssignment {
+  id: string;
+  account_id: string;
+  strategy_name: string;
+  comment: string | null;
+  assigned_by_user_id: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  strategy: ExecutionStrategyItem;
+}
+
+export interface ExecutionStrategiesResponse {
+  account_id: string;
+  items: ExecutionStrategyAssignment[];
+  available: ExecutionStrategyItem[];
+  total: number;
+}
+
+export interface StrategyRunRequest {
+  start_date?: string | null;
+  end_date?: string | null;
+  interval: string;
+  class_code: string;
+  order_type: "limit" | "market";
+  limit_offset_pct: number;
+  min_order_value: number;
+}
+
+export interface StrategyTargetWeight {
+  ticker: string;
+  figi?: string | null;
+  instrument_id?: string | null;
+  name: string;
+  sector?: string | null;
+  currency: string;
+  lot: number;
+  last_price: number;
+  current_lots: number;
+  current_quantity: number;
+  current_value: number;
+  current_weight: number;
+  target_weight: number;
+  target_value: number;
+  target_lots: number;
+  delta_lots: number;
+  delta_value: number;
+}
+
+export interface StrategyOrderPlanRow {
+  ticker: string;
+  figi?: string | null;
+  instrument_id?: string | null;
+  name: string;
+  side: "buy" | "sell";
+  order_type: "limit" | "market";
+  quantity_lots: number;
+  lot: number;
+  last_price: number;
+  limit_price: number | null;
+  estimated_amount: number;
+  target_weight: number;
+  current_weight: number;
+}
+
+export interface StrategyStopPlanRow {
+  ticker: string;
+  figi?: string | null;
+  instrument_id?: string | null;
+  name: string;
+  kind: "stop_loss" | "take_profit";
+  side: "sell";
+  quantity_lots: number;
+  stop_price: number;
+  distance_pct: number;
+  last_price: number;
+}
+
+export interface StrategyRunResult {
+  account_id: string;
+  strategy_name: string;
+  strategy_description: string;
+  generated_at: string;
+  run_time: string;
+  settings: StrategyRunRequest;
+  portfolio: {
+    value: number;
+    currency: string;
+  };
+  summary: {
+    target_positions: number;
+    orders: number;
+    buy_orders: number;
+    sell_orders: number;
+    stop_orders: number;
+    gross_buy: number;
+    gross_sell: number;
+    net_cash_need: number;
+  };
+  target_weights: StrategyTargetWeight[];
+  orders: StrategyOrderPlanRow[];
+  stop_orders: StrategyStopPlanRow[];
+}

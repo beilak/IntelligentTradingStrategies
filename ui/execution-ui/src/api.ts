@@ -1,10 +1,13 @@
 import type {
   AccountOverview,
   AccountsResponse,
+  ExecutionStrategiesResponse,
   InstrumentsResponse,
   LastPriceResponse,
   OrderTicket,
   PricesResponse,
+  StrategyRunRequest,
+  StrategyRunResult,
   StopOrderTicket,
   StubResponse,
   User,
@@ -37,6 +40,45 @@ export async function getOverview(
   return request<AccountOverview>(
     `/accounts/${encodeURIComponent(accountId)}/overview`,
     { operations_days: operationsDays },
+  );
+}
+
+export async function getExecutionStrategies(
+  accountId: string,
+): Promise<ExecutionStrategiesResponse> {
+  return request<ExecutionStrategiesResponse>(
+    `/accounts/${encodeURIComponent(accountId)}/strategies`,
+  );
+}
+
+export async function assignExecutionStrategy(
+  accountId: string,
+  strategyName: string,
+  payload: { comment: string | null },
+): Promise<{ item: ExecutionStrategiesResponse["items"][number] }> {
+  return put<{ item: ExecutionStrategiesResponse["items"][number] }>(
+    `/accounts/${encodeURIComponent(accountId)}/strategies/${encodeURIComponent(strategyName)}`,
+    payload,
+  );
+}
+
+export async function unassignExecutionStrategy(
+  accountId: string,
+  strategyName: string,
+): Promise<{ status: string }> {
+  return deleteRequest<{ status: string }>(
+    `/accounts/${encodeURIComponent(accountId)}/strategies/${encodeURIComponent(strategyName)}`,
+  );
+}
+
+export async function runExecutionStrategy(
+  accountId: string,
+  strategyName: string,
+  payload: StrategyRunRequest,
+): Promise<StrategyRunResult> {
+  return post<StrategyRunResult>(
+    `/accounts/${encodeURIComponent(accountId)}/strategies/${encodeURIComponent(strategyName)}/runs`,
+    payload,
   );
 }
 
@@ -122,6 +164,30 @@ async function post<T>(path: string, payload: unknown): Promise<T> {
       ...(await authHeaders()),
     },
     body: JSON.stringify(payload),
+  });
+  return handleResponse<T>(response);
+}
+
+async function put<T>(path: string, payload: unknown): Promise<T> {
+  const url = new URL(`${API_BASE}${path}`, window.location.origin);
+
+  const response = await fetch(url, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      ...(await authHeaders()),
+    },
+    body: JSON.stringify(payload),
+  });
+  return handleResponse<T>(response);
+}
+
+async function deleteRequest<T>(path: string): Promise<T> {
+  const url = new URL(`${API_BASE}${path}`, window.location.origin);
+
+  const response = await fetch(url, {
+    method: "DELETE",
+    headers: await authHeaders(),
   });
   return handleResponse<T>(response);
 }

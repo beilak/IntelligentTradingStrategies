@@ -171,8 +171,10 @@ services:
       - .env
     environment:
       <<:
+        - *app-database-environment
         - *event-log-database-environment
         - *auth-jwt-environment
+      DATA_BACKEND_BASE_URL: http://data-backend:8000/api/v1
       EXECUTION_TINVEST_TOKEN: ${EXECUTION_TINVEST_TOKEN:-}
       tinvest_token: ${tinvest_token:-}
       TINVEST_TOKEN: ${TINVEST_TOKEN:-}
@@ -185,6 +187,10 @@ services:
       tinvest_account_id: ${tinvest_account_id:-}
       tinvest_account_id_: ${tinvest_account_id_:-}
     depends_on:
+      db-migrations:
+        condition: service_completed_successfully
+      data-backend:
+        condition: service_started
       event-log-postgres:
         condition: service_healthy
     expose:

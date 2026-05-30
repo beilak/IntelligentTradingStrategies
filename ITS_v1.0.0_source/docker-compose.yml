@@ -1,0 +1,110 @@
+services:
+  data-backend:
+    build:
+      context: .
+      dockerfile: services/data_backend/Dockerfile
+    env_file:
+      - .env
+    environment:
+      tinvest_token: ${tinvest_token:-}
+      TINVEST_TOKEN: ${TINVEST_TOKEN:-}
+      TINKOFF_INVEST_API_TOKEN: ${TINKOFF_INVEST_API_TOKEN:-}
+      DATA_BACKEND_STOCKS_TTL_MINUTES: ${DATA_BACKEND_STOCKS_TTL_MINUTES:-30}
+    volumes:
+      - t-invest-cache:/app/its/data
+    expose:
+      - "8000"
+
+  data-ui:
+    build:
+      context: .
+      dockerfile: ui/data-ui/Dockerfile
+    expose:
+      - "80"
+    depends_on:
+      - data-backend
+
+  strategy-backend:
+    build:
+      context: .
+      dockerfile: services/strategy_backend/Dockerfile
+    environment:
+      DATA_BACKEND_BASE_URL: http://data-backend:8000/api/v1
+      STRATEGY_TEST_CACHE_DIR: /app/its/data/strategy_tests/cpcv
+      STRATEGY_WF_CACHE_DIR: /app/its/data/strategy_tests/walk_forward
+      STRATEGY_BACKTEST_CACHE_DIR: /app/its/data/strategy_tests/backtest
+    volumes:
+      - ./its/ga:/app/its/ga:ro
+      - ./its/strategies:/app/its/strategies:ro
+      - strategy-test-cache:/app/its/data/strategy_tests
+    depends_on:
+      - data-backend
+    expose:
+      - "8000"
+
+  strategy-ui:
+    build:
+      context: .
+      dockerfile: ui/strategy-ui/Dockerfile
+    expose:
+      - "80"
+    depends_on:
+      - strategy-backend
+
+  ga-backend:
+    build:
+      context: .
+      dockerfile: its/services/ga_backend/Dockerfile
+    environment:
+      DATA_BACKEND_BASE_URL: http://data-backend:8000/api/v1
+      GA_RUN_CACHE_DIR: /app/its/data/ga_runs
+      GA_MODELS_DIR: /app/its/strategies/models
+    volumes:
+      - ./its/ga:/app/its/ga:ro
+      - ./its/strategies:/app/its/strategies:ro
+      - ./its/strategies/models:/app/its/strategies/models
+      - ga-cache:/app/its/data/ga_runs
+    depends_on:
+      - data-backend
+    expose:
+      - "8000"
+
+  ga-ui:
+    build:
+      context: .
+      dockerfile: its/ui/ga-ui/Dockerfile
+    expose:
+      - "80"
+    depends_on:
+      - ga-backend
+
+  launchpad-ui:
+    build:
+      context: .
+      dockerfile: ui/launchpad-ui/Dockerfile
+    expose:
+      - "80"
+    depends_on:
+      - data-ui
+      - strategy-ui
+      - ga-ui
+
+  nginx-gateway:
+    build:
+      context: .
+      dockerfile: infra/nginx/Dockerfile
+    ports:
+      - "${ITS_GATEWAY_PORT:-8080}:80"
+    depends_on:
+      - data-backend
+      - data-ui
+      - strategy-backend
+      - strategy-ui
+      - ga-backend
+      - ga-ui
+      - launchpad-ui
+
+volumes:
+  t-invest-cache:
+  strategy-test-cache:
+  ga-cache:

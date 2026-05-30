@@ -1,0 +1,2 @@
+from .history_adapter_interfaces import HistoryAdapterProtocol
+from .share_info_adapter_interfaces import ShareInfoAdapterProtocol

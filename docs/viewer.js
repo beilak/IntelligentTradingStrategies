@@ -40,6 +40,7 @@ const sidebarToggle = document.querySelector("#sidebar-toggle");
 const langRu = document.querySelector("#lang-ru");
 const langEn = document.querySelector("#lang-en");
 const pdfLink = document.querySelector("#pdf-link");
+const appBasePath = getAppBasePath();
 
 let activeLanguage = currentLanguage();
 
@@ -65,11 +66,11 @@ loadCurrentDocument();
 
 function renderNav() {
   nav.innerHTML = docsForLanguage().map(
-    ([file, title]) => `<a href="/docs/?lang=${activeLanguage}&file=${encodeURIComponent(file)}" data-file="${escapeAttr(file)}">${escapeHtml(title)}</a>`,
+    ([file, title]) => `<a href="${appUrl(`?lang=${activeLanguage}&file=${encodeURIComponent(file)}`)}" data-file="${escapeAttr(file)}">${escapeHtml(title)}</a>`,
   ).join("");
   langRu.classList.toggle("active", activeLanguage === "ru");
   langEn.classList.toggle("active", activeLanguage === "en");
-  pdfLink.href = `/docs/pdf/its_documentation_${activeLanguage}.pdf`;
+  pdfLink.href = appUrl(`pdf/its_documentation_${activeLanguage}.pdf`);
   pdfLink.title = activeLanguage === "en" ? "Download complete documentation as PDF" : "Скачать всю документацию в PDF";
   pdfLink.setAttribute("download", `its_documentation_${activeLanguage}.pdf`);
 }
@@ -77,17 +78,12 @@ function renderNav() {
 async function loadCurrentDocument() {
   const file = currentFile();
   setActiveNav(file);
-  rawLink.href = rawMarkdownUrl(file);
+  rawLink.href = rawMarkdownUrls(file)[0];
   content.innerHTML = `<p class="loading">${activeLanguage === "en" ? "Loading documentation..." : "Загрузка документации..."}</p>`;
 
   try {
-    const response = await fetch(rawMarkdownUrl(file), {
-      headers: { Accept: "text/markdown,text/plain,*/*" },
-    });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-    const markdown = await response.text();
+    const { markdown, url } = await fetchMarkdown(file);
+    rawLink.href = url;
     content.innerHTML = renderMarkdown(markdown);
     document.title = `${titleFor(file)} - ITS Documentation`;
     bindDocumentLinks();
@@ -113,7 +109,7 @@ function setLanguage(language) {
   activeLanguage = language === "en" ? "en" : "ru";
   localStorage.setItem("its-docs-language", activeLanguage);
   const file = currentFile();
-  history.pushState(null, "", `/docs/?lang=${activeLanguage}&file=${encodeURIComponent(file)}`);
+  history.pushState(null, "", appUrl(`?lang=${activeLanguage}&file=${encodeURIComponent(file)}`));
   renderNav();
   loadCurrentDocument();
 }
@@ -126,8 +122,33 @@ function docFiles() {
   return new Set(docsForLanguage().map(([file]) => file));
 }
 
-function rawMarkdownUrl(file) {
-  return activeLanguage === "en" ? `/docs/raw/en/${file}` : `/docs/raw/${file}`;
+function rawMarkdownUrls(file) {
+  const prefix = activeLanguage === "en" ? "en/" : "";
+  const rawAlias = appUrl(`raw/${prefix}${file}`);
+  const directFile = appUrl(`${prefix}${file}`);
+  return appBasePath === "/docs/" ? [rawAlias, directFile] : [directFile, rawAlias];
+}
+
+async function fetchMarkdown(file) {
+  let lastError;
+  for (const url of rawMarkdownUrls(file)) {
+    try {
+      const response = await fetch(url, {
+        headers: { Accept: "text/markdown,text/plain,*/*" },
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const markdown = await response.text();
+      if (/^\s*<(?:!doctype\s+html|html[\s>])/i.test(markdown)) {
+        throw new Error("Expected Markdown but received HTML");
+      }
+      return { markdown, url };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error("Unable to load Markdown");
 }
 
 
@@ -144,7 +165,7 @@ function titleFor(file) {
 function bindDocumentLinks() {
   content.querySelectorAll("a[href]").forEach((link) => {
     const url = new URL(link.href, window.location.origin);
-    if (url.origin !== window.location.origin || url.pathname !== "/docs/") {
+    if (url.origin !== window.location.origin || url.pathname !== appBasePath) {
       return;
     }
     const file = url.searchParams.get("file");
@@ -153,7 +174,7 @@ function bindDocumentLinks() {
     }
     link.addEventListener("click", (event) => {
       event.preventDefault();
-      history.pushState(null, "", `/docs/?lang=${activeLanguage}&file=${encodeURIComponent(file)}`);
+      history.pushState(null, "", appUrl(`?lang=${activeLanguage}&file=${encodeURIComponent(file)}`));
       loadCurrentDocument();
     });
   });
@@ -331,7 +352,7 @@ function resolveLinkUrl(target) {
   }
   const [path] = target.split("#");
   if (path.endsWith(".md") && docFiles().has(path)) {
-    return `/docs/?lang=${activeLanguage}&file=${encodeURIComponent(path)}`;
+    return appUrl(`?lang=${activeLanguage}&file=${encodeURIComponent(path)}`);
   }
   return target;
 }
@@ -340,8 +361,18 @@ function resolveAssetUrl(target) {
   if (/^(https?:|data:|\/)/i.test(target)) {
     return target;
   }
-  const basePath = activeLanguage === "en" ? "/docs/en/" : "/docs/";
+  const basePath = activeLanguage === "en" ? appUrl("en/") : appBasePath;
   return new URL(target, `${window.location.origin}${basePath}`).pathname;
+}
+
+function getAppBasePath() {
+  const scriptUrl = document.currentScript?.src || new URL("viewer.js", window.location.href).href;
+  const path = new URL(scriptUrl, window.location.href).pathname;
+  return path.replace(/[^/]*$/, "");
+}
+
+function appUrl(path = "") {
+  return `${appBasePath}${path}`;
 }
 
 function slugify(text) {

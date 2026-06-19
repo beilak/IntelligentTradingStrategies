@@ -5,6 +5,7 @@ from its.data_loader.rest_api.share_info import share_info_router
 from its.data_loader.rest_api.history import history_router
 from its.api.custom_bars import cust_bar_router
 from its.event_log.integration import install_event_log
+from its.observability import install_observability
 
 
 async def on_startup():
@@ -30,6 +31,7 @@ def create_web_app() -> FastAPI:
     app.include_router(router=share_info_router, prefix="/info", tags=["Share"])
     app.include_router(router=history_router, prefix="/history", tags=["Share"])
     app.include_router(router=cust_bar_router, prefix=prefix, tags=["Custom bars"])
+    install_observability(app, service_name="its-legacy-app")
     install_event_log(app, service_name="its-legacy-app")
 
     return app

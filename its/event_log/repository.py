@@ -8,6 +8,12 @@ from sqlalchemy.orm import Session
 
 from its.event_log.models import EventLogEntry
 from its.event_log.storage import get_event_log_session_factory
+from its.observability.metrics import (
+    now_seconds,
+    observe_audit_event,
+    observe_audit_write,
+    observe_audit_write_failure,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +44,7 @@ class EventLogFilters:
 
 
 def append_event_log(payload: EventLogCreate) -> None:
+    started = now_seconds()
     try:
         with get_event_log_session_factory()() as session:
             session.add(
@@ -52,7 +59,31 @@ def append_event_log(payload: EventLogCreate) -> None:
                 )
             )
             session.commit()
-    except SQLAlchemyError:
+        observe_audit_event(
+            service=payload.service,
+            method=payload.http_action,
+            result="success",
+        )
+        observe_audit_write(
+            service=payload.service,
+            result="success",
+            duration_seconds=now_seconds() - started,
+        )
+    except SQLAlchemyError as error:
+        observe_audit_event(
+            service=payload.service,
+            method=payload.http_action,
+            result="failure",
+        )
+        observe_audit_write(
+            service=payload.service,
+            result="failure",
+            duration_seconds=now_seconds() - started,
+        )
+        observe_audit_write_failure(
+            service=payload.service,
+            error_type=type(error).__name__,
+        )
         logger.exception("Could not append event log")
 
 

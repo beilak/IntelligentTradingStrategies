@@ -20,6 +20,7 @@ from its.authz.permissions import Permissions
 from its.event_log.integration import install_event_log
 from its.ga.engine import run_ga_search
 from its.ga.registry import load_alphabet_registry
+from its.observability import install_observability
 
 API_PREFIX = "/api/v1"
 DATA_BACKEND_BASE_URL = os.getenv(
@@ -75,6 +76,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    install_observability(app, service_name="ga-backend")
     install_event_log(app, service_name="ga-backend")
 
     @app.get(f"{API_PREFIX}/health")

@@ -1,0 +1,60 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single", "sort": "none"}},
+      "targets": [{"expr": "sum(rate(its_http_requests_total[5m])) by (service)", "legendFormat": "{{service}}", "refId": "A"}],
+      "title": "Request rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "id": 2,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single", "sort": "none"}},
+      "targets": [{"expr": "sum(rate(its_http_requests_total{status_class=\"5xx\"}[5m])) by (service)", "legendFormat": "{{service}}", "refId": "A"}],
+      "title": "5xx rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "unit": "s"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "id": 3,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single", "sort": "none"}},
+      "targets": [{"expr": "histogram_quantile(0.95, sum(rate(its_http_request_duration_seconds_bucket[5m])) by (le, service))", "legendFormat": "p95 {{service}}", "refId": "A"}],
+      "title": "HTTP p95 latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "id": 4,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single", "sort": "none"}},
+      "targets": [{"expr": "up", "legendFormat": "{{job}} {{instance}}", "refId": "A"}],
+      "title": "Targets up",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["its", "platform"],
+  "templating": {"list": []},
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "timezone": "",
+  "title": "ITS Platform Overview",
+  "uid": "its-platform-overview",
+  "version": 1,
+  "weekStart": ""
+}

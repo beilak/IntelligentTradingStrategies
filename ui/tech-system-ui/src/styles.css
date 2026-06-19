@@ -283,9 +283,11 @@ h2 {
   min-height: 210px;
   padding: 18px;
   text-align: left;
+  text-decoration: none;
 }
 
-.system-module-card:hover:not(:disabled) {
+.system-module-card:hover:not(:disabled),
+.system-module-card.external-module:hover {
   border-color: #66d9ef;
 }
 

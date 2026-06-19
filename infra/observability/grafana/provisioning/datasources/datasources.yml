@@ -1,0 +1,20 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+
+  - name: OpenSearch
+    uid: OpenSearch
+    type: grafana-opensearch-datasource
+    access: proxy
+    url: http://opensearch:9200
+    jsonData:
+      database: its-app-logs-*
+      flavor: opensearch
+      logMessageField: message
+      timeField: "@timestamp"

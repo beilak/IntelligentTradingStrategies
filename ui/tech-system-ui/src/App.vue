@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import {
+  Activity,
   AlertCircle,
   ArrowLeft,
   ArrowRight,
   BadgeCheck,
+  Bug,
   CalendarDays,
   CheckCircle2,
   ClipboardList,
@@ -77,6 +79,10 @@ const systemHref = "/tech/system/";
 const launchpadHref = "/launchpad/";
 const authProfileHref = `/tech/auth/?returnTo=${profileHref}`;
 const authSystemHref = `/tech/auth/?returnTo=${systemHref}`;
+const grafanaHref = import.meta.env.VITE_GRAFANA_URL ?? "/grafana/";
+const opensearchHref =
+  import.meta.env.VITE_OPENSEARCH_DASHBOARDS_URL ?? "/opensearch-dashboards";
+const glitchtipHref = import.meta.env.VITE_GLITCHTIP_URL ?? "/glitchtip";
 
 const isProfilePage = computed(() => currentPath.value.startsWith(profileHref));
 const isSystemPage = computed(() => currentPath.value.startsWith(systemHref));
@@ -720,6 +726,45 @@ onMounted(async () => {
               <strong>Настройки системы</strong>
               <p>Будущий раздел для технических параметров платформы.</p>
             </button>
+            <a
+              class="system-module-card external-module"
+              :href="grafanaHref"
+              target="_blank"
+              rel="noreferrer"
+            >
+              <span class="module-icon">
+                <Activity :size="24" />
+              </span>
+              <span class="panel-kicker">Monitoring</span>
+              <strong>Grafana</strong>
+              <p>Метрики сервисов, БД, контейнеров, latency, ошибки и alert dashboards.</p>
+            </a>
+            <a
+              class="system-module-card external-module"
+              :href="opensearchHref"
+              target="_blank"
+              rel="noreferrer"
+            >
+              <span class="module-icon">
+                <Search :size="24" />
+              </span>
+              <span class="panel-kicker">Operational Logs</span>
+              <strong>OpenSearch</strong>
+              <p>Поиск по техническим логам приложений, gateway и observability pipeline.</p>
+            </a>
+            <a
+              class="system-module-card external-module"
+              :href="glitchtipHref"
+              target="_blank"
+              rel="noreferrer"
+            >
+              <span class="module-icon">
+                <Bug :size="24" />
+              </span>
+              <span class="panel-kicker">Errors</span>
+              <strong>GlitchTip</strong>
+              <p>Группировка backend/frontend ошибок, stack traces, релизы и уведомления.</p>
+            </a>
           </div>
         </template>
       </section>

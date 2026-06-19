@@ -19,6 +19,7 @@ from its.execution.schemas import (
     StrategyRunRequest,
 )
 from its.execution.service import ExecutionService
+from its.observability import install_observability
 from its.tech_system.auth.security import AuthTokenError
 
 API_PREFIX = "/api/v1"
@@ -39,6 +40,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    install_observability(app, service_name="execution-backend")
     install_event_log(app, service_name="execution-backend")
 
     service = ExecutionService()

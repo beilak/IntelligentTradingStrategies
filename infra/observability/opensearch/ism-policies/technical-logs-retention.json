@@ -1,0 +1,23 @@
+{
+  "policy": {
+    "description": "Default ITS technical logs retention policy",
+    "default_state": "hot",
+    "states": [
+      {
+        "name": "hot",
+        "actions": [],
+        "transitions": [
+          {
+            "state_name": "delete",
+            "conditions": {"min_index_age": "30d"}
+          }
+        ]
+      },
+      {
+        "name": "delete",
+        "actions": [{"delete": {}}],
+        "transitions": []
+      }
+    ]
+  }
+}

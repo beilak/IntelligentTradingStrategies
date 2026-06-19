@@ -9,6 +9,33 @@ x-auth-jwt-environment: &auth-jwt-environment
   AUTH_JWT_ALGORITHM: ${AUTH_JWT_ALGORITHM:-HS256}
   AUTH_JWT_ISSUER: ${AUTH_JWT_ISSUER:-its-tech-system}
 
+x-observability-environment: &observability-environment
+  OBSERVABILITY_ENABLED: ${OBSERVABILITY_ENABLED:-true}
+  OBSERVABILITY_ENVIRONMENT: ${OBSERVABILITY_ENVIRONMENT:-dev}
+  OBSERVABILITY_RELEASE: ${OBSERVABILITY_RELEASE:-1.0.0}
+  OBSERVABILITY_JSON_LOGS_ENABLED: ${OBSERVABILITY_JSON_LOGS_ENABLED:-true}
+  OBSERVABILITY_METRICS_ENABLED: ${OBSERVABILITY_METRICS_ENABLED:-true}
+  OBSERVABILITY_METRICS_PATH: ${OBSERVABILITY_METRICS_PATH:-/metrics}
+  OBSERVABILITY_TRACING_ENABLED: ${OBSERVABILITY_TRACING_ENABLED:-false}
+  OBSERVABILITY_ERRORS_ENABLED: ${OBSERVABILITY_ERRORS_ENABLED:-true}
+  OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4317}
+  SENTRY_DSN: ${SENTRY_DSN:-http://${GLITCHTIP_PROJECT_PUBLIC_KEY:-85dc29c1a9b645aaab8680880aea79db}@glitchtip-web:8000/1}
+  SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.01}
+
+x-glitchtip-environment: &glitchtip-environment
+  DATABASE_URL: "postgresql://${GLITCHTIP_POSTGRES_USER:-glitchtip}:${GLITCHTIP_POSTGRES_PASSWORD:-glitchtip_password}@glitchtip-postgres:5432/${GLITCHTIP_POSTGRES_DB:-glitchtip}"
+  REDIS_URL: redis://glitchtip-redis:6379/0
+  SECRET_KEY: ${GLITCHTIP_SECRET_KEY:-change-me-observability-secret}
+  GLITCHTIP_DOMAIN: ${GLITCHTIP_DOMAIN:-http://localhost:8001}
+  DEFAULT_FROM_EMAIL: ${GLITCHTIP_DEFAULT_FROM_EMAIL:-glitchtip@example.local}
+  EMAIL_URL: ${GLITCHTIP_EMAIL_URL:-consolemail://}
+  GLITCHTIP_ADMIN_EMAIL: ${GLITCHTIP_ADMIN_EMAIL:-admin@example.com}
+  GLITCHTIP_ADMIN_PASSWORD: ${GLITCHTIP_ADMIN_PASSWORD:-admin123}
+  GLITCHTIP_BOOTSTRAP_ORGANIZATION: ${GLITCHTIP_BOOTSTRAP_ORGANIZATION:-ITS}
+  GLITCHTIP_BOOTSTRAP_TEAM: ${GLITCHTIP_BOOTSTRAP_TEAM:-platform}
+  GLITCHTIP_BOOTSTRAP_PROJECT: ${GLITCHTIP_BOOTSTRAP_PROJECT:-its-platform}
+  GLITCHTIP_PROJECT_PUBLIC_KEY: ${GLITCHTIP_PROJECT_PUBLIC_KEY:-85dc29c1a9b645aaab8680880aea79db}
+
 services:
   postgres:
     image: postgres:18-alpine
@@ -68,6 +95,7 @@ services:
         - *app-database-environment
         - *event-log-database-environment
         - *auth-jwt-environment
+        - *observability-environment
       tinvest_token: ${tinvest_token:-}
       TINVEST_TOKEN: ${TINVEST_TOKEN:-}
       TINKOFF_INVEST_API_TOKEN: ${TINKOFF_INVEST_API_TOKEN:-}
@@ -100,6 +128,7 @@ services:
         - *app-database-environment
         - *event-log-database-environment
         - *auth-jwt-environment
+        - *observability-environment
       DATA_BACKEND_BASE_URL: http://data-backend:8000/api/v1
       STRATEGY_TEST_CACHE_DIR: /app/its/data/strategy_tests/cpcv
       STRATEGY_WF_CACHE_DIR: /app/its/data/strategy_tests/walk_forward
@@ -136,6 +165,7 @@ services:
         - *app-database-environment
         - *event-log-database-environment
         - *auth-jwt-environment
+        - *observability-environment
       DATA_BACKEND_BASE_URL: http://data-backend:8000/api/v1
       GA_RUN_CACHE_DIR: /app/its/data/ga_runs
       GA_MODELS_DIR: /app/its/strategies/models
@@ -174,6 +204,7 @@ services:
         - *app-database-environment
         - *event-log-database-environment
         - *auth-jwt-environment
+        - *observability-environment
       DATA_BACKEND_BASE_URL: http://data-backend:8000/api/v1
       EXECUTION_TINVEST_TOKEN: ${EXECUTION_TINVEST_TOKEN:-}
       tinvest_token: ${tinvest_token:-}
@@ -214,6 +245,7 @@ services:
         - *app-database-environment
         - *event-log-database-environment
         - *auth-jwt-environment
+        - *observability-environment
       AUTH_ACCESS_TOKEN_TTL_MINUTES: ${AUTH_ACCESS_TOKEN_TTL_MINUTES:-30}
       AUTH_REFRESH_TOKEN_TTL_DAYS: ${AUTH_REFRESH_TOKEN_TTL_DAYS:-7}
     depends_on:
@@ -232,11 +264,258 @@ services:
       <<:
         - *event-log-database-environment
         - *auth-jwt-environment
+        - *observability-environment
     depends_on:
       event-log-postgres:
         condition: service_healthy
     expose:
       - "8000"
+
+  prometheus:
+    image: prom/prometheus:v3.0.1
+    restart: unless-stopped
+    profiles: ["observability"]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    volumes:
+      - ./infra/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/observability/prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+      - prometheus-data:/prometheus
+    expose:
+      - "9090"
+    depends_on:
+      - data-backend
+      - strategy-backend
+      - ga-backend
+      - execution-backend
+      - tech-system-backend
+      - event-log-backend
+      - alertmanager
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    restart: unless-stopped
+    profiles: ["observability"]
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    volumes:
+      - ./infra/observability/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    expose:
+      - "9093"
+
+  grafana:
+    image: grafana/grafana-oss:11.4.0
+    restart: unless-stopped
+    profiles: ["observability"]
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:8080/grafana/}
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_INSTALL_PLUGINS: grafana-opensearch-datasource
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./infra/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      - prometheus
+
+  opensearch:
+    image: opensearchproject/opensearch:2.18.0
+    restart: unless-stopped
+    profiles: ["observability"]
+    environment:
+      discovery.type: single-node
+      OPENSEARCH_JAVA_OPTS: ${OPENSEARCH_JAVA_OPTS:--Xms512m -Xmx512m}
+      DISABLE_SECURITY_PLUGIN: "true"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+      - ./infra/observability/opensearch/opensearch.yml:/usr/share/opensearch/config/opensearch.yml:ro
+    ports:
+      - "${OPENSEARCH_PORT:-9200}:9200"
+    expose:
+      - "9600"
+
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:2.18.0
+    restart: unless-stopped
+    profiles: ["observability"]
+    environment:
+      DISABLE_SECURITY_DASHBOARDS_PLUGIN: "true"
+    volumes:
+      - ./infra/observability/opensearch/dashboards.yml:/usr/share/opensearch-dashboards/config/opensearch_dashboards.yml:ro
+    ports:
+      - "${OPENSEARCH_DASHBOARDS_PORT:-5601}:5601"
+    depends_on:
+      - opensearch
+
+  opensearch-bootstrap:
+    image: curlimages/curl:8.11.1
+    restart: "no"
+    profiles: ["observability"]
+    entrypoint: ["/bin/sh", "/bootstrap/bootstrap.sh"]
+    environment:
+      OPENSEARCH_URL: http://opensearch:9200
+      OPENSEARCH_DASHBOARDS_URL: http://opensearch-dashboards:5601
+      OPENSEARCH_DASHBOARDS_VERSION: "2.18.0"
+      OPENSEARCH_LOG_INDEX_PREFIX: ${OPENSEARCH_LOG_INDEX_PREFIX:-its-app-logs}
+      OPENSEARCH_LOG_INDEX_PATTERN: ${OPENSEARCH_LOG_INDEX_PATTERN:-its-app-logs-*}
+      OPENSEARCH_LOG_INDEX_PATTERN_ID: ${OPENSEARCH_LOG_INDEX_PATTERN_ID:-its-app-logs}
+      OPENSEARCH_LOG_TIME_FIELD: ${OPENSEARCH_LOG_TIME_FIELD:-@timestamp}
+    volumes:
+      - ./infra/observability/opensearch:/bootstrap:ro
+    depends_on:
+      - opensearch
+      - opensearch-dashboards
+
+  fluent-bit:
+    image: fluent/fluent-bit:3.2.4
+    restart: unless-stopped
+    profiles: ["observability"]
+    environment:
+      OBSERVABILITY_ENVIRONMENT: ${OBSERVABILITY_ENVIRONMENT:-dev}
+    volumes:
+      - ./infra/observability/fluent-bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+      - ./infra/observability/fluent-bit/parsers.conf:/fluent-bit/etc/parsers.conf:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    expose:
+      - "2020"
+    depends_on:
+      opensearch:
+        condition: service_started
+      opensearch-bootstrap:
+        condition: service_completed_successfully
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.115.1
+    restart: unless-stopped
+    profiles: ["observability"]
+    command: ["--config=/etc/otelcol-contrib/config.yml"]
+    volumes:
+      - ./infra/observability/otel-collector/config.yml:/etc/otelcol-contrib/config.yml:ro
+    expose:
+      - "4317"
+      - "4318"
+      - "8888"
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.16.0
+    restart: unless-stopped
+    profiles: ["observability"]
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER:-its}:${POSTGRES_PASSWORD:-its_password}@postgres:5432/${POSTGRES_DB:-its}?sslmode=disable"
+    expose:
+      - "9187"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  event-log-postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.16.0
+    restart: unless-stopped
+    profiles: ["observability"]
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${EVENT_LOG_POSTGRES_USER:-its_event_log}:${EVENT_LOG_POSTGRES_PASSWORD:-its_event_log_password}@event-log-postgres:5432/${EVENT_LOG_POSTGRES_DB:-its_event_log}?sslmode=disable"
+    expose:
+      - "9187"
+    depends_on:
+      event-log-postgres:
+        condition: service_healthy
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.51.0
+    restart: unless-stopped
+    profiles: ["observability"]
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    expose:
+      - "8080"
+
+  glitchtip-postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    profiles: ["observability"]
+    environment:
+      POSTGRES_DB: ${GLITCHTIP_POSTGRES_DB:-glitchtip}
+      POSTGRES_USER: ${GLITCHTIP_POSTGRES_USER:-glitchtip}
+      POSTGRES_PASSWORD: ${GLITCHTIP_POSTGRES_PASSWORD:-glitchtip_password}
+      PGDATA: /var/lib/postgresql/18/docker
+    volumes:
+      - glitchtip-postgres-data:/var/lib/postgresql/18/docker
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  glitchtip-redis:
+    image: valkey/valkey:8-alpine
+    restart: unless-stopped
+    profiles: ["observability"]
+    expose:
+      - "6379"
+
+  glitchtip-web:
+    image: glitchtip/glitchtip:latest
+    restart: unless-stopped
+    profiles: ["observability"]
+    environment:
+      <<: *glitchtip-environment
+      PORT: 8000
+    ports:
+      - "${GLITCHTIP_PORT:-8001}:8000"
+    depends_on:
+      glitchtip-redis:
+        condition: service_started
+      glitchtip-migrate:
+        condition: service_completed_successfully
+
+  glitchtip-migrate:
+    image: glitchtip/glitchtip:latest
+    restart: "no"
+    profiles: ["observability"]
+    command: ["sh", "/bootstrap/bootstrap.sh"]
+    environment:
+      <<: *glitchtip-environment
+    volumes:
+      - ./infra/observability/glitchtip/bootstrap.sh:/bootstrap/bootstrap.sh:ro
+    depends_on:
+      glitchtip-postgres:
+        condition: service_healthy
+      glitchtip-redis:
+        condition: service_started
+
+  glitchtip-worker:
+    image: glitchtip/glitchtip:latest
+    restart: unless-stopped
+    profiles: ["observability"]
+    command: ["./bin/run-celery-with-beat.sh"]
+    environment:
+      <<: *glitchtip-environment
+    depends_on:
+      glitchtip-web:
+        condition: service_started
+      glitchtip-migrate:
+        condition: service_completed_successfully
 
   tech-system-ui:
     build:
@@ -284,6 +563,11 @@ services:
 volumes:
   postgres-data:
   event-log-postgres-data:
+  prometheus-data:
+  alertmanager-data:
+  grafana-data:
+  opensearch-data:
+  glitchtip-postgres-data:
   t-invest-cache:
   strategy-test-cache:
   ga-cache:

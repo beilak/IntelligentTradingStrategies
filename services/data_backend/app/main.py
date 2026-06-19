@@ -38,6 +38,7 @@ from its.authz.permissions import Permissions
 from its.db.models import RSSItem
 from its.db.session import get_session
 from its.event_log.integration import install_event_log
+from its.observability import install_observability
 
 API_PREFIX = "/api/v1"
 DEFAULT_CLASS_CODE = "TQBR"
@@ -213,6 +214,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    install_observability(app, service_name="data-backend")
     install_event_log(app, service_name="data-backend")
 
     gateway = TInvestGateway()

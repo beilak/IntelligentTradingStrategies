@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from its.event_log.integration import install_event_log
+from its.observability import install_observability
 from its.tech_system.auth.router import router as auth_router
 
 API_PREFIX = "/api/v1"
@@ -22,6 +23,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    install_observability(app, service_name="tech-system-backend")
     install_event_log(app, service_name="tech-system-backend")
 
     @app.get(f"{API_PREFIX}/health")

@@ -17,6 +17,7 @@ from its.authz.permissions import Permissions
 from its.db.models.strategy import TradingStrategyProductionState
 from its.db.session import get_session
 from its.event_log.integration import install_event_log
+from its.observability import install_observability
 from services.strategy_backend.app.backtest import router as backtest_router
 from services.strategy_backend.app.comparison import router as comparison_router
 from services.strategy_backend.app.cpcv import router as cpcv_router
@@ -81,6 +82,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    install_observability(app, service_name="strategy-backend")
     install_event_log(app, service_name="strategy-backend")
     app.include_router(backtest_router, prefix=API_PREFIX)
     app.include_router(comparison_router, prefix=API_PREFIX)

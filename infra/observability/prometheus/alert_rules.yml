@@ -1,0 +1,39 @@
+groups:
+  - name: its-platform
+    rules:
+      - alert: ITSServiceDown
+        expr: up{job="its-fastapi"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ITS service is down"
+          description: "{{ $labels.instance }} is not exposing metrics."
+
+      - alert: ITSHighServerErrorRate
+        expr: |
+          sum(rate(its_http_requests_total{status_class="5xx"}[5m])) by (service)
+          /
+          clamp_min(sum(rate(its_http_requests_total[5m])) by (service), 1)
+          > 0.02
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High 5xx rate in {{ $labels.service }}"
+
+      - alert: ITSAuditLogWriteFailures
+        expr: increase(its_audit_write_failures_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Audit log write failures detected"
+
+      - alert: ITSContainerRestarting
+        expr: increase(container_start_time_seconds{name!=""}[10m]) > 1
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container restarted recently"

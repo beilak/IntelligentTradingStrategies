@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from its.event_log.integration import install_event_log
 from its.event_log.router import router as event_log_router
+from its.observability import install_observability
 
 API_PREFIX = "/api/v1"
 
@@ -22,6 +23,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    install_observability(app, service_name="event-log-backend")
     install_event_log(app, service_name="event-log-backend")
 
     @app.get(f"{API_PREFIX}/health")
@@ -30,4 +32,3 @@ def create_app() -> FastAPI:
 
     app.include_router(event_log_router, prefix=API_PREFIX)
     return app
-

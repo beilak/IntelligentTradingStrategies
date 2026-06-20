@@ -14,6 +14,7 @@ const DOCS = {
     ["11-scientific-basis.md", "Научная база"],
     ["12-glossary.md", "Глоссарий"],
     ["13-registration-certificate.md", "Свидетельство"],
+    ["14-registration-certificate.md", "Execution и технические сервисы"],
   ],
   en: [
     ["README.md", "Contents"],
@@ -30,6 +31,7 @@ const DOCS = {
     ["11-scientific-basis.md", "Scientific Basis"],
     ["12-glossary.md", "Glossary"],
     ["13-registration-certificate.md", "Certificate"],
+    ["14-registration-certificate.md", "Execution and Technical Services"],
   ],
 };
 
@@ -65,13 +67,19 @@ renderNav();
 loadCurrentDocument();
 
 function renderNav() {
-  nav.innerHTML = docsForLanguage().map(
-    ([file, title]) => `<a href="${appUrl(`?lang=${activeLanguage}&file=${encodeURIComponent(file)}`)}" data-file="${escapeAttr(file)}">${escapeHtml(title)}</a>`,
-  ).join("");
+  nav.innerHTML = docsForLanguage()
+    .map(
+      ([file, title]) =>
+        `<a href="${appUrl(`?lang=${activeLanguage}&file=${encodeURIComponent(file)}`)}" data-file="${escapeAttr(file)}">${escapeHtml(title)}</a>`,
+    )
+    .join("");
   langRu.classList.toggle("active", activeLanguage === "ru");
   langEn.classList.toggle("active", activeLanguage === "en");
   pdfLink.href = appUrl(`pdf/its_documentation_${activeLanguage}.pdf`);
-  pdfLink.title = activeLanguage === "en" ? "Download complete documentation as PDF" : "Скачать всю документацию в PDF";
+  pdfLink.title =
+    activeLanguage === "en"
+      ? "Download complete documentation as PDF"
+      : "Скачать всю документацию в PDF";
   pdfLink.setAttribute("download", `its_documentation_${activeLanguage}.pdf`);
 }
 
@@ -88,7 +96,10 @@ async function loadCurrentDocument() {
     document.title = `${titleFor(file)} - ITS Documentation`;
     bindDocumentLinks();
   } catch (error) {
-    const message = activeLanguage === "en" ? "Failed to load file" : "Не удалось загрузить файл";
+    const message =
+      activeLanguage === "en"
+        ? "Failed to load file"
+        : "Не удалось загрузить файл";
     content.innerHTML = `<p class="error">${message} ${escapeHtml(file)}.</p>`;
   }
 }
@@ -101,7 +112,8 @@ function currentFile() {
 
 function currentLanguage() {
   const params = new URLSearchParams(window.location.search);
-  const requested = params.get("lang") || localStorage.getItem("its-docs-language") || "ru";
+  const requested =
+    params.get("lang") || localStorage.getItem("its-docs-language") || "ru";
   return requested === "en" ? "en" : "ru";
 }
 
@@ -109,7 +121,11 @@ function setLanguage(language) {
   activeLanguage = language === "en" ? "en" : "ru";
   localStorage.setItem("its-docs-language", activeLanguage);
   const file = currentFile();
-  history.pushState(null, "", appUrl(`?lang=${activeLanguage}&file=${encodeURIComponent(file)}`));
+  history.pushState(
+    null,
+    "",
+    appUrl(`?lang=${activeLanguage}&file=${encodeURIComponent(file)}`),
+  );
   renderNav();
   loadCurrentDocument();
 }
@@ -126,7 +142,9 @@ function rawMarkdownUrls(file) {
   const prefix = activeLanguage === "en" ? "en/" : "";
   const rawAlias = appUrl(`raw/${prefix}${file}`);
   const directFile = appUrl(`${prefix}${file}`);
-  return appBasePath === "/docs/" ? [rawAlias, directFile] : [directFile, rawAlias];
+  return appBasePath === "/docs/"
+    ? [rawAlias, directFile]
+    : [directFile, rawAlias];
 }
 
 async function fetchMarkdown(file) {
@@ -151,7 +169,6 @@ async function fetchMarkdown(file) {
   throw lastError || new Error("Unable to load Markdown");
 }
 
-
 function setActiveNav(file) {
   nav.querySelectorAll("a").forEach((link) => {
     link.classList.toggle("active", link.dataset.file === file);
@@ -174,7 +191,11 @@ function bindDocumentLinks() {
     }
     link.addEventListener("click", (event) => {
       event.preventDefault();
-      history.pushState(null, "", appUrl(`?lang=${activeLanguage}&file=${encodeURIComponent(file)}`));
+      history.pushState(
+        null,
+        "",
+        appUrl(`?lang=${activeLanguage}&file=${encodeURIComponent(file)}`),
+      );
       loadCurrentDocument();
     });
   });
@@ -224,7 +245,9 @@ function renderMarkdown(markdown) {
     if (heading) {
       const level = heading[1].length;
       const text = heading[2].trim();
-      html.push(`<h${level} id="${escapeAttr(slugify(text))}">${inlineMarkdown(text)}</h${level}>`);
+      html.push(
+        `<h${level} id="${escapeAttr(slugify(text))}">${inlineMarkdown(text)}</h${level}>`,
+      );
       i += 1;
       continue;
     }
@@ -251,7 +274,9 @@ function renderMarkdown(markdown) {
         items.push(lines[i].replace(/^\s*[-*+]\s+/, ""));
         i += 1;
       }
-      html.push(`<ul>${items.map((item) => `<li>${inlineMarkdown(item)}</li>`).join("")}</ul>`);
+      html.push(
+        `<ul>${items.map((item) => `<li>${inlineMarkdown(item)}</li>`).join("")}</ul>`,
+      );
       continue;
     }
 
@@ -261,7 +286,9 @@ function renderMarkdown(markdown) {
         items.push(lines[i].replace(/^\s*\d+\.\s+/, ""));
         i += 1;
       }
-      html.push(`<ol>${items.map((item) => `<li>${inlineMarkdown(item)}</li>`).join("")}</ol>`);
+      html.push(
+        `<ol>${items.map((item) => `<li>${inlineMarkdown(item)}</li>`).join("")}</ol>`,
+      );
       continue;
     }
 
@@ -306,7 +333,12 @@ function renderTable(lines) {
     headers.map((cell) => `<th>${inlineMarkdown(cell)}</th>`).join(""),
     "</tr></thead>",
     "<tbody>",
-    rows.map((row) => `<tr>${row.map((cell) => `<td>${inlineMarkdown(cell)}</td>`).join("")}</tr>`).join(""),
+    rows
+      .map(
+        (row) =>
+          `<tr>${row.map((cell) => `<td>${inlineMarkdown(cell)}</td>`).join("")}</tr>`,
+      )
+      .join(""),
     "</tbody></table>",
   ].join("");
 }
@@ -366,7 +398,9 @@ function resolveAssetUrl(target) {
 }
 
 function getAppBasePath() {
-  const scriptUrl = document.currentScript?.src || new URL("viewer.js", window.location.href).href;
+  const scriptUrl =
+    document.currentScript?.src ||
+    new URL("viewer.js", window.location.href).href;
   const path = new URL(scriptUrl, window.location.href).pathname;
   return path.replace(/[^/]*$/, "");
 }

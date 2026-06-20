@@ -21,6 +21,7 @@ from its.observability import install_observability
 from services.strategy_backend.app.backtest import router as backtest_router
 from services.strategy_backend.app.comparison import router as comparison_router
 from services.strategy_backend.app.cpcv import router as cpcv_router
+from services.strategy_backend.app.risk_model import router as risk_model_router
 from services.strategy_backend.app.trading_strategy_backtest import (
     router as trading_strategy_backtest_router,
 )
@@ -87,6 +88,7 @@ def create_app() -> FastAPI:
     app.include_router(backtest_router, prefix=API_PREFIX)
     app.include_router(comparison_router, prefix=API_PREFIX)
     app.include_router(cpcv_router, prefix=API_PREFIX)
+    app.include_router(risk_model_router, prefix=API_PREFIX)
     app.include_router(trading_strategy_backtest_router, prefix=API_PREFIX)
     app.include_router(walk_forward_router, prefix=API_PREFIX)
 
@@ -152,6 +154,7 @@ def create_app() -> FastAPI:
                 {"id": "cpcv", "title": "CPCV", "status": "available"},
                 {"id": "walk_forward", "title": "WalkForward", "status": "available"},
                 {"id": "backtesting", "title": "Backtesting", "status": "available"},
+                {"id": "risk_models", "title": "Risk Models", "status": "available"},
             ],
         }
 

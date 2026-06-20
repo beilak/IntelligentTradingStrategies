@@ -7,6 +7,10 @@ import type {
   CpcvSettings,
   ModelDetail,
   RegistryResponse,
+  RiskModelDefinition,
+  RiskModelResult,
+  RiskModelSavedTest,
+  RiskModelSettings,
   TradingStrategyListItem,
   TradingStrategyProductionState,
   StrategyComparisonResult,
@@ -111,6 +115,45 @@ export async function runBacktestTest(
     method: "POST",
     body: JSON.stringify(settings),
   });
+}
+
+export async function listAvailableRiskModels(modelName: string): Promise<{ items: RiskModelDefinition[] }> {
+  return request<{ items: RiskModelDefinition[] }>(
+    `/models/${encodeURIComponent(modelName)}/risk-models/available`,
+  );
+}
+
+export async function listRiskModelTests(
+  modelName: string,
+  riskModel: string,
+): Promise<{ items: RiskModelSavedTest[] }> {
+  return request<{ items: RiskModelSavedTest[] }>(
+    `/models/${encodeURIComponent(modelName)}/risk-models/${encodeURIComponent(riskModel)}/tests`,
+  );
+}
+
+export async function getRiskModelTest(
+  modelName: string,
+  riskModel: string,
+  testName: string,
+): Promise<RiskModelResult> {
+  return request<RiskModelResult>(
+    `/models/${encodeURIComponent(modelName)}/risk-models/${encodeURIComponent(riskModel)}/tests/${encodeURIComponent(testName)}`,
+  );
+}
+
+export async function runRiskModelTest(
+  modelName: string,
+  riskModel: string,
+  settings: RiskModelSettings,
+): Promise<RiskModelResult> {
+  return request<RiskModelResult>(
+    `/models/${encodeURIComponent(modelName)}/risk-models/${encodeURIComponent(riskModel)}/run`,
+    {
+      method: "POST",
+      body: JSON.stringify(settings),
+    },
+  );
 }
 
 export async function listTradingStrategyBacktestTests(

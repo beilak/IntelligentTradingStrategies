@@ -338,6 +338,128 @@ export interface BacktestResult {
   }>;
 }
 
+export interface RiskModelDefinition {
+  id: string;
+  title: string;
+  metric: string;
+  engine: string;
+}
+
+export interface RiskModelSettings {
+  test_name: string;
+  start_date: string;
+  end_date: string;
+  interval: string;
+  class_code: string;
+  test_size: number;
+  portfolio_value: number;
+  confidence_level: number;
+  horizon_days: number;
+  n_simulations: number;
+  simulation_method: "historical_bootstrap" | "multivariate_normal";
+  random_state: number;
+  n_buckets: number;
+  qae_iterations: number;
+  qae_shots: number;
+}
+
+export interface RiskModelSavedTest {
+  file_name: string;
+  test_name: string;
+  model_name: string;
+  risk_model: string;
+  risk_model_title: string;
+  generated_at: string;
+  settings: Partial<RiskModelSettings>;
+  train_period: Partial<CpcvPeriod>;
+  test_period: Partial<CpcvPeriod>;
+  asset_count: number;
+  scenario_count: number;
+}
+
+export interface RiskModelMetricRow {
+  metric: string;
+  value: string;
+  numeric_value: number | null;
+}
+
+export interface RiskModelResult {
+  metadata: {
+    model_name: string;
+    strategy_name: string;
+    strategy_description: string;
+    test_name: string;
+    test_type: string;
+    risk_model: string;
+    risk_model_title: string;
+    engine: string;
+    generated_at: string;
+    settings: RiskModelSettings;
+    train_period: CpcvPeriod;
+    test_period: CpcvPeriod;
+    assets: Array<{
+      figi: string;
+      ticker: string;
+      name: string;
+      sector?: string | null;
+    }>;
+    asset_count: number;
+    scenario_count: number;
+    confidence_level: number;
+    horizon_days: number;
+  };
+  summary: RiskModelMetricRow[];
+  report: RiskModelMetricRow[];
+  portfolio_weights: Array<{
+    ticker: string;
+    weight: number;
+    figi?: string | null;
+    name?: string | null;
+    sector?: string | null;
+  }>;
+  loss_distribution: {
+    name: string;
+    var_threshold: number;
+    bins: Array<{
+      loss: number;
+      probability: number;
+      count: number;
+      cumulative_probability: number;
+      is_tail: boolean;
+    }>;
+  };
+  cumulative_distribution: {
+    name: string;
+    points: Array<{ x: number; y: number }>;
+  };
+  simulated_paths?: {
+    name: string;
+    paths: Array<{
+      name: string;
+      final_value: number;
+      points: Array<{ x: number; y: number }>;
+    }>;
+  };
+  historical_portfolio_curve: {
+    name: string;
+    final_value: number | null;
+    points: Array<{ time: string; value: number }>;
+  };
+  qae_distribution?: {
+    bucket_count: number;
+    qubits: number;
+    buckets: Array<{
+      bucket: number;
+      loss: number;
+      probability: number;
+      count: number;
+    }>;
+  } | null;
+  qae?: Record<string, number | string | null> | null;
+  reference?: Record<string, number | string | null> | null;
+  interpretation: string;
+}
+
 export interface StrategyComparisonResult {
   generated_at: string;
   eligible_count: number;

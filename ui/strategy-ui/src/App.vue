@@ -3,6 +3,7 @@ import {
     BarChart3,
     Boxes,
     BrainCircuit,
+    ChevronDown,
     CircleHelp,
     DatabaseZap,
     FolderOpen,
@@ -14,6 +15,7 @@ import {
     RefreshCw,
     Scale,
     SearchCheck,
+    ShieldAlert,
     Trophy,
     X,
 } from "lucide-vue-next";
@@ -24,16 +26,20 @@ import {
     getLatestStrategyComparison,
     getModelDetail,
     getRegistry,
+    getRiskModelTest,
     getTradingStrategyBacktestTest,
     getTradingStrategyDetail,
     getWalkForwardTest,
+    listAvailableRiskModels,
     listBacktestTests,
     listCpcvTests,
+    listRiskModelTests,
     listTradingStrategies,
     listTradingStrategyBacktestTests,
     listWalkForwardTests,
     runBacktestTest,
     runCpcvTest,
+    runRiskModelTest,
     setTradingStrategyProdReady,
     runTradingStrategyBacktestTest,
     runWalkForwardTest,
@@ -51,6 +57,10 @@ import type {
     RegistryGroup,
     RegistryItem,
     RegistryResponse,
+    RiskModelDefinition,
+    RiskModelResult,
+    RiskModelSavedTest,
+    RiskModelSettings,
     StrategyComparisonResult,
     TradingStrategyProductionState,
     WalkForwardResult,
@@ -77,11 +87,14 @@ const isWalkForwardRunning = ref(false);
 const isWalkForwardLoading = ref(false);
 const isBacktestRunning = ref(false);
 const isBacktestLoading = ref(false);
+const isRiskModelRunning = ref(false);
+const isRiskModelLoading = ref(false);
 const isComparisonLoading = ref(false);
 const error = ref("");
 const cpcvError = ref("");
 const walkForwardError = ref("");
 const backtestError = ref("");
+const riskModelError = ref("");
 const comparisonError = ref("");
 const prodStateError = ref("");
 const isProdStateUpdating = ref(false);
@@ -89,22 +102,30 @@ const prodCommentDraft = ref("");
 const savedCpcvTests = ref<CpcvSavedTest[]>([]);
 const savedWalkForwardTests = ref<WalkForwardSavedTest[]>([]);
 const savedBacktestTests = ref<BacktestSavedTest[]>([]);
+const savedRiskModelTests = ref<RiskModelSavedTest[]>([]);
+const availableRiskModels = ref<RiskModelDefinition[]>([]);
 const cpcvResult = ref<CpcvResult | null>(null);
 const walkForwardResult = ref<WalkForwardResult | null>(null);
 const backtestResult = ref<BacktestResult | null>(null);
+const riskModelResult = ref<RiskModelResult | null>(null);
 const comparisonResult = ref<StrategyComparisonResult | null>(null);
 const cpcvSettings = ref<CpcvSettings>(defaultCpcvSettings());
 const walkForwardSettings = ref<WalkForwardSettings>(
     defaultWalkForwardSettings(),
 );
 const backtestSettings = ref<BacktestSettings>(defaultBacktestSettings());
+const riskModelSettings = ref<RiskModelSettings>(defaultRiskModelSettings());
+const activeRiskModelId = ref("monte_carlo");
+const activeFieldTooltip = ref("");
 const showCpcvModal = ref(false);
 const showWalkForwardModal = ref(false);
 const showBacktestModal = ref(false);
+const showRiskModelModal = ref(false);
+const showRiskModelMenu = ref(false);
 const showComparisonModal = ref(false);
 const showAssetsModal = ref(false);
 const showWeightsModal = ref(false);
-const activeAssetsSource = ref<"cpcv" | "walkForward">("cpcv");
+const activeAssetsSource = ref<"cpcv" | "walkForward" | "riskModel">("cpcv");
 const selectedWeightRecord = ref<
     BacktestResult["rebalance_weights"][number] | null
 >(null);
@@ -120,6 +141,14 @@ const backtestDrawdownXAxisLabels = ref<Array<{ x: number; text: string }>>([]);
 const backtestDrawdownYAxisLabels = ref<Array<{ y: number; text: string }>>([]);
 const backtestSharpeXAxisLabels = ref<Array<{ x: number; text: string }>>([]);
 const backtestSharpeYAxisLabels = ref<Array<{ y: number; text: string }>>([]);
+const riskHistoricalXAxisLabels = ref<Array<{ x: number; text: string }>>([]);
+const riskHistoricalYAxisLabels = ref<Array<{ y: number; text: string }>>([]);
+const riskDistributionXAxisLabels = ref<Array<{ x: number; text: string }>>([]);
+const riskDistributionYAxisLabels = ref<Array<{ y: number; text: string }>>([]);
+const riskCdfXAxisLabels = ref<Array<{ x: number; text: string }>>([]);
+const riskCdfYAxisLabels = ref<Array<{ y: number; text: string }>>([]);
+const riskPathsXAxisLabels = ref<Array<{ x: number; text: string }>>([]);
+const riskPathsYAxisLabels = ref<Array<{ y: number; text: string }>>([]);
 const isFullscreen = ref(false);
 const chartContainer = ref<HTMLElement | null>(null);
 const walkForwardChartContainer = ref<HTMLElement | null>(null);
@@ -140,6 +169,32 @@ const isTradingStrategyTab = computed(
 const isTestableStrategyTab = computed(
     () => isCoreStrategyTab.value || isTradingStrategyTab.value,
 );
+const fallbackRiskModels: RiskModelDefinition[] = [
+    {
+        id: "monte_carlo",
+        title: "Monte Carlo",
+        metric: "VaR/CVaR",
+        engine: "monte_carlo",
+    },
+    {
+        id: "qae",
+        title: "QAE (Quantum Amplitude Estimation)",
+        metric: "VaR/CVaR",
+        engine: "qae_style_discrete",
+    },
+];
+const riskModelOptions = computed(() =>
+    availableRiskModels.value.length
+        ? availableRiskModels.value
+        : fallbackRiskModels,
+);
+const activeRiskModel = computed(
+    () =>
+        riskModelOptions.value.find(
+            (item) => item.id === activeRiskModelId.value,
+        ) ?? fallbackRiskModels[0],
+);
+const isQaeRiskModel = computed(() => activeRiskModel.value.engine.includes("qae"));
 const chartLines = computed(() => buildChartLines(cpcvResult.value));
 const walkForwardChartLines = computed(() =>
     buildChartLines(walkForwardResult.value, wfXAxisLabels, wfYAxisLabels),
@@ -194,15 +249,70 @@ const backtestSharpeLines = computed(() =>
         ["#ffcc66"],
     ),
 );
+const riskHistoricalLines = computed(() =>
+    buildChartLines(
+        curveToChartResult(riskModelResult.value?.historical_portfolio_curve),
+        riskHistoricalXAxisLabels,
+        riskHistoricalYAxisLabels,
+        "money",
+        ["#aee9d1"],
+    ),
+);
+const riskDistributionBars = computed(() =>
+    buildHistogramBars(
+        riskModelResult.value?.loss_distribution,
+        riskDistributionXAxisLabels,
+        riskDistributionYAxisLabels,
+    ),
+);
+const riskCdfLines = computed(() =>
+    buildNumericChartLines(
+        riskModelResult.value?.cumulative_distribution.points ?? [],
+        riskCdfXAxisLabels,
+        riskCdfYAxisLabels,
+        "money",
+        "percent",
+        ["#66d9ef"],
+    ),
+);
+const riskScenarioPathLines = computed(() =>
+    buildNumericMultiPathLines(
+        riskModelResult.value?.simulated_paths?.paths ?? [],
+        riskPathsXAxisLabels,
+        riskPathsYAxisLabels,
+        "number",
+        "money",
+    ),
+);
+
+function toggleFieldTooltip(key: string) {
+    activeFieldTooltip.value = activeFieldTooltip.value === key ? "" : key;
+}
+
+function tooltipText(value: string | string[]) {
+    return Array.isArray(value) ? value.join(" ") : value;
+}
+const riskCvarSummaryValue = computed(() => {
+    const rows = riskModelResult.value?.summary ?? [];
+    return (
+        rows.find((row) => row.metric === "CVaR")?.value ??
+        rows.find((row) => row.metric === "CVaR Reference")?.value ??
+        "—"
+    );
+});
 const activeAssets = computed(() =>
     activeAssetsSource.value === "walkForward"
         ? (walkForwardResult.value?.metadata.assets ?? [])
-        : (cpcvResult.value?.metadata.assets ?? []),
+        : activeAssetsSource.value === "riskModel"
+          ? (riskModelResult.value?.metadata.assets ?? [])
+          : (cpcvResult.value?.metadata.assets ?? []),
 );
 const activeAssetCount = computed(() =>
     activeAssetsSource.value === "walkForward"
         ? (walkForwardResult.value?.metadata.asset_count ?? 0)
-        : (cpcvResult.value?.metadata.asset_count ?? 0),
+        : activeAssetsSource.value === "riskModel"
+          ? (riskModelResult.value?.metadata.asset_count ?? 0)
+          : (cpcvResult.value?.metadata.asset_count ?? 0),
 );
 const pieSegments = computed(() =>
     buildPieSegments(selectedWeightRecord.value),
@@ -232,6 +342,12 @@ const currentProdState = computed<TradingStrategyProductionState | null>(() => {
 });
 
 watch(locale, (value) => localStorage.setItem("its-strategy-locale", value));
+watch(activeRiskModelId, async (value) => {
+    if (!showRiskModelModal.value || !selectedModelName.value) return;
+    riskModelResult.value = null;
+    riskModelError.value = "";
+    await loadSavedRiskModelTests(selectedModelName.value, value);
+});
 
 onMounted(async () => {
     await loadRegistry();
@@ -276,13 +392,17 @@ async function loadModel(modelName: string) {
         cpcvResult.value = null;
         walkForwardResult.value = null;
         backtestResult.value = null;
+        riskModelResult.value = null;
         cpcvError.value = "";
         walkForwardError.value = "";
         backtestError.value = "";
+        riskModelError.value = "";
         comparisonError.value = "";
+        await loadAvailableRiskModels(modelName);
         await loadSavedCpcvTests(modelName);
         await loadSavedWalkForwardTests(modelName);
         await loadSavedBacktestTests(modelName);
+        await loadSavedRiskModelTests(modelName, activeRiskModelId.value);
     } catch (err) {
         error.value = formatError(err);
     } finally {
@@ -301,12 +421,16 @@ async function loadTradingStrategy(strategyName: string) {
         cpcvResult.value = null;
         walkForwardResult.value = null;
         backtestResult.value = null;
+        riskModelResult.value = null;
         cpcvError.value = "";
         walkForwardError.value = "";
         backtestError.value = "";
+        riskModelError.value = "";
         comparisonError.value = "";
         savedCpcvTests.value = [];
         savedWalkForwardTests.value = [];
+        savedRiskModelTests.value = [];
+        availableRiskModels.value = [];
         await loadSavedBacktestTests(strategyName);
     } catch (err) {
         error.value = formatError(err);
@@ -561,6 +685,92 @@ function backendBacktestSettings(): BacktestSettings {
     };
 }
 
+async function loadAvailableRiskModels(modelName = selectedModelName.value) {
+    if (!modelName || !isCoreStrategyTab.value) return;
+    try {
+        availableRiskModels.value = (await listAvailableRiskModels(modelName)).items;
+        if (
+            availableRiskModels.value.length &&
+            !availableRiskModels.value.some(
+                (item) => item.id === activeRiskModelId.value,
+            )
+        ) {
+            activeRiskModelId.value = availableRiskModels.value[0].id;
+        }
+    } catch (err) {
+        riskModelError.value = formatError(err);
+    }
+}
+
+async function openRiskModel(riskModel: string) {
+    if (!selectedModelName.value) return;
+    activeRiskModelId.value = riskModel;
+    showRiskModelMenu.value = false;
+    showRiskModelModal.value = true;
+    riskModelResult.value = null;
+    riskModelError.value = "";
+    await loadSavedRiskModelTests(selectedModelName.value, riskModel);
+}
+
+async function loadSavedRiskModelTests(
+    modelName = selectedModelName.value,
+    riskModel = activeRiskModelId.value,
+) {
+    if (!modelName || !riskModel || !isCoreStrategyTab.value) return;
+    isRiskModelLoading.value = true;
+    try {
+        savedRiskModelTests.value = (
+            await listRiskModelTests(modelName, riskModel)
+        ).items;
+    } catch (err) {
+        riskModelError.value = formatError(err);
+    } finally {
+        isRiskModelLoading.value = false;
+    }
+}
+
+async function openRiskModelTest(testName: string) {
+    if (!selectedModelName.value) return;
+    isRiskModelLoading.value = true;
+    riskModelError.value = "";
+    try {
+        riskModelResult.value = await getRiskModelTest(
+            selectedModelName.value,
+            activeRiskModelId.value,
+            testName,
+        );
+        riskModelSettings.value = {
+            ...riskModelSettings.value,
+            ...riskModelResult.value.metadata.settings,
+        };
+    } catch (err) {
+        riskModelError.value = formatError(err);
+    } finally {
+        isRiskModelLoading.value = false;
+    }
+}
+
+async function runRiskModel() {
+    if (!selectedModelName.value) return;
+    isRiskModelRunning.value = true;
+    riskModelError.value = "";
+    try {
+        riskModelResult.value = await runRiskModelTest(
+            selectedModelName.value,
+            activeRiskModelId.value,
+            riskModelSettings.value,
+        );
+        await loadSavedRiskModelTests(
+            selectedModelName.value,
+            activeRiskModelId.value,
+        );
+    } catch (err) {
+        riskModelError.value = formatError(err);
+    } finally {
+        isRiskModelRunning.value = false;
+    }
+}
+
 function defaultCpcvSettings(): CpcvSettings {
     const end = new Date();
     const start = new Date(end);
@@ -618,6 +828,29 @@ function defaultBacktestSettings(): BacktestSettings {
     };
 }
 
+function defaultRiskModelSettings(): RiskModelSettings {
+    const end = new Date();
+    const start = new Date(end);
+    start.setFullYear(start.getFullYear() - 3);
+    return {
+        test_name: "baseline",
+        start_date: toDateInput(start),
+        end_date: toDateInput(end),
+        interval: "CANDLE_INTERVAL_DAY",
+        class_code: "TQBR",
+        test_size: 0.33,
+        portfolio_value: 1_000_000,
+        confidence_level: 0.95,
+        horizon_days: 1,
+        n_simulations: 50_000,
+        simulation_method: "historical_bootstrap",
+        random_state: 42,
+        n_buckets: 64,
+        qae_iterations: 12,
+        qae_shots: 2_000,
+    };
+}
+
 function toDateInput(value: Date) {
     return value.toISOString().slice(0, 10);
 }
@@ -634,6 +867,14 @@ function updateInitCash(event: Event) {
     const value = Number(raw);
     if (Number.isFinite(value)) {
         backtestSettings.value.init_cash = value;
+    }
+}
+
+function updateRiskPortfolioValue(event: Event) {
+    const raw = (event.target as HTMLInputElement).value.replace(/\s/g, "");
+    const value = Number(raw);
+    if (Number.isFinite(value)) {
+        riskModelSettings.value.portfolio_value = value;
     }
 }
 
@@ -717,7 +958,7 @@ function testTypeLabel(value: string) {
     );
 }
 
-function openAssetsModal(source: "cpcv" | "walkForward") {
+function openAssetsModal(source: "cpcv" | "walkForward" | "riskModel") {
     activeAssetsSource.value = source;
     showAssetsModal.value = true;
 }
@@ -836,6 +1077,220 @@ function buildChartLines(
             opacity: Math.max(0.18, 0.86 - index * 0.004),
         };
     });
+}
+
+function buildHistogramBars(
+    distribution: RiskModelResult["loss_distribution"] | undefined | null,
+    xLabelsRef: typeof riskDistributionXAxisLabels,
+    yLabelsRef: typeof riskDistributionYAxisLabels,
+) {
+    const bins = distribution?.bins ?? [];
+    if (!bins.length) {
+        xLabelsRef.value = [];
+        yLabelsRef.value = [];
+        return [];
+    }
+    const width = 720;
+    const height = 260;
+    const pad = 48;
+    const losses = bins.map((bin) => bin.loss);
+    const probabilities = bins.map((bin) => bin.probability);
+    const minLoss = Math.min(...losses);
+    const maxLoss = Math.max(...losses);
+    const lossRange = maxLoss - minLoss || 1;
+    const maxProbability = Math.max(...probabilities) || 1;
+    const plotWidth = width - pad * 2;
+    const plotHeight = height - pad * 2;
+    const barWidth = Math.max(2, plotWidth / bins.length - 1);
+
+    xLabelsRef.value = buildNumericAxisLabels(
+        minLoss,
+        maxLoss,
+        "money",
+        "x",
+        width,
+        height,
+        pad,
+    ) as Array<{ x: number; text: string }>;
+    yLabelsRef.value = buildNumericAxisLabels(
+        0,
+        maxProbability,
+        "percent",
+        "y",
+        width,
+        height,
+        pad,
+    ) as Array<{ y: number; text: string }>;
+
+    return bins.map((bin) => {
+        const x = pad + ((bin.loss - minLoss) / lossRange) * plotWidth;
+        const barHeight = (bin.probability / maxProbability) * plotHeight;
+        return {
+            x: x - barWidth / 2,
+            y: height - pad - barHeight,
+            width: barWidth,
+            height: barHeight,
+            color: bin.is_tail ? "#ff6b8a" : "#66d9ef",
+            opacity: bin.is_tail ? 0.86 : 0.58,
+        };
+    });
+}
+
+function buildNumericChartLines(
+    points: Array<{ x: number; y: number }>,
+    xLabelsRef: typeof riskCdfXAxisLabels,
+    yLabelsRef: typeof riskCdfYAxisLabels,
+    xFormat: "percent" | "money" | "number" = "number",
+    yFormat: "percent" | "money" | "number" = "number",
+    palette = ["#66d9ef"],
+) {
+    if (!points.length) {
+        xLabelsRef.value = [];
+        yLabelsRef.value = [];
+        return [];
+    }
+    const width = 720;
+    const height = 260;
+    const pad = 48;
+    const xValues = points.map((point) => point.x);
+    const yValues = points.map((point) => point.y);
+    const minX = Math.min(...xValues);
+    const maxX = Math.max(...xValues);
+    const minY = Math.min(...yValues);
+    const maxY = Math.max(...yValues);
+    const xRange = maxX - minX || 1;
+    const yRange = maxY - minY || 1;
+
+    xLabelsRef.value = buildNumericAxisLabels(
+        minX,
+        maxX,
+        xFormat,
+        "x",
+        width,
+        height,
+        pad,
+    ) as Array<{ x: number; text: string }>;
+    yLabelsRef.value = buildNumericAxisLabels(
+        minY,
+        maxY,
+        yFormat,
+        "y",
+        width,
+        height,
+        pad,
+    ) as Array<{ y: number; text: string }>;
+
+    return [
+        {
+            points: points
+                .map((point) => {
+                    const x = pad + ((point.x - minX) / xRange) * (width - pad * 2);
+                    const y =
+                        height -
+                        pad -
+                        ((point.y - minY) / yRange) * (height - pad * 2);
+                    return `${x.toFixed(2)},${y.toFixed(2)}`;
+                })
+                .join(" "),
+            color: palette[0],
+            opacity: 0.9,
+        },
+    ];
+}
+
+function buildNumericMultiPathLines(
+    paths: Array<{
+        points: Array<{ x: number; y: number }>;
+    }>,
+    xLabelsRef: typeof riskPathsXAxisLabels,
+    yLabelsRef: typeof riskPathsYAxisLabels,
+    xFormat: "percent" | "money" | "number" = "number",
+    yFormat: "percent" | "money" | "number" = "number",
+) {
+    const drawablePaths = paths.filter((path) => path.points.length > 1);
+    if (!drawablePaths.length) {
+        xLabelsRef.value = [];
+        yLabelsRef.value = [];
+        return [];
+    }
+    const width = 720;
+    const height = 260;
+    const pad = 48;
+    const allPoints = drawablePaths.flatMap((path) => path.points);
+    const xValues = allPoints.map((point) => point.x);
+    const yValues = allPoints.map((point) => point.y);
+    const minX = Math.min(...xValues);
+    const maxX = Math.max(...xValues);
+    const minY = Math.min(...yValues);
+    const maxY = Math.max(...yValues);
+    const xRange = maxX - minX || 1;
+    const yRange = maxY - minY || 1;
+
+    xLabelsRef.value = buildNumericAxisLabels(
+        minX,
+        maxX,
+        xFormat,
+        "x",
+        width,
+        height,
+        pad,
+    ) as Array<{ x: number; text: string }>;
+    yLabelsRef.value = buildNumericAxisLabels(
+        minY,
+        maxY,
+        yFormat,
+        "y",
+        width,
+        height,
+        pad,
+    ) as Array<{ y: number; text: string }>;
+
+    return drawablePaths.map((path, index) => ({
+        points: path.points
+            .map((point) => {
+                const x = pad + ((point.x - minX) / xRange) * (width - pad * 2);
+                const y =
+                    height -
+                    pad -
+                    ((point.y - minY) / yRange) * (height - pad * 2);
+                return `${x.toFixed(2)},${y.toFixed(2)}`;
+            })
+            .join(" "),
+        color: index % 5 === 0 ? "#ffcc66" : "#66d9ef",
+        opacity: index % 5 === 0 ? 0.45 : 0.18,
+    }));
+}
+
+function buildNumericAxisLabels(
+    min: number,
+    max: number,
+    mode: "percent" | "money" | "number",
+    axis: "x" | "y",
+    width: number,
+    height: number,
+    pad: number,
+) {
+    const range = max - min || 1;
+    const labels = [];
+    const tickCount = 5;
+    for (let i = 0; i <= tickCount; i++) {
+        const value = min + (range * i) / tickCount;
+        if (axis === "x") {
+            labels.push({
+                x: pad + ((value - min) / range) * (width - pad * 2),
+                text: formatAxisValue(value, mode),
+            });
+        } else {
+            labels.push({
+                y:
+                    height -
+                    pad -
+                    ((value - min) / range) * (height - pad * 2),
+                text: formatAxisValue(value, mode),
+            });
+        }
+    }
+    return labels;
 }
 
 function formatAxisValue(value: number, mode: "percent" | "money" | "number") {
@@ -1273,6 +1728,48 @@ function polarPoint(cx: number, cy: number, radius: number, ratio: number) {
                                     >
                                         <strong>Backtesting</strong>
                                     </button>
+                                    <div
+                                        v-if="isCoreStrategyTab"
+                                        class="report-dropdown"
+                                    >
+                                        <button
+                                            class="report-btn dropdown-trigger"
+                                            type="button"
+                                            @click="
+                                                showRiskModelMenu =
+                                                    !showRiskModelMenu
+                                            "
+                                        >
+                                            <ShieldAlert :size="17" />
+                                            <div>
+                                                <strong>{{
+                                                    t.riskModels
+                                                }}</strong>
+                                                <small>{{
+                                                    t.riskModelSubtitle
+                                                }}</small>
+                                            </div>
+                                            <ChevronDown :size="16" />
+                                        </button>
+                                        <div
+                                            v-if="showRiskModelMenu"
+                                            class="report-menu"
+                                        >
+                                            <button
+                                                v-for="option in riskModelOptions"
+                                                :key="option.id"
+                                                type="button"
+                                                @click="openRiskModel(option.id)"
+                                            >
+                                                <strong>{{
+                                                    option.title
+                                                }}</strong>
+                                                <small>{{
+                                                    option.engine
+                                                }}</small>
+                                            </button>
+                                        </div>
+                                    </div>
                                     <article
                                         v-for="report in modelDetail.future_reports.filter(
                                             (item) =>
@@ -1280,6 +1777,7 @@ function polarPoint(cx: number, cy: number, radius: number, ratio: number) {
                                                     'cpcv',
                                                     'walk_forward',
                                                     'backtesting',
+                                                    'risk_models',
                                                 ].includes(item.id),
                                         )"
                                         :key="report.id"
@@ -2437,6 +2935,1093 @@ function polarPoint(cx: number, cy: number, radius: number, ratio: number) {
                                             row.value
                                         }}</span>
                                     </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div
+                v-if="showRiskModelModal"
+                class="modal-overlay"
+                @click.self="showRiskModelModal = false"
+            >
+                <div class="modal-fullscreen">
+                    <div class="modal-header">
+                        <div class="section-title">
+                            <span>{{ t.riskModelSettings }}</span>
+                            <strong>{{ activeRiskModel.title }}</strong>
+                        </div>
+                        <button
+                            class="icon-button"
+                            type="button"
+                            @click="showRiskModelModal = false"
+                        >
+                            <X :size="18" />
+                        </button>
+                    </div>
+
+                    <p v-if="riskModelError" class="error-banner">
+                        {{ riskModelError }}
+                    </p>
+
+                    <div class="cpcv-layout">
+                        <div class="form-grid">
+                            <label>
+                                <span>{{ t.testName }}</span>
+                                <input
+                                    v-model="riskModelSettings.test_name"
+                                    type="text"
+                                />
+                            </label>
+                            <label>
+                                <span class="field-label">
+                                    {{ t.riskModel }}
+                                    <button
+                                        class="field-help"
+                                        type="button"
+                                        @click.stop="toggleFieldTooltip('riskModel')"
+                                    >
+                                        <CircleHelp :size="13" />
+                                    </button>
+                                </span>
+                                <span
+                                    v-if="activeFieldTooltip === 'riskModel'"
+                                    class="field-tooltip"
+                                >
+                                    {{ tooltipText(t.riskModelTooltip) }}
+                                </span>
+                                <select v-model="activeRiskModelId">
+                                    <option
+                                        v-for="option in riskModelOptions"
+                                        :key="option.id"
+                                        :value="option.id"
+                                    >
+                                        {{ option.title }}
+                                    </option>
+                                </select>
+                            </label>
+                            <label>
+                                <span>{{ t.startDate }}</span>
+                                <input
+                                    v-model="riskModelSettings.start_date"
+                                    type="date"
+                                />
+                            </label>
+                            <label>
+                                <span>{{ t.endDate }}</span>
+                                <input
+                                    v-model="riskModelSettings.end_date"
+                                    type="date"
+                                />
+                            </label>
+                            <label>
+                                <span>{{ t.interval }}</span>
+                                <select v-model="riskModelSettings.interval">
+                                    <option value="CANDLE_INTERVAL_DAY">
+                                        Day
+                                    </option>
+                                    <option value="CANDLE_INTERVAL_HOUR">
+                                        Hour
+                                    </option>
+                                    <option value="CANDLE_INTERVAL_WEEK">
+                                        Week
+                                    </option>
+                                    <option value="CANDLE_INTERVAL_MONTH">
+                                        Month
+                                    </option>
+                                </select>
+                            </label>
+                            <label>
+                                <span>{{ t.classCode }}</span>
+                                <input
+                                    v-model="riskModelSettings.class_code"
+                                    type="text"
+                                />
+                            </label>
+                            <label>
+                                <span class="field-label">
+                                    {{ t.testSize }}
+                                    <button
+                                        class="field-help"
+                                        type="button"
+                                        @click.stop="toggleFieldTooltip('testSize')"
+                                    >
+                                        <CircleHelp :size="13" />
+                                    </button>
+                                </span>
+                                <span
+                                    v-if="activeFieldTooltip === 'testSize'"
+                                    class="field-tooltip"
+                                >
+                                    {{ tooltipText(t.testSizeTooltip) }}
+                                </span>
+                                <input
+                                    v-model.number="riskModelSettings.test_size"
+                                    min="0.05"
+                                    max="0.80"
+                                    step="0.01"
+                                    type="number"
+                                />
+                            </label>
+                            <label>
+                                <span class="field-label">
+                                    {{ t.portfolioValue }}
+                                    <button
+                                        class="field-help"
+                                        type="button"
+                                        @click.stop="
+                                            toggleFieldTooltip('portfolioValue')
+                                        "
+                                    >
+                                        <CircleHelp :size="13" />
+                                    </button>
+                                </span>
+                                <span
+                                    v-if="activeFieldTooltip === 'portfolioValue'"
+                                    class="field-tooltip"
+                                >
+                                    {{ tooltipText(t.portfolioValueTooltip) }}
+                                </span>
+                                <input
+                                    :value="
+                                        formatMoneyInput(
+                                            riskModelSettings.portfolio_value,
+                                        )
+                                    "
+                                    inputmode="numeric"
+                                    type="text"
+                                    @input="updateRiskPortfolioValue"
+                                />
+                            </label>
+                            <label>
+                                <span class="field-label">
+                                    {{ t.confidenceLevel }}
+                                    <button
+                                        class="field-help"
+                                        type="button"
+                                        @click.stop="
+                                            toggleFieldTooltip('confidenceLevel')
+                                        "
+                                    >
+                                        <CircleHelp :size="13" />
+                                    </button>
+                                </span>
+                                <span
+                                    v-if="
+                                        activeFieldTooltip === 'confidenceLevel'
+                                    "
+                                    class="field-tooltip"
+                                >
+                                    {{ tooltipText(t.confidenceLevelTooltip) }}
+                                </span>
+                                <input
+                                    v-model.number="
+                                        riskModelSettings.confidence_level
+                                    "
+                                    min="0.5"
+                                    max="0.999"
+                                    step="0.001"
+                                    type="number"
+                                />
+                            </label>
+                            <label>
+                                <span class="field-label">
+                                    {{ t.horizonDays }}
+                                    <button
+                                        class="field-help"
+                                        type="button"
+                                        @click.stop="toggleFieldTooltip('horizonDays')"
+                                    >
+                                        <CircleHelp :size="13" />
+                                    </button>
+                                </span>
+                                <span
+                                    v-if="activeFieldTooltip === 'horizonDays'"
+                                    class="field-tooltip"
+                                >
+                                    {{ tooltipText(t.horizonDaysTooltip) }}
+                                </span>
+                                <input
+                                    v-model.number="
+                                        riskModelSettings.horizon_days
+                                    "
+                                    min="1"
+                                    max="252"
+                                    type="number"
+                                />
+                            </label>
+                            <label>
+                                <span class="field-label">
+                                    {{ t.nSimulations }}
+                                    <button
+                                        class="field-help"
+                                        type="button"
+                                        @click.stop="toggleFieldTooltip('nSimulations')"
+                                    >
+                                        <CircleHelp :size="13" />
+                                    </button>
+                                </span>
+                                <span
+                                    v-if="activeFieldTooltip === 'nSimulations'"
+                                    class="field-tooltip"
+                                >
+                                    {{ tooltipText(t.nSimulationsTooltip) }}
+                                </span>
+                                <input
+                                    v-model.number="
+                                        riskModelSettings.n_simulations
+                                    "
+                                    min="100"
+                                    max="1000000"
+                                    step="1000"
+                                    type="number"
+                                />
+                            </label>
+                            <label>
+                                <span class="field-label">
+                                    {{ t.simulationMethod }}
+                                    <button
+                                        class="field-help"
+                                        type="button"
+                                        @click.stop="
+                                            toggleFieldTooltip('simulationMethod')
+                                        "
+                                    >
+                                        <CircleHelp :size="13" />
+                                    </button>
+                                </span>
+                                <span
+                                    v-if="
+                                        activeFieldTooltip === 'simulationMethod'
+                                    "
+                                    class="field-tooltip"
+                                >
+                                    {{ tooltipText(t.simulationMethodTooltip) }}
+                                </span>
+                                <select
+                                    v-model="
+                                        riskModelSettings.simulation_method
+                                    "
+                                >
+                                    <option value="historical_bootstrap">
+                                        {{ t.historicalBootstrap }}
+                                    </option>
+                                    <option value="multivariate_normal">
+                                        {{ t.multivariateNormal }}
+                                    </option>
+                                </select>
+                            </label>
+                            <label>
+                                <span class="field-label">
+                                    Random state
+                                    <button
+                                        class="field-help"
+                                        type="button"
+                                        @click.stop="toggleFieldTooltip('randomState')"
+                                    >
+                                        <CircleHelp :size="13" />
+                                    </button>
+                                </span>
+                                <span
+                                    v-if="activeFieldTooltip === 'randomState'"
+                                    class="field-tooltip"
+                                >
+                                    {{ tooltipText(t.randomStateTooltip) }}
+                                </span>
+                                <input
+                                    v-model.number="
+                                        riskModelSettings.random_state
+                                    "
+                                    type="number"
+                                />
+                            </label>
+                            <label v-if="isQaeRiskModel">
+                                <span class="field-label">
+                                    {{ t.nBuckets }}
+                                    <button
+                                        class="field-help"
+                                        type="button"
+                                        @click.stop="toggleFieldTooltip('nBuckets')"
+                                    >
+                                        <CircleHelp :size="13" />
+                                    </button>
+                                </span>
+                                <span
+                                    v-if="activeFieldTooltip === 'nBuckets'"
+                                    class="field-tooltip"
+                                >
+                                    {{ tooltipText(t.nBucketsTooltip) }}
+                                </span>
+                                <select v-model.number="riskModelSettings.n_buckets">
+                                    <option :value="32">32</option>
+                                    <option :value="64">64</option>
+                                    <option :value="128">128</option>
+                                    <option :value="256">256</option>
+                                    <option :value="512">512</option>
+                                    <option :value="1024">1024</option>
+                                </select>
+                            </label>
+                            <label v-if="isQaeRiskModel">
+                                <span class="field-label">
+                                    {{ t.qaeIterations }}
+                                    <button
+                                        class="field-help"
+                                        type="button"
+                                        @click.stop="
+                                            toggleFieldTooltip('qaeIterations')
+                                        "
+                                    >
+                                        <CircleHelp :size="13" />
+                                    </button>
+                                </span>
+                                <span
+                                    v-if="activeFieldTooltip === 'qaeIterations'"
+                                    class="field-tooltip"
+                                >
+                                    {{ tooltipText(t.qaeIterationsTooltip) }}
+                                </span>
+                                <input
+                                    v-model.number="
+                                        riskModelSettings.qae_iterations
+                                    "
+                                    min="1"
+                                    max="64"
+                                    type="number"
+                                />
+                            </label>
+                            <label v-if="isQaeRiskModel">
+                                <span class="field-label">
+                                    {{ t.qaeShots }}
+                                    <button
+                                        class="field-help"
+                                        type="button"
+                                        @click.stop="toggleFieldTooltip('qaeShots')"
+                                    >
+                                        <CircleHelp :size="13" />
+                                    </button>
+                                </span>
+                                <span
+                                    v-if="activeFieldTooltip === 'qaeShots'"
+                                    class="field-tooltip"
+                                >
+                                    {{ tooltipText(t.qaeShotsTooltip) }}
+                                </span>
+                                <input
+                                    v-model.number="riskModelSettings.qae_shots"
+                                    min="100"
+                                    max="1000000"
+                                    step="100"
+                                    type="number"
+                                />
+                            </label>
+                        </div>
+
+                        <div class="cpcv-actions">
+                            <button
+                                class="primary-button"
+                                type="button"
+                                :disabled="isRiskModelRunning"
+                                @click="runRiskModel"
+                            >
+                                <RefreshCw
+                                    v-if="isRiskModelRunning"
+                                    class="spin"
+                                    :size="17"
+                                />
+                                <PlayCircle v-else :size="17" />
+                                <span>{{
+                                    isRiskModelRunning
+                                        ? t.processing
+                                        : t.runAndSave
+                                }}</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="saved-tests">
+                        <div class="section-title">
+                            <span>{{ t.savedTests }}</span>
+                            <strong>{{ savedRiskModelTests.length }}</strong>
+                        </div>
+                        <div v-if="isRiskModelLoading" class="small-state">
+                            <RefreshCw class="spin" :size="17" />
+                            <span>{{ t.loading }}</span>
+                        </div>
+                        <div
+                            v-else-if="savedRiskModelTests.length === 0"
+                            class="small-state"
+                        >
+                            <span>{{ t.noSavedTests }}</span>
+                        </div>
+                        <div v-else class="saved-list">
+                            <article
+                                v-for="test in savedRiskModelTests"
+                                :key="test.file_name"
+                                class="saved-card"
+                            >
+                                <div>
+                                    <strong>{{ test.test_name }}</strong>
+                                    <small
+                                        >{{ test.risk_model_title }} ·
+                                        {{
+                                            formatDateTime(test.generated_at)
+                                        }}</small
+                                    >
+                                </div>
+                                <button
+                                    class="icon-text-button"
+                                    type="button"
+                                    @click="openRiskModelTest(test.test_name)"
+                                >
+                                    <FolderOpen :size="16" />
+                                    <span>{{ t.loadSaved }}</span>
+                                </button>
+                            </article>
+                        </div>
+                    </div>
+
+                    <div v-if="riskModelResult" class="cpcv-results">
+                        <div class="result-strip">
+                            <article>
+                                <span class="section-title-with-help">
+                                    VaR
+                                    <button
+                                        class="field-help"
+                                        type="button"
+                                        @click.stop="toggleFieldTooltip('varResult')"
+                                    >
+                                        <CircleHelp :size="13" />
+                                    </button>
+                                </span>
+                                <strong>{{
+                                    riskModelResult.summary[0]?.value ?? "—"
+                                }}</strong>
+                                <small>{{
+                                    riskModelResult.metadata.confidence_level
+                                }}</small>
+                                <small
+                                    v-if="activeFieldTooltip === 'varResult'"
+                                    class="result-tooltip"
+                                >
+                                    {{ tooltipText(t.varResultTooltip) }}
+                                </small>
+                            </article>
+                            <article>
+                                <span class="section-title-with-help">
+                                    CVaR
+                                    <button
+                                        class="field-help"
+                                        type="button"
+                                        @click.stop="toggleFieldTooltip('cvarResult')"
+                                    >
+                                        <CircleHelp :size="13" />
+                                    </button>
+                                </span>
+                                <strong>{{ riskCvarSummaryValue }}</strong>
+                                <small>{{ riskModelResult.metadata.engine }}</small>
+                                <small
+                                    v-if="activeFieldTooltip === 'cvarResult'"
+                                    class="result-tooltip"
+                                >
+                                    {{ tooltipText(t.cvarResultTooltip) }}
+                                </small>
+                            </article>
+                            <article>
+                                <span>{{ t.assets }}</span>
+                                <strong>{{
+                                    riskModelResult.metadata.asset_count
+                                }}</strong>
+                                <small
+                                    >{{ t.scenarios }}:
+                                    {{
+                                        riskModelResult.metadata.scenario_count
+                                    }}</small
+                                >
+                                <button
+                                    class="icon-text-button"
+                                    type="button"
+                                    @click="openAssetsModal('riskModel')"
+                                >
+                                    <span>{{ t.viewAssets }}</span>
+                                </button>
+                            </article>
+                        </div>
+
+                        <div class="chart-panel">
+                            <div class="section-title">
+                                <span>{{ t.interpretation }}</span>
+                                <strong>{{
+                                    riskModelResult.metadata.risk_model_title
+                                }}</strong>
+                            </div>
+                            <p class="risk-interpretation">
+                                {{ riskModelResult.interpretation }}
+                            </p>
+                        </div>
+
+                        <div class="chart-panel">
+                            <div class="section-title">
+                                <span class="section-title-with-help">
+                                    {{ t.lossDistribution }}
+                                    <button
+                                        class="field-help"
+                                        type="button"
+                                        @click.stop="
+                                            toggleFieldTooltip('lossDistribution')
+                                        "
+                                    >
+                                        <CircleHelp :size="13" />
+                                    </button>
+                                </span>
+                                <strong>VaR</strong>
+                            </div>
+                            <p
+                                v-if="activeFieldTooltip === 'lossDistribution'"
+                                class="chart-tooltip"
+                            >
+                                {{ tooltipText(t.lossDistributionTooltip) }}
+                            </p>
+                            <svg
+                                class="cpcv-chart"
+                                viewBox="0 0 720 260"
+                                role="img"
+                            >
+                                <line x1="48" y1="212" x2="702" y2="212" />
+                                <line x1="48" y1="18" x2="48" y2="212" />
+                                <rect
+                                    v-for="(bar, index) in riskDistributionBars"
+                                    :key="index"
+                                    :x="bar.x"
+                                    :y="bar.y"
+                                    :width="bar.width"
+                                    :height="bar.height"
+                                    :fill="bar.color"
+                                    :opacity="bar.opacity"
+                                    rx="1"
+                                />
+                                <text
+                                    v-for="(
+                                        label, i
+                                    ) in riskDistributionXAxisLabels"
+                                    :key="'riskdistx' + i"
+                                    :x="label.x"
+                                    y="228"
+                                    text-anchor="middle"
+                                    font-size="10"
+                                    fill="#8992a3"
+                                >
+                                    {{ label.text }}
+                                </text>
+                                <text
+                                    v-for="(
+                                        label, i
+                                    ) in riskDistributionYAxisLabels"
+                                    :key="'riskdisty' + i"
+                                    :x="44"
+                                    :y="label.y"
+                                    text-anchor="end"
+                                    font-size="10"
+                                    fill="#8992a3"
+                                    dominant-baseline="middle"
+                                >
+                                    {{ label.text }}
+                                </text>
+                            </svg>
+                        </div>
+
+                        <div class="dual-chart-grid">
+                            <div class="chart-panel">
+                                <div class="section-title">
+                                    <span class="section-title-with-help">
+                                        {{ t.simulatedPortfolioPaths }}
+                                        <button
+                                            class="field-help"
+                                            type="button"
+                                            @click.stop="
+                                                toggleFieldTooltip(
+                                                    'simulatedPortfolioPaths',
+                                                )
+                                            "
+                                        >
+                                            <CircleHelp :size="13" />
+                                        </button>
+                                    </span>
+                                    <strong>{{
+                                        riskModelResult.simulated_paths?.paths
+                                            ?.length ?? 0
+                                    }}</strong>
+                                </div>
+                                <p
+                                    v-if="
+                                        activeFieldTooltip ===
+                                        'simulatedPortfolioPaths'
+                                    "
+                                    class="chart-tooltip"
+                                >
+                                    {{
+                                        tooltipText(
+                                            t.simulatedPortfolioPathsTooltip,
+                                        )
+                                    }}
+                                </p>
+                                <svg
+                                    class="cpcv-chart"
+                                    viewBox="0 0 720 260"
+                                    role="img"
+                                >
+                                    <line
+                                        x1="48"
+                                        y1="212"
+                                        x2="702"
+                                        y2="212"
+                                    />
+                                    <line
+                                        x1="48"
+                                        y1="18"
+                                        x2="48"
+                                        y2="212"
+                                    />
+                                    <polyline
+                                        v-for="(
+                                            line, index
+                                        ) in riskScenarioPathLines"
+                                        :key="index"
+                                        :points="line.points"
+                                        :stroke="line.color"
+                                        :opacity="line.opacity"
+                                    />
+                                    <text
+                                        v-for="(label, i) in riskPathsXAxisLabels"
+                                        :key="'riskpathsx' + i"
+                                        :x="label.x"
+                                        y="228"
+                                        text-anchor="middle"
+                                        font-size="10"
+                                        fill="#8992a3"
+                                    >
+                                        {{ label.text }}
+                                    </text>
+                                    <text
+                                        v-for="(label, i) in riskPathsYAxisLabels"
+                                        :key="'riskpathsy' + i"
+                                        :x="44"
+                                        :y="label.y"
+                                        text-anchor="end"
+                                        font-size="10"
+                                        fill="#8992a3"
+                                        dominant-baseline="middle"
+                                    >
+                                        {{ label.text }}
+                                    </text>
+                                </svg>
+                            </div>
+
+                            <div class="chart-panel">
+                                <div class="section-title">
+                                    <span class="section-title-with-help">
+                                        {{ t.cumulativeLossDistribution }}
+                                        <button
+                                            class="field-help"
+                                            type="button"
+                                            @click.stop="
+                                                toggleFieldTooltip(
+                                                    'cumulativeLossDistribution',
+                                                )
+                                            "
+                                        >
+                                            <CircleHelp :size="13" />
+                                        </button>
+                                    </span>
+                                    <strong>CDF</strong>
+                                </div>
+                                <p
+                                    v-if="
+                                        activeFieldTooltip ===
+                                        'cumulativeLossDistribution'
+                                    "
+                                    class="chart-tooltip"
+                                >
+                                    {{
+                                        tooltipText(
+                                            t.cumulativeLossDistributionTooltip,
+                                        )
+                                    }}
+                                </p>
+                                <svg
+                                    class="cpcv-chart"
+                                    viewBox="0 0 720 260"
+                                    role="img"
+                                >
+                                    <line
+                                        x1="48"
+                                        y1="212"
+                                        x2="702"
+                                        y2="212"
+                                    />
+                                    <line
+                                        x1="48"
+                                        y1="18"
+                                        x2="48"
+                                        y2="212"
+                                    />
+                                    <polyline
+                                        v-for="(line, index) in riskCdfLines"
+                                        :key="index"
+                                        :points="line.points"
+                                        :stroke="line.color"
+                                        :opacity="line.opacity"
+                                    />
+                                    <text
+                                        v-for="(label, i) in riskCdfXAxisLabels"
+                                        :key="'riskcdfx' + i"
+                                        :x="label.x"
+                                        y="228"
+                                        text-anchor="middle"
+                                        font-size="10"
+                                        fill="#8992a3"
+                                    >
+                                        {{ label.text }}
+                                    </text>
+                                    <text
+                                        v-for="(label, i) in riskCdfYAxisLabels"
+                                        :key="'riskcdfy' + i"
+                                        :x="44"
+                                        :y="label.y"
+                                        text-anchor="end"
+                                        font-size="10"
+                                        fill="#8992a3"
+                                        dominant-baseline="middle"
+                                    >
+                                        {{ label.text }}
+                                    </text>
+                                </svg>
+                            </div>
+
+                            <div class="chart-panel">
+                                <div class="section-title">
+                                    <span class="section-title-with-help">
+                                        {{ t.historicalPortfolioValue }}
+                                        <button
+                                            class="field-help"
+                                            type="button"
+                                            @click.stop="
+                                                toggleFieldTooltip(
+                                                    'historicalPortfolioValue',
+                                                )
+                                            "
+                                        >
+                                            <CircleHelp :size="13" />
+                                        </button>
+                                    </span>
+                                    <strong>{{
+                                        riskModelResult.metadata.test_period.rows
+                                    }}</strong>
+                                </div>
+                                <p
+                                    v-if="
+                                        activeFieldTooltip ===
+                                        'historicalPortfolioValue'
+                                    "
+                                    class="chart-tooltip"
+                                >
+                                    {{
+                                        tooltipText(
+                                            t.historicalPortfolioValueTooltip,
+                                        )
+                                    }}
+                                </p>
+                                <svg
+                                    class="cpcv-chart"
+                                    viewBox="0 0 720 260"
+                                    role="img"
+                                >
+                                    <line
+                                        x1="48"
+                                        y1="212"
+                                        x2="702"
+                                        y2="212"
+                                    />
+                                    <line
+                                        x1="48"
+                                        y1="18"
+                                        x2="48"
+                                        y2="212"
+                                    />
+                                    <polyline
+                                        v-for="(
+                                            line, index
+                                        ) in riskHistoricalLines"
+                                        :key="index"
+                                        :points="line.points"
+                                        :stroke="line.color"
+                                        :opacity="line.opacity"
+                                    />
+                                    <text
+                                        v-for="(
+                                            label, i
+                                        ) in riskHistoricalXAxisLabels"
+                                        :key="'riskhistx' + i"
+                                        :x="label.x"
+                                        y="228"
+                                        text-anchor="middle"
+                                        font-size="10"
+                                        fill="#8992a3"
+                                    >
+                                        {{ label.text }}
+                                    </text>
+                                    <text
+                                        v-for="(
+                                            label, i
+                                        ) in riskHistoricalYAxisLabels"
+                                        :key="'riskhisty' + i"
+                                        :x="44"
+                                        :y="label.y"
+                                        text-anchor="end"
+                                        font-size="10"
+                                        fill="#8992a3"
+                                        dominant-baseline="middle"
+                                    >
+                                        {{ label.text }}
+                                    </text>
+                                </svg>
+                            </div>
+                        </div>
+
+                        <div class="metrics-container">
+                            <div class="metrics-section">
+                                <div class="section-title">
+                                    <span class="section-title-with-help">
+                                        {{ t.riskSummary }}
+                                        <button
+                                            class="field-help"
+                                            type="button"
+                                            @click.stop="
+                                                toggleFieldTooltip('riskSummary')
+                                            "
+                                        >
+                                            <CircleHelp :size="13" />
+                                        </button>
+                                    </span>
+                                    <strong>{{
+                                        riskModelResult.metadata.test_name
+                                    }}</strong>
+                                </div>
+                                <p
+                                    v-if="activeFieldTooltip === 'riskSummary'"
+                                    class="chart-tooltip"
+                                >
+                                    {{ tooltipText(t.riskSummaryTooltip) }}
+                                </p>
+                                <div class="metrics-grid">
+                                    <div
+                                        v-for="row in riskModelResult.summary"
+                                        :key="row.metric"
+                                        class="metric-item"
+                                    >
+                                        <span class="metric-label">{{
+                                            translateMetric(row.metric)
+                                        }}</span>
+                                        <span class="metric-value">{{
+                                            row.value
+                                        }}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="metrics-section">
+                                <div class="section-title">
+                                    <span class="section-title-with-help">
+                                        {{ t.metrics }}
+                                        <button
+                                            class="field-help"
+                                            type="button"
+                                            @click.stop="
+                                                toggleFieldTooltip('riskMetrics')
+                                            "
+                                        >
+                                            <CircleHelp :size="13" />
+                                        </button>
+                                    </span>
+                                    <strong>{{ activeRiskModel.title }}</strong>
+                                </div>
+                                <p
+                                    v-if="activeFieldTooltip === 'riskMetrics'"
+                                    class="chart-tooltip"
+                                >
+                                    {{ tooltipText(t.riskMetricsTooltip) }}
+                                </p>
+                                <div class="metrics-grid">
+                                    <div
+                                        v-for="row in riskModelResult.report"
+                                        :key="row.metric"
+                                        class="metric-item"
+                                    >
+                                        <span class="metric-label">{{
+                                            translateMetric(row.metric)
+                                        }}</span>
+                                        <span class="metric-value">{{
+                                            row.value
+                                        }}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="dual-chart-grid">
+                            <div class="chart-panel">
+                                <div class="section-title">
+                                    <span class="section-title-with-help">
+                                        {{ t.riskModelPortfolio }}
+                                        <button
+                                            class="field-help"
+                                            type="button"
+                                            @click.stop="
+                                                toggleFieldTooltip(
+                                                    'riskModelPortfolio',
+                                                )
+                                            "
+                                        >
+                                            <CircleHelp :size="13" />
+                                        </button>
+                                    </span>
+                                    <strong>{{
+                                        riskModelResult.portfolio_weights.length
+                                    }}</strong>
+                                </div>
+                                <p
+                                    v-if="
+                                        activeFieldTooltip ===
+                                        'riskModelPortfolio'
+                                    "
+                                    class="chart-tooltip"
+                                >
+                                    {{
+                                        tooltipText(
+                                            t.riskModelPortfolioTooltip,
+                                        )
+                                    }}
+                                </p>
+                                <div class="table-scroll">
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>Ticker</th>
+                                                <th>{{ t.weight }}</th>
+                                                <th>{{ t.sector }}</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr
+                                                v-for="item in riskModelResult.portfolio_weights"
+                                                :key="item.ticker"
+                                            >
+                                                <td>
+                                                    <strong>{{
+                                                        item.ticker
+                                                    }}</strong>
+                                                    <br />
+                                                    <small>{{
+                                                        item.name
+                                                    }}</small>
+                                                </td>
+                                                <td>
+                                                    {{
+                                                        formatWeight(
+                                                            item.weight,
+                                                        )
+                                                    }}
+                                                </td>
+                                                <td>
+                                                    {{
+                                                        normalizeSector(
+                                                            item.sector,
+                                                        )
+                                                    }}
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <div
+                                v-if="riskModelResult.qae_distribution"
+                                class="chart-panel"
+                            >
+                                <div class="section-title">
+                                    <span class="section-title-with-help">
+                                        {{ t.qaeDistribution }}
+                                        <button
+                                            class="field-help"
+                                            type="button"
+                                            @click.stop="
+                                                toggleFieldTooltip(
+                                                    'qaeDistribution',
+                                                )
+                                            "
+                                        >
+                                            <CircleHelp :size="13" />
+                                        </button>
+                                    </span>
+                                    <strong
+                                        >{{
+                                            riskModelResult.qae_distribution
+                                                .bucket_count
+                                        }}
+                                        /
+                                        {{
+                                            riskModelResult.qae_distribution
+                                                .qubits
+                                        }}
+                                        qubits</strong
+                                    >
+                                </div>
+                                <p
+                                    v-if="activeFieldTooltip === 'qaeDistribution'"
+                                    class="chart-tooltip"
+                                >
+                                    {{ tooltipText(t.qaeDistributionTooltip) }}
+                                </p>
+                                <div class="table-scroll">
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>Bucket</th>
+                                                <th>Loss</th>
+                                                <th>Probability</th>
+                                                <th>Count</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr
+                                                v-for="bucket in riskModelResult
+                                                    .qae_distribution.buckets"
+                                                :key="bucket.bucket"
+                                            >
+                                                <td>
+                                                    <strong>{{
+                                                        bucket.bucket
+                                                    }}</strong>
+                                                </td>
+                                                <td>
+                                                    {{
+                                                        formatPrice(bucket.loss)
+                                                    }}
+                                                </td>
+                                                <td>
+                                                    {{
+                                                        formatMetricValue(
+                                                            bucket.probability,
+                                                            "percent",
+                                                        )
+                                                    }}
+                                                </td>
+                                                <td>{{ bucket.count }}</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
                                 </div>
                             </div>
                         </div>

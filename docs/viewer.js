@@ -18,6 +18,7 @@ const DOCS = {
       "14-execution-and-platform-services.md",
       "Execution и технические сервисы",
     ],
+    ["15-C4.md", "C4"],
   ],
   en: [
     ["README.md", "Contents"],
@@ -38,6 +39,7 @@ const DOCS = {
       "14-execution-and-platform-services.md",
       "Execution and Technical Services",
     ],
+    ["15-C4.md", "C4"],
   ],
 };
 

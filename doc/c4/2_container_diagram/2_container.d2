@@ -1,0 +1,316 @@
+direction: right
+
+# *.style.font-size: 24
+# *.style.font-color: "#000000"
+# (* -> *).style.font-color: "#000000"
+
+user: {
+  label: "Пользователь\n(модельер, оператор,\nразработчик)"
+  shape: person
+  style.fill: "#FFF4D6"
+  style.stroke: "#8A6400"
+}
+
+
+external_data: {
+  label: "Внешние источники данных"
+  shape: rectangle
+  style.stroke: "#FFFFFF"
+
+  t_invest: {
+    label: "T-Invest API\n(рыночные данные,\nсчета, заявки)"
+    shape: cloud
+    style.fill: "#F7F7F7"
+    style.stroke: "#686868"
+  }
+
+  rss: {
+    label: "RSS-источники\n(новости эмитентов\nи рынка)"
+    shape: cloud
+    style.fill: "#F7F7F7"
+    style.stroke: "#686868"
+  }
+}
+
+external_services: {
+  label: "Внешние сервисы"
+  shape: rectangle
+  style.stroke: "#FFFFFF"
+
+  strategy_repository: {
+    label: "Внешнее хранилище стратегий\n(код моделей и\nсгенерированные стратегии)"
+    shape: cylinder
+    style.fill: "#F7F7F7"
+    style.stroke: "#686868"
+  }
+
+  workers: {
+    label: "CPU/GPU/QPU Worker\n(исполнитель CPU/GPU/QPU задач)"
+    shape: cloud
+    style.fill: "#F7F7F7"
+    style.stroke: "#686868"
+  }
+
+
+  notifier: {
+    label: "Система уведомлений\n(отправка уведомлений)"
+    shape: cloud
+    style.fill: "#F7F7F7"
+    style.stroke: "#686868"
+  }
+}
+
+its: {
+  label: "ITS production\n(продовый микросервисный контур)"
+  style.fill: "#F8FBFF"
+  style.stroke: "#1F5F99"
+
+  edge: {
+    label: "Edge слой"
+    style.fill: "#EAF3FF"
+    style.stroke: "#1F5F99"
+
+    gateway: {
+      label: "API Gateway\n(маршрутизация,\nTLS, auth boundary)"
+      shape: rectangle
+    }
+
+    static_hosting: {
+      label: "Frontend Delivery\n(отдача UI-приложений)"
+      shape: rectangle
+    }
+  }
+
+  frontend: {
+    label: "Frontend-микросервисы"
+    style.fill: "#F1FAEF"
+    style.stroke: "#4F7D39"
+
+    launchpad: {
+      label: "Launchpad UI\n(навигация)"
+      shape: rectangle
+    }
+
+    data_ui: {
+      label: "Data UI\n(данные)"
+      shape: rectangle
+    }
+
+    strategy_ui: {
+      label: "Strategy UI\n(стратегии)"
+      shape: rectangle
+    }
+
+    ga_ui: {
+      label: "GA UI\n(генерация стратегий)"
+      shape: rectangle
+    }
+
+    execution_ui: {
+      label: "Execution UI\n(исполнение)"
+      shape: rectangle
+    }
+
+    tech_ui: {
+      label: "Tech UI\n(администрирование)"
+      shape: rectangle
+    }
+  }
+
+  backend: {
+    label: "Backend-микросервисы"
+    style.fill: "#FFF7E8"
+    style.stroke: "#A66600"
+
+    data: {
+      label: "Data Service\n(нормализация,\nхранение и выдача данных)"
+      shape: rectangle
+    }
+
+    datahub: {
+      label: "DataHub\n(единый компонент\nинтеграции с источниками данных)"
+      shape: rectangle
+    }
+
+    strategy: {
+      label: "Strategy Service\n(реестр стратегий,\nтестирование, отчеты)"
+      shape: rectangle
+    }
+
+    ga: {
+      label: "GA Service\n(генерация и поиск\nстратегий)"
+      shape: rectangle
+    }
+
+    execution: {
+      label: "Execution Service\n(портфели, счета,\nзаявки, запуск стратегий)"
+      shape: rectangle
+    }
+
+    tech: {
+      label: "Tech System Service\n(auth, RBAC,\nпользователи, роли)"
+      shape: rectangle
+    }
+
+    event_log: {
+      label: "Event Log Service\n(централизованный аудит\nHTTP/API-запросов)"
+      shape: rectangle
+    }
+  }
+
+  storage: {
+    label: "Хранилища данных"
+    style.fill: "#FAF5FF"
+    style.stroke: "#6A4AA3"
+
+    auth_db: {
+      label: "Auth DB\n(пользователи,\nроли, права)"
+      shape: cylinder
+    }
+
+    market_db: {
+      label: "Market Data Storage\n(инструменты,\nсвечи, дивиденды, новости)"
+      shape: cylinder
+    }
+
+    strategy_db: {
+      label: "Strategy Storage\n(реестр, тесты,\nотчеты)"
+      shape: cylinder
+    }
+
+    ga_db: {
+      label: "GA Storage\n(запуски GA,\nрезультаты, кандидаты)"
+      shape: cylinder
+    }
+
+    execution_db: {
+      label: "Execution Storage\n(портфели, заявки,\nсостояния исполнения)"
+      shape: cylinder
+    }
+
+    event_log_db: {
+      label: "Event Log Storage\n(append-only аудит)"
+      shape: cylinder
+    }
+
+    model_registry_db: {
+      label: "Model Registry Storage\n(материализованные\nстратегии)"
+      shape: cylinder
+    }
+  }
+
+  cache: {
+    label: "Кэш"
+    style.fill: "#FFF2F2"
+    style.stroke: "#A33A3A"
+
+    datahub_cache: {
+      label: "Redis Cache\n(кэш внешних\nрыночных и новостных данных)"
+      shape: cylinder
+    }
+  }
+
+  telemetry: {
+    label: "Telemetry pipeline"
+    style.fill: "#F2F2F2"
+    style.stroke: "#686868"
+
+    collector: {
+      label: "Telemetry Collector\n(метрики, логи,\nтрейсы, ошибки)"
+      shape: rectangle
+    }
+  }
+
+  platform: {
+    label: "Platform services"
+    style.fill: "#F2F2F2"
+    style.stroke: "#686868"
+
+    metrics: {
+      label: "Metrics\n(Prometheus)"
+      shape: rectangle
+    }
+
+    logs: {
+      label: "Logs\n(OpenSearch)"
+      shape: rectangle
+    }
+
+    traces: {
+      label: "Traces\n(OpenTelemetry)"
+      shape: rectangle
+    }
+
+    errors: {
+      label: "Errors\n(GlitchTip)"
+      shape: rectangle
+    }
+
+    dashboards: {
+      label: "Dashboards\n(Grafana)"
+      shape: rectangle
+    }
+
+    alerts: {
+      label: "Alerts\n(Alertmanager)"
+      shape: rectangle
+    }
+  }
+}
+
+user -> its.edge.static_hosting: "HTTPS\nUI"
+user -> its.edge.gateway: "HTTPS\nAPI"
+
+its.edge.static_hosting -> its.frontend: "Отдает UI-приложения"
+its.frontend -> its.edge.gateway: "Вызывает backend API"
+
+its.edge.gateway -> its.backend.data: "/api/data/"
+its.edge.gateway -> its.backend.strategy: "/api/strategies/"
+its.edge.gateway -> its.backend.ga: "/api/ga/"
+its.edge.gateway -> its.backend.execution: "/api/execution/"
+its.edge.gateway -> its.backend.tech: "/api/tech/"
+its.edge.gateway -> its.backend.event_log: "/api/event-log/"
+
+its.edge.gateway -> its.backend.event_log: "Логирует входящие\nHTTP/API-запросы"
+its.backend.event_log -> its.storage.event_log_db: "Append-only запись\nrequest-audit"
+
+its.backend.strategy -> its.backend.data: "Получает данные\nдля тестирования"
+its.backend.ga -> its.backend.data: "Получает данные\nдля генерации стратегий"
+its.backend.execution -> its.backend.data: "Получает данные\nдля запуска стратегий"
+
+its.backend.data -> its.backend.datahub: "Запрашивает внешние\nрыночные и новостные данные"
+its.backend.datahub -> its.cache.datahub_cache: "Читает и пишет\nкэш данных"
+its.backend.datahub -> external_data.t_invest: "Получает\nрыночные данные"
+its.backend.datahub -> external_data.rss: "Получает\nновости"
+
+its.backend.execution -> external_data.t_invest: "Получает счета\nи отправляет заявки"
+
+its.backend.strategy -> external_services.strategy_repository: "Читает и сохраняет\nкод стратегий"
+its.backend.ga -> external_services.strategy_repository: "Сохраняет\nсгенерированные стратегии"
+
+its.backend.ga -> external_services.workers: "Отправляет\nGPU/CPU/QPU задачи"
+
+its.backend.execution -> external_services.notifier: "Отправляет уведомления\nо состоянии исполнения"
+its.backend.tech -> external_services.notifier: "Отправляет уведомления\nпо доступам и ролям"
+
+its.backend.tech -> its.storage.auth_db: "Читает и пишет\nusers / roles / permissions"
+its.backend.data -> its.storage.market_db: "Читает и пишет\nmarket data"
+its.backend.strategy -> its.storage.strategy_db: "Читает и пишет\nтесты и отчеты"
+its.backend.ga -> its.storage.ga_db: "Читает и пишет\nGA runs"
+its.backend.execution -> its.storage.execution_db: "Читает и пишет\nexecution state"
+
+its.backend.strategy -> its.storage.model_registry_db: "Материализует\nстратегии"
+its.backend.ga -> its.storage.model_registry_db: "Записывает\nкандидатов"
+its.backend.execution -> its.storage.model_registry_db: "Читает стратегии\nдля запуска"
+
+its.backend -> its.telemetry.collector: "Метрики, логи,\nтрейсы, ошибки"
+its.telemetry.collector -> its.platform.metrics: "Метрики"
+its.telemetry.collector -> its.platform.logs: "Логи"
+its.telemetry.collector -> its.platform.traces: "Трейсы"
+its.telemetry.collector -> its.platform.errors: "Ошибки"
+
+its.platform.metrics -> its.platform.dashboards: "Визуализация метрик"
+its.platform.logs -> its.platform.dashboards: "Визуализация логов"
+its.platform.traces -> its.platform.dashboards: "Визуализация трейсов"
+its.platform.errors -> its.platform.dashboards: "Визуализация ошибок"
+its.platform.metrics -> its.platform.alerts: "Правила алертинга"

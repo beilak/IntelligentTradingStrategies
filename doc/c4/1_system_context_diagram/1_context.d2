@@ -1,0 +1,121 @@
+direction: right
+
+diagram_title: {
+  label: "C4 L1 - Контекст системы\nIntelligent Trading Strategies"
+  shape: "text"
+  style.font-size: 32
+  near: top-center
+}
+
+*.style.font-size: 24
+
+users: {
+  label: "Пользователи"
+  style.stroke: "#FFFFFF"
+
+  modeler: {
+    label: "Финансовый модельер\n(исследует данные и стратегии)"
+    shape: person
+    style.fill: "#FFF4D6"
+    style.stroke: "#8A6400"
+  }
+
+  operator: {
+    label: "Оператор портфеля\n(контролирует счета и заявки)"
+    shape: person
+    style.fill: "#FFF4D6"
+    style.stroke: "#8A6400"
+  }
+
+  admin: {
+    label: "Администратор платформы\n(управляет доступом и аудитом)"
+    shape: person
+    style.fill: "#FFF4D6"
+    style.stroke: "#8A6400"
+  }
+
+  dev: {
+    label: "Разработчик системы\n(расширяет систему и интеграции)"
+    shape: person
+    style.fill: "#FFF4D6"
+    style.stroke: "#8A6400"
+  }
+}
+
+its: {
+  label: "ITS\n(платформа разработки и эксплуатации\nторговых стратегий)"
+  shape: rectangle
+  style.fill: "#EAF3FF"
+  style.stroke: "#1F5F99"
+  style.font-size: 20
+}
+
+external: {
+  label: "Внешние системы"
+  shape: rectangle
+  style.stroke: "#FFFFFF"
+  # style.fill: "#FFFFFF"
+
+  t_invest: {
+    label: "T-Invest API\n(рыночные данные,\nсчета, заявки)"
+    shape: cloud
+    style.fill: "#F7F7F7"
+    style.stroke: "#686868"
+  }
+
+  gpu_worker: {
+    label: "GPU Worker\n(Исполнитель GPU задач)"
+    shape: cloud
+    style.fill: "#F7F7F7"
+    style.stroke: "#686868"
+  }
+
+  cpu_worker: {
+    label: "CPU Worker\n(Исполнитель CPU задач)"
+    shape: cloud
+    style.fill: "#F7F7F7"
+    style.stroke: "#686868"
+  }
+
+  qpu_worker: {
+    label: "QPU Worker\n(Исполнитель QPU задач)"
+    shape: cloud
+    style.fill: "#F7F7F7"
+    style.stroke: "#686868"
+  }
+
+  rss: {
+    label: "RSS-источники\n(новости эмитентов\nи рынка)"
+    shape: cloud
+    style.fill: "#F7F7F7"
+    style.stroke: "#686868"
+  }
+
+  strategy_repository: {
+    label: "Внешнее хранилище стратегий\n(код моделей и\nсгенерированные стратегии)"
+    shape: cylinder
+    style.fill: "#F7F7F7"
+    style.stroke: "#686868"
+  }
+
+  notyfier: {
+    label: "Система уведомлений\n(система для отправки уведомлений)"
+    shape: cloud
+    style.fill: "#F7F7F7"
+    style.stroke: "#686868"
+  }
+}
+
+users.modeler -> its: "Исследует данные,\nмодели и стратегии"
+users.operator -> its: "Контролирует портфели,\nсчета и заявки"
+users.admin -> its: "Управляет доступом,\nаудитом и мониторингом"
+users.dev -> its: "Расширяет систему, добавляет новые интеграции/источники данных"
+
+its -> external.t_invest: "Получает данные рынка,\nуправляет счетами и заявками"
+its -> external.rss: "Загружает новости"
+its -> external.strategy_repository: "Сохраняет, читает\nи версионирует стратегии"
+its -> external.notyfier: "Отправка уведомлений"
+
+its -> external.cpu_worker: "Отправка на исполнение CPU задач"
+its -> external.gpu_worker: "Отправка на исполнение GPU задач"
+its -> external.qpu_worker: "Отправка на исполнение QPU задач"

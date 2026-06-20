@@ -16,7 +16,8 @@ Strategy Lab is used to:
 - run tests;
 - read saved results;
 - compare strategies;
-- analyze portfolio composition and sector exposure.
+- analyze portfolio composition and sector exposure;
+- mark trading strategies as ready for Execution.
 
 ## Main Files
 
@@ -131,6 +132,8 @@ TurnoverEqStopLoss1TakeProfit3Builder
 ```
 
 It uses `ModelTurnoverWithEQBuilder`, `1%` stop-loss, and `3%` take-profit.
+
+Execution uses production state to select deployable strategies: a strategy is marked `prod-ready`, then it becomes available for assignment to a broker account in Execution UI.
 
 ## CPCV
 
@@ -253,4 +256,3 @@ Test results are saved as JSON caches:
 | Backtesting | `STRATEGY_BACKTEST_CACHE_DIR` | `/app/its/data/strategy_tests/backtest` |
 
 Docker Compose persists them in `strategy-test-cache`.
-

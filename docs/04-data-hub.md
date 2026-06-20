@@ -11,7 +11,7 @@ Data Hub - подсистема данных ITS. Она отвечает за �
 Data Hub решает три группы задач:
 
 - предоставляет модельеру визуальный интерфейс для просмотра данных;
-- предоставляет backend API для Strategy Lab и GA Lab;
+- предоставляет backend API для Strategy Lab, GA Lab и Execution;
 - изолирует код интеграций с внешними источниками от логики стратегий.
 
 ## Основные файлы
@@ -34,6 +34,8 @@ Data Hub решает три группы задач:
 - информацию о тикерах;
 - сектора, биржи, валюты, классы инструментов;
 - дивиденды;
+- RSS-новости из настроенных источников;
+- Monte Carlo-сценарии цены закрытия;
 - custom gold bars, пересчитанные через золото.
 
 ## Разделы UI
@@ -120,9 +122,13 @@ Data Hub умеет строить альтернативные бары чер�
 | `GET /api/data/sources` | список источников |
 | `GET /api/data/stocks` | список акций |
 | `GET /api/data/currencies` | список валют |
+| `GET /api/data/instruments` | универсальный справочник торгуемых инструментов |
 | `GET /api/data/prices` | свечи OHLCV |
 | `GET /api/data/custom-gold-bars` | custom gold bars |
+| `GET /api/data/monte-carlo` | сценарии цены закрытия по Monte Carlo |
 | `GET /api/data/dividends` | дивиденды |
+| `GET /api/data/rss` | новости из RSS-хранилища |
+| `POST /api/data/rss/load` | загрузка RSS-источников в БД |
 | `GET /api/data/docs` | Swagger |
 
 ## Поддерживаемые интервалы свечей
@@ -185,4 +191,3 @@ its/data_loader
 | --- | --- |
 | `ticker` | тикер |
 | `last_buy_date` | последний день покупки для получения дивиденда |
-

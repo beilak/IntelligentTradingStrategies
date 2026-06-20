@@ -16,7 +16,8 @@ Strategy Lab нужен для:
 - запуска тестов;
 - чтения сохраненных результатов;
 - сравнения стратегий;
-- анализа состава портфеля и секторной экспозиции.
+- анализа состава портфеля и секторной экспозиции;
+- отметки trading strategies как готовых к Execution.
 
 ## Основные файлы
 
@@ -131,6 +132,8 @@ TurnoverEqStopLoss1TakeProfit3Builder
 ```
 
 Она использует ядро `ModelTurnoverWithEQBuilder`, стоп-лосс `1%` и тейк-профит `3%`.
+
+Для передачи стратегии в Execution используется production state: стратегия помечается как `prod-ready`, после чего она доступна для назначения на брокерский счет в Execution UI.
 
 ## CPCV
 
@@ -253,4 +256,3 @@ Backtesting запускается в отдельном модальном ок
 | Backtesting | `STRATEGY_BACKTEST_CACHE_DIR` | `/app/its/data/strategy_tests/backtest` |
 
 Docker Compose сохраняет эти данные в volume `strategy-test-cache`.
-

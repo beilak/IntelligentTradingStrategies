@@ -14,7 +14,8 @@ The core product idea is to turn trading algorithm development into a controlled
 - running robustness tests;
 - storing results;
 - comparing models;
-- searching and evolving strategies through a genetic algorithm.
+- searching and evolving strategies through a genetic algorithm;
+- assigning selected strategies to broker accounts and sending controlled order tickets.
 
 ## Target Users
 
@@ -51,6 +52,10 @@ Extends the system with new data sources:
 
 Receives the system as a platform that can be launched with one command, explored through UI, and extended through documented protocols.
 
+### Platform Administrator
+
+Manages users, roles, and permissions through Tech System, checks the action log, and controls Execution settings before broker-account operations.
+
 ## Problems Solved by the System
 
 ### 1. Data Centralization
@@ -82,7 +87,11 @@ Strategy Lab lets the user select a model, configure a test, and obtain:
 
 GA Lab uses component alphabets as a search space. The genetic algorithm evaluates gene combinations and saves the best strategies to `its/strategies/models`.
 
-### 5. LLM-Assisted Component Development
+### 5. Execution and Administration Circuit
+
+Execution shows configured T-Invest accounts, portfolio, positions, orders, stop orders, and operations. The user can create manual orders, assign trading strategies to accounts, and run order-preview flows. Tech System provides registration, login, JWT sessions, roles, permissions, and the user action log.
+
+### 6. LLM-Assisted Component Development
 
 Because components have explicit protocols and narrow interfaces, LLMs can be used to rapidly generate new selectors, signals, and allocators. The modeler does not need to redesign the full testing pipeline for every new component.
 
@@ -104,5 +113,6 @@ After working with the system, the user obtains:
 - CPCV, WalkForward, and Backtesting reports;
 - model rankings;
 - generated strategy files;
+- strategy assignments and Execution order tickets;
+- user roles and action-log records;
 - a software base for further scientific, product, or investment-analytical work.
-

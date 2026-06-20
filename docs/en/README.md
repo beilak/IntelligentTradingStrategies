@@ -17,10 +17,11 @@ The primary user is a financial modeler, quant researcher, or analyst who design
 7. [Modeler and Component Developer Guide](07-model-development-guide.md)
 8. [Testing and Model Comparison Methodology](08-testing-methodology.md)
 9. [API and Integrations](09-api-reference.md)
-10. [Operations, Configuration, and Delivery](10-operations-and-delivery.md)
-11. [Scientific Basis and Author Publications](11-scientific-basis.md)
-12. [Glossary](12-glossary.md)
-13. [Software Registration Certificate](13-registration-certificate.md)
+10. [Execution and Technical Services](14-execution-and-platform-services.md)
+11. [Operations, Configuration, and Delivery](10-operations-and-delivery.md)
+12. [Scientific Basis and Author Publications](11-scientific-basis.md)
+13. [Glossary](12-glossary.md)
+14. [Software Registration Certificate](13-registration-certificate.md)
 
 ## Quick Start
 
@@ -49,9 +50,14 @@ docker compose up --build
 | Data Hub | `/data/` | Market data, instruments, quotes, dividends |
 | Strategy Lab | `/strategies/` | Component registry, model assembly, testing |
 | GA Lab | `/ga/` | Strategy generation with genetic algorithms |
+| Execution | `/execution/` | Broker accounts, orders, stop orders, and assigned-strategy runs |
+| Tech System | `/tech/auth/` | Login, registration, roles, permissions, and action log |
 | Data API | `/api/data/docs` | Data Backend Swagger |
 | Strategy API | `/api/strategies/docs` | Strategy Backend Swagger |
 | GA API | `/api/ga/docs` | GA Backend Swagger |
+| Execution API | `/api/execution/docs` | Execution Backend Swagger |
+| Tech API | `/api/tech/docs` | Tech System Backend Swagger |
+| Event Log API | `/api/event-log/docs` | Event Log Backend Swagger |
 
 ## What the User Gets
 
@@ -64,8 +70,10 @@ The system gives the modeler a single workspace for:
 - testing strategies with CPCV, WalkForward, and Backtesting;
 - comparing strategies by an aggregate score;
 - defining genetic-algorithm alphabets and generating new strategies automatically;
-- materializing the best GA candidates as Python code in the model registry.
+- materializing the best GA candidates as Python code in the model registry;
+- viewing T-Invest broker accounts and creating orders or stop orders through Execution;
+- managing users, roles, JWT sessions, and action logs through Tech System.
 
 ## Current Implementation Status
 
-The current version is a research and laboratory platform for forming, analyzing, testing, and generating trading strategies. It includes data infrastructure, UI, APIs, the strategy core, testing tools, and a GA generator. Production order execution, broker account management, risk-control services, and order-management modules can be implemented as separate extensions.
+The current version is a research and laboratory platform for forming, analyzing, testing, generating, and controlled execution of trading strategies. It includes data infrastructure, UI, APIs, the strategy core, testing tools, a GA generator, Execution, RBAC/JWT authentication, event logging, and an observability profile. Production risk limits and a fully automated order-management circuit must be configured and validated separately.

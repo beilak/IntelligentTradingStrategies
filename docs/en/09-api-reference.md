@@ -11,6 +11,11 @@ All external requests go through `nginx-gateway`. Paths below are available afte
 | Data Backend | `/api/data/docs` |
 | Strategy Backend | `/api/strategies/docs` |
 | GA Backend | `/api/ga/docs` |
+| Execution Backend | `/api/execution/docs` |
+| Tech System Backend | `/api/tech/docs` |
+| Event Log Backend | `/api/event-log/docs` |
+
+Most business endpoints require a JWT Bearer token obtained through Tech System (`POST /api/tech/auth/login` or `POST /api/tech/auth/register`). Health-check endpoints are available without business parameters.
 
 ## Data API
 
@@ -66,6 +71,14 @@ GET /api/data/currencies
 
 Returns currency instruments.
 
+### Unified Instrument Reference
+
+```http
+GET /api/data/instruments
+```
+
+Supports search and filters by `instrument_types`, `class_code`, `exchange`, `currency`, `api_trade_available`, `limit`, and `offset`.
+
 ### Prices
 
 ```http
@@ -113,6 +126,17 @@ Parameters:
 - `class_code`;
 - `start_date`;
 - `end_date`.
+
+### Monte Carlo and RSS
+
+```http
+GET  /api/data/monte-carlo
+GET  /api/data/rss
+GET  /api/data/rss/sources
+POST /api/data/rss/load
+```
+
+`monte-carlo` builds close-price scenarios for one instrument. RSS endpoints read, filter, and load news from configured sources.
 
 ## Strategy API
 
@@ -162,6 +186,16 @@ The detail endpoint returns:
 GET /api/strategies/trading-strategies
 GET /api/strategies/trading-strategies/{strategy_name}
 ```
+
+### Trading Strategy Production State
+
+```http
+GET /api/strategies/trading-strategies/prod-ready
+PUT /api/strategies/trading-strategies/{strategy_name}/prod-ready
+GET /api/strategies/strategy-type
+```
+
+These endpoints mark a trading strategy as ready for Execution, return production-ready strategies, and describe the full strategy type.
 
 ### CPCV
 
@@ -314,7 +348,96 @@ POST body example:
 }
 ```
 
+## Execution API
+
+Base path:
+
+```text
+/api/execution/
+```
+
+### Health
+
+```http
+GET /api/execution/health
+```
+
+The response includes broker name, token status, configured account count, and `order_submission_mode`.
+
+### Accounts and Overview
+
+```http
+GET /api/execution/accounts
+GET /api/execution/accounts/{account_id}/overview?operations_days=30
+```
+
+Returns configured T-Invest accounts, portfolio, positions, withdrawal limits, margin attributes, active orders, stop orders, and operations.
+
+### Orders
+
+```http
+POST /api/execution/accounts/{account_id}/orders
+POST /api/execution/accounts/{account_id}/stop-orders
+```
+
+A regular order contains `instrument_id`, `side`, `order_type`, `quantity`, `price`, `time_in_force`, and comment. A stop order contains `stop_order_type`, `stop_price`, optional `limit_price`, and `expire_at`. In `stub` mode the ticket is validated locally and is not sent to the broker.
+
+### Market Data and Strategies
+
+```http
+GET       /api/execution/market-data/last-price?instrument_id=...
+WebSocket /api/execution/ws/orderbook
+GET       /api/execution/accounts/{account_id}/strategies
+PUT       /api/execution/accounts/{account_id}/strategies/{strategy_name}
+DELETE    /api/execution/accounts/{account_id}/strategies/{strategy_name}
+POST      /api/execution/accounts/{account_id}/strategies/{strategy_name}/runs
+```
+
+Strategy assignment is stored in the database. Runs use period, interval, `order_type`, `limit_offset_pct`, and `min_order_value` settings.
+
+## Tech System API
+
+Base path:
+
+```text
+/api/tech/
+```
+
+Main groups:
+
+```http
+POST /api/tech/auth/register
+POST /api/tech/auth/login
+POST /api/tech/auth/refresh
+GET  /api/tech/auth/me
+POST /api/tech/auth/logout
+GET  /api/tech/profile/me
+GET  /api/tech/roles
+GET  /api/tech/permissions
+GET  /api/tech/users
+GET  /api/tech/role-requests
+GET  /api/tech/audit/auth
+GET  /api/tech/audit/roles
+```
+
+Tech System handles registration, JWT access/refresh tokens, roles, permissions, role requests, user blocking, and auth/RBAC audit events.
+
+## Event Log API
+
+Base path:
+
+```text
+/api/event-log/
+```
+
+```http
+GET /api/event-log/health
+GET /api/event-log/events
+GET /api/event-log/events/filter-options
+```
+
+`events` supports filters `id`, `date_time_from`, `date_time_to`, `service`, `user`, `http_action`, `ip_address`, `path`, `header`, `body`, `limit`, and `offset`.
+
 ## Integration Dependency
 
-Strategy Backend and GA Backend do not call T-Invest directly. They obtain data through Data Backend. This reduces coupling and makes it possible to replace the data source without rewriting tests and GA.
-
+Strategy Backend, GA Backend, and Execution Backend use Data Backend for market data. Execution Backend also calls the T-Invest broker API for accounts and orders. All backend services install Event Log and Observability middleware, and protected endpoints use JWT/RBAC from Tech System.

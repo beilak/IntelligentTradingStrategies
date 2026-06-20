@@ -13,6 +13,9 @@ A minimal system delivery includes:
 - backend services;
 - Python strategy core;
 - GA engine;
+- Execution module;
+- Tech System with RBAC/JWT;
+- Event Log and observability configuration;
 - Markdown documentation in `docs`;
 - PDF documentation versions in `docs/pdf`;
 - interface screenshots in `docs/img`;
@@ -48,6 +51,10 @@ The script uses Markdown files and images from `docs/img`, builds Russian and En
 | `tinvest_token` | T-Invest token | empty |
 | `TINVEST_TOKEN` | alternative token name | empty |
 | `TINKOFF_INVEST_API_TOKEN` | alternative token name | empty |
+| `EXECUTION_TINVEST_TOKEN` | separate T-Invest token for Execution | empty |
+| `EXECUTION_TINVEST_ACCOUNT_IDS` | comma-separated Execution account list | empty |
+| `EXECUTION_TINVEST_ACCOUNTS` | account list with names, for example `id:Main` | empty |
+| `EXECUTION_ORDER_SUBMISSION_MODE` | order mode: `real` or `stub` | `real` |
 | `DATA_BACKEND_STOCKS_TTL_MINUTES` | instrument-reference TTL | `30` |
 | `DATA_BACKEND_BASE_URL` | Data Backend URL for internal services | set in compose |
 | `STRATEGY_TEST_CACHE_DIR` | CPCV cache | `/app/its/data/strategy_tests/cpcv` |
@@ -55,6 +62,13 @@ The script uses Markdown files and images from `docs/img`, builds Russian and En
 | `STRATEGY_BACKTEST_CACHE_DIR` | Backtesting cache | `/app/its/data/strategy_tests/backtest` |
 | `GA_RUN_CACHE_DIR` | GA run cache | `/app/its/data/ga_runs` |
 | `GA_MODELS_DIR` | strategy materialization directory | `/app/its/strategies/models` |
+| `AUTH_JWT_SECRET_KEY` | JWT secret for Tech System and protected APIs | dev secret in compose |
+| `AUTH_ACCESS_TOKEN_TTL_MINUTES` | access token lifetime | `30` |
+| `AUTH_REFRESH_TOKEN_TTL_DAYS` | refresh token lifetime | `7` |
+| `EVENT_LOG_DATABASE_URL` | event-log database | set in compose |
+| `OBSERVABILITY_ENABLED` | global observability middleware flag | `true` |
+| `OBSERVABILITY_TRACING_ENABLED` | tracing through OTEL | `false` |
+| `SENTRY_DSN` | GlitchTip/Sentry DSN | set in compose |
 | `ITS_GATEWAY_PORT` | external gateway port | `8080` |
 
 ## Data Storage
@@ -65,6 +79,11 @@ Docker Compose uses volumes:
 t-invest-cache
 strategy-test-cache
 ga-cache
+postgres-data
+event-log-postgres-data
+prometheus-data
+grafana-data
+opensearch-data
 ```
 
 They preserve:
@@ -72,7 +91,9 @@ They preserve:
 - loaded data across container restarts;
 - expensive source responses;
 - saved tests between sessions;
-- GA run history.
+- GA run history;
+- users, roles, strategy assignments, and event logs;
+- observability tool state.
 
 ## Materialized Strategies
 
@@ -101,7 +122,27 @@ docker compose logs -f
 docker compose logs -f data-backend
 docker compose logs -f strategy-backend
 docker compose logs -f ga-backend
+docker compose logs -f execution-backend
+docker compose logs -f tech-system-backend
+docker compose logs -f event-log-backend
 ```
+
+## Observability Profile
+
+Start monitoring with:
+
+```bash
+docker compose --profile observability up --build
+```
+
+After startup:
+
+- Grafana: `http://localhost:8080/grafana/`;
+- OpenSearch API: `http://localhost:8080/opensearch-api/`;
+- OpenSearch Dashboards: `http://localhost:5601/app/home`;
+- GlitchTip: `http://localhost:8001/`.
+
+Backend services publish `/metrics`, write structured JSON logs, and send errors to GlitchTip when the corresponding environment variables are enabled.
 
 ## Updating the System
 
@@ -126,6 +167,9 @@ Important artifacts:
 - Docker volume `strategy-test-cache` - saved tests;
 - Docker volume `ga-cache` - GA runs;
 - Docker volume `t-invest-cache` - data cache;
+- Docker volume `postgres-data` - users, roles, and strategy assignments;
+- Docker volume `event-log-postgres-data` - event log;
+- observability volumes - metrics, dashboards, and log indexes;
 - `.env` - local secrets, should not be published.
 
 ## Security
@@ -135,8 +179,11 @@ The current configuration is intended for a local or closed research circuit.
 Important:
 
 - do not publish the T-Invest token;
+- do not publish `AUTH_JWT_SECRET_KEY`;
 - do not commit `.env`;
 - do not expose the gateway to the public internet without authentication;
+- use `EXECUTION_ORDER_SUBMISSION_MODE=stub` for demonstrations and checks without real orders;
+- verify `EXECUTION_TINVEST_ACCOUNT_IDS` before enabling `real` mode;
 - note that backend CORS is permissive for development convenience;
 - restrict server access if the system is deployed remotely.
 
@@ -144,13 +191,13 @@ Important:
 
 The current version:
 
-- is not a broker terminal;
-- does not place real orders;
-- does not execute exchange trades;
+- is not a full broker terminal with production-grade risk management;
+- can send orders through Execution in `real` mode, but does not replace independent risk checks;
+- supports `stub` mode for safe order validation without broker submission;
 - does not guarantee future performance;
 - depends on availability and quality of the external data source.
 
-Production execution, risk limits, order journaling, and broker integration can be added as separate services.
+Before production use, configure risk limits, user permissions, order-approval rules, and monitoring/alerting separately.
 
 ## Client Handover
 
@@ -160,6 +207,7 @@ For handover, provide:
 - launch instructions;
 - this documentation package;
 - description of required tokens and access rights;
+- description of configured Execution accounts and order mode;
 - known limitations;
 - example test runs;
 - list of base and generated strategies;
@@ -176,3 +224,6 @@ For handover, provide:
 7. Open GA Lab and view alphabets.
 8. Run a small GA search with few generations.
 9. Verify that a TOP strategy appears in `its/strategies/models`.
+10. Open Tech System and register or log in.
+11. Open Execution and check the configured account list.
+12. In `stub` mode, create a test order and verify that it is not sent to the broker.

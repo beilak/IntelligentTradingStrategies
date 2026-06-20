@@ -18,6 +18,22 @@ Intelligent Trading Strategies - интеллектуальная система
 
 Подсистема генерации стратегий генетическим алгоритмом.
 
+## Execution
+
+Подсистема работы с брокерскими счетами T-Invest, заявками, stop-заявками, order book и назначением trading strategies на счет.
+
+## Tech System
+
+Техническая подсистема регистрации, входа, JWT-сессий, ролей, permissions и аудита auth/RBAC-событий.
+
+## Event Log
+
+Append-only журнал пользовательских и API-действий, сохраняемый в отдельной базе `event-log-postgres`.
+
+## Observability
+
+Профиль мониторинга и диагностики: метрики Prometheus, dashboards Grafana, структурные логи, OpenSearch, tracing и GlitchTip.
+
 ## Launchpad
 
 Главное окно программы с плитками запуска подсистем.
@@ -41,6 +57,14 @@ Python-класс, который собирает ядро стратегии �
 ## Trading Strategy
 
 Полная торговая стратегия: ядро портфельной модели плюс правила исполнения, например stop-loss и take-profit.
+
+## RBAC
+
+Role-Based Access Control - разграничение доступа через роли и permissions.
+
+## JWT
+
+JSON Web Token - токен access/refresh сессии пользователя.
 
 ## CPCV
 
@@ -113,4 +137,3 @@ Financial Instrument Global Identifier - глобальный идентифик
 ## Custom gold bar
 
 Альтернативный бар, построенный через стоимость заданного количества золота.
-

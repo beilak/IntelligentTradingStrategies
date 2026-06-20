@@ -11,6 +11,7 @@
 - Git для получения исходного кода;
 - доступ к интернету для сборки образов и обращения к источнику данных;
 - токен T-Invest API для загрузки рыночных данных;
+- идентификаторы брокерских счетов T-Invest для Execution, если нужен контур исполнения;
 - свободный порт `8080` или другой порт, заданный через `ITS_GATEWAY_PORT`.
 
 Рекомендуемые ресурсы рабочей станции:
@@ -63,7 +64,17 @@ TINVEST_TOKEN=your_tinkoff_invest_token
 TINKOFF_INVEST_API_TOKEN=your_tinkoff_invest_token
 ```
 
-Токен нужен Data Backend для получения инструментов, котировок, валют и дивидендов через T-Invest API.
+Токен нужен Data Backend для получения инструментов, котировок, валют и дивидендов через T-Invest API. Execution использует `EXECUTION_TINVEST_TOKEN`, если он задан, иначе те же переменные токена.
+
+Для Execution можно задать список счетов:
+
+```dotenv
+EXECUTION_TINVEST_ACCOUNT_IDS=account_id_1,account_id_2
+EXECUTION_TINVEST_ACCOUNTS=account_id_1:Main,account_id_2:IIS
+EXECUTION_ORDER_SUBMISSION_MODE=stub
+```
+
+`EXECUTION_ORDER_SUBMISSION_MODE=stub` проверяет заявки локально и не отправляет их брокеру. Значение по умолчанию - `real`.
 
 ## Запуск всей системы
 
@@ -81,7 +92,13 @@ docker compose up --build
 - `strategy-ui`;
 - `ga-backend`;
 - `ga-ui`;
+- `execution-backend`;
+- `execution-ui`;
+- `tech-system-backend`;
+- `tech-system-ui`;
+- `event-log-backend`;
 - `launchpad-ui`;
+- PostgreSQL для прикладных данных и отдельный PostgreSQL для журнала событий;
 - `nginx-gateway`.
 
 ## URL после запуска
@@ -92,10 +109,15 @@ docker compose up --build
 | Data Hub | [http://localhost:8080/data/](http://localhost:8080/data/) |
 | Strategy Lab | [http://localhost:8080/strategies/](http://localhost:8080/strategies/) |
 | GA Lab | [http://localhost:8080/ga/](http://localhost:8080/ga/) |
+| Execution | [http://localhost:8080/execution/](http://localhost:8080/execution/) |
+| Tech System / Auth | [http://localhost:8080/tech/auth/](http://localhost:8080/tech/auth/) |
 | Документация | [http://localhost:8080/docs/](http://localhost:8080/docs/) |
 | Data API Swagger | [http://localhost:8080/api/data/docs](http://localhost:8080/api/data/docs) |
 | Strategy API Swagger | [http://localhost:8080/api/strategies/docs](http://localhost:8080/api/strategies/docs) |
 | GA API Swagger | [http://localhost:8080/api/ga/docs](http://localhost:8080/api/ga/docs) |
+| Execution API Swagger | [http://localhost:8080/api/execution/docs](http://localhost:8080/api/execution/docs) |
+| Tech API Swagger | [http://localhost:8080/api/tech/docs](http://localhost:8080/api/tech/docs) |
+| Event Log API Swagger | [http://localhost:8080/api/event-log/docs](http://localhost:8080/api/event-log/docs) |
 
 Если порт `8080` занят:
 
@@ -129,6 +151,9 @@ ok
 http://localhost:8080/api/data/health
 http://localhost:8080/api/strategies/health
 http://localhost:8080/api/ga/health
+http://localhost:8080/api/execution/health
+http://localhost:8080/api/tech/health
+http://localhost:8080/api/event-log/health
 ```
 
 Ожидаемый JSON:
@@ -146,6 +171,8 @@ Docker Compose создает именованные volumes:
 | `t-invest-cache` | кэш котировок, справочников и дивидендов |
 | `strategy-test-cache` | сохраненные CPCV, WalkForward и Backtesting отчеты |
 | `ga-cache` | сохраненные GA-запуски |
+| `postgres-data` | пользователи, роли, назначения стратегий и прикладное состояние |
+| `event-log-postgres-data` | журнал событий пользовательских и API-действий |
 
 GA также записывает материализованные стратегии в локальную папку:
 
@@ -191,3 +218,13 @@ ITS_GATEWAY_PORT=8090 docker compose up --build
 - сложные CPCV и WalkForward параметры.
 
 Решение: уменьшить `num_generations`, `sol_per_pop`, число активов или длину периода.
+
+### Execution не показывает счета
+
+Причины:
+
+- не задан токен T-Invest;
+- не задан `EXECUTION_TINVEST_ACCOUNT_IDS` или `EXECUTION_TINVEST_ACCOUNTS`;
+- указанный счет не возвращается T-Invest API для текущего токена.
+
+Решение: проверить `.env`, права токена и перезапустить контейнеры.

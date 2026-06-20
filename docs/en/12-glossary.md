@@ -18,6 +18,22 @@ The model subsystem. It handles component registries, ready strategies, testing,
 
 The subsystem for generating strategies through a genetic algorithm.
 
+## Execution
+
+The subsystem for T-Invest broker accounts, orders, stop orders, order book, and assigning trading strategies to an account.
+
+## Tech System
+
+The technical subsystem for registration, login, JWT sessions, roles, permissions, and auth/RBAC audit events.
+
+## Event Log
+
+An append-only log of user and API actions stored in a separate `event-log-postgres` database.
+
+## Observability
+
+The monitoring and diagnostics profile: Prometheus metrics, Grafana dashboards, structured logs, OpenSearch, tracing, and GlitchTip.
+
 ## Launchpad
 
 The main program window with tiles for launching subsystems.
@@ -41,6 +57,14 @@ A Python class that assembles the strategy core and returns a `Strategy` object.
 ## Trading Strategy
 
 A full trading strategy: portfolio-model core plus execution rules such as stop-loss and take-profit.
+
+## RBAC
+
+Role-Based Access Control through roles and permissions.
+
+## JWT
+
+JSON Web Token used for user access and refresh sessions.
 
 ## CPCV
 
@@ -113,4 +137,3 @@ Candle data: open, high, low, close, volume.
 ## Custom Gold Bar
 
 An alternative bar built through the value of a specified amount of gold.
-

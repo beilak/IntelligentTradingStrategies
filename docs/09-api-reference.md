@@ -11,6 +11,11 @@
 | Data Backend | `/api/data/docs` |
 | Strategy Backend | `/api/strategies/docs` |
 | GA Backend | `/api/ga/docs` |
+| Execution Backend | `/api/execution/docs` |
+| Tech System Backend | `/api/tech/docs` |
+| Event Log Backend | `/api/event-log/docs` |
+
+Большинство бизнес-endpoints требуют JWT Bearer token, полученный через Tech System (`POST /api/tech/auth/login` или `POST /api/tech/auth/register`). Health-check endpoints доступны без бизнес-параметров.
 
 ## Data API
 
@@ -66,6 +71,14 @@ GET /api/data/currencies
 
 Возвращает валютные инструменты.
 
+### Универсальный справочник инструментов
+
+```http
+GET /api/data/instruments
+```
+
+Поддерживает поиск и фильтрацию по `instrument_types`, `class_code`, `exchange`, `currency`, `api_trade_available`, `limit`, `offset`.
+
 ### Цены
 
 ```http
@@ -113,6 +126,17 @@ GET /api/data/dividends
 - `class_code`;
 - `start_date`;
 - `end_date`.
+
+### Monte Carlo и RSS
+
+```http
+GET  /api/data/monte-carlo
+GET  /api/data/rss
+GET  /api/data/rss/sources
+POST /api/data/rss/load
+```
+
+`monte-carlo` строит сценарии цены закрытия для одного инструмента. RSS endpoints читают, фильтруют и загружают новости из настроенных источников.
 
 ## Strategy API
 
@@ -162,6 +186,16 @@ GET /api/strategies/models/{model_name}
 GET /api/strategies/trading-strategies
 GET /api/strategies/trading-strategies/{strategy_name}
 ```
+
+### Production state торговых стратегий
+
+```http
+GET /api/strategies/trading-strategies/prod-ready
+PUT /api/strategies/trading-strategies/{strategy_name}/prod-ready
+GET /api/strategies/strategy-type
+```
+
+Эти endpoints отмечают trading strategy как готовую к Execution, возвращают список таких стратегий и описывают тип полноценной стратегии.
 
 ### CPCV
 
@@ -324,7 +358,96 @@ POST /api/ga/runs
 }
 ```
 
+## Execution API
+
+Базовый путь:
+
+```text
+/api/execution/
+```
+
+### Health
+
+```http
+GET /api/execution/health
+```
+
+Ответ содержит брокера, наличие токена, число настроенных счетов и `order_submission_mode`.
+
+### Счета и обзор
+
+```http
+GET /api/execution/accounts
+GET /api/execution/accounts/{account_id}/overview?operations_days=30
+```
+
+Возвращает настроенные счета T-Invest, портфель, позиции, лимиты вывода, маржинальные атрибуты, активные заявки, stop-заявки и операции.
+
+### Заявки
+
+```http
+POST /api/execution/accounts/{account_id}/orders
+POST /api/execution/accounts/{account_id}/stop-orders
+```
+
+Обычная заявка содержит `instrument_id`, `side`, `order_type`, `quantity`, `price`, `time_in_force` и комментарий. Stop-заявка содержит `stop_order_type`, `stop_price`, optional `limit_price` и `expire_at`. В режиме `stub` заявка валидируется локально и не отправляется брокеру.
+
+### Рыночные данные и стратегии
+
+```http
+GET       /api/execution/market-data/last-price?instrument_id=...
+WebSocket /api/execution/ws/orderbook
+GET       /api/execution/accounts/{account_id}/strategies
+PUT       /api/execution/accounts/{account_id}/strategies/{strategy_name}
+DELETE    /api/execution/accounts/{account_id}/strategies/{strategy_name}
+POST      /api/execution/accounts/{account_id}/strategies/{strategy_name}/runs
+```
+
+Назначение стратегии сохраняется в БД. Запуск использует параметры периода, интервала, `order_type`, `limit_offset_pct` и `min_order_value`.
+
+## Tech System API
+
+Базовый путь:
+
+```text
+/api/tech/
+```
+
+Основные группы:
+
+```http
+POST /api/tech/auth/register
+POST /api/tech/auth/login
+POST /api/tech/auth/refresh
+GET  /api/tech/auth/me
+POST /api/tech/auth/logout
+GET  /api/tech/profile/me
+GET  /api/tech/roles
+GET  /api/tech/permissions
+GET  /api/tech/users
+GET  /api/tech/role-requests
+GET  /api/tech/audit/auth
+GET  /api/tech/audit/roles
+```
+
+Tech System отвечает за регистрацию, JWT access/refresh tokens, роли, permissions, заявки на роли, блокировку пользователей и аудит auth/RBAC-событий.
+
+## Event Log API
+
+Базовый путь:
+
+```text
+/api/event-log/
+```
+
+```http
+GET /api/event-log/health
+GET /api/event-log/events
+GET /api/event-log/events/filter-options
+```
+
+`events` поддерживает фильтры `id`, `date_time_from`, `date_time_to`, `service`, `user`, `http_action`, `ip_address`, `path`, `header`, `body`, `limit`, `offset`.
+
 ## Интеграционные зависимости
 
-Strategy Backend и GA Backend не обращаются к T-Invest напрямую. Они получают данные через Data Backend. Это снижает связанность и позволяет заменить источник данных без переписывания тестов и GA.
-
+Strategy Backend, GA Backend и Execution Backend используют Data Backend для рыночных данных. Execution Backend также обращается к T-Invest broker API для счетов и заявок. Все backend-сервисы устанавливают Event Log и Observability middleware, а защищенные endpoints используют JWT/RBAC из Tech System.

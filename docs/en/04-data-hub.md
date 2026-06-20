@@ -11,7 +11,7 @@ Data Hub is the ITS data subsystem. It connects sources, retrieves market inform
 Data Hub solves three groups of tasks:
 
 - gives the modeler a visual interface for data exploration;
-- provides backend API for Strategy Lab and GA Lab;
+- provides backend API for Strategy Lab, GA Lab, and Execution;
 - isolates external source integrations from strategy logic.
 
 ## Main Files
@@ -34,6 +34,8 @@ The base version connects T-Invest and provides:
 - ticker reference data;
 - sectors, exchanges, currencies, instrument classes;
 - dividends;
+- RSS news from configured sources;
+- Monte Carlo close-price scenarios;
 - custom gold bars recalculated through gold.
 
 ## UI Sections
@@ -120,9 +122,13 @@ Main endpoints:
 | `GET /api/data/sources` | source list |
 | `GET /api/data/stocks` | stock list |
 | `GET /api/data/currencies` | currency list |
+| `GET /api/data/instruments` | unified tradable-instrument reference |
 | `GET /api/data/prices` | OHLCV candles |
 | `GET /api/data/custom-gold-bars` | custom gold bars |
+| `GET /api/data/monte-carlo` | Monte Carlo close-price scenarios |
 | `GET /api/data/dividends` | dividends |
+| `GET /api/data/rss` | news from RSS storage |
+| `POST /api/data/rss/load` | load RSS sources into the DB |
 | `GET /api/data/docs` | Swagger |
 
 ## Supported Candle Intervals
@@ -183,4 +189,3 @@ Dividend selectors require:
 | --- | --- |
 | `ticker` | ticker |
 | `last_buy_date` | last buy date to receive the dividend |
-

@@ -42,8 +42,9 @@ def generate_backtest_report(
         pd.DataFrame(stocks),
         _dividends_info=dividends_info,
     ).build()
-    trading_start_date = pd.Timestamp(
-        settings.get("trading_start_date") or settings.get("start_date")
+    trading_start_date = normalize_timestamp_for_index(
+        settings.get("trading_start_date") or settings.get("start_date"),
+        close.index,
     )
     if trading_start_date < close.index.min():
         trading_start_date = close.index.min()
@@ -95,8 +96,9 @@ def generate_trading_strategy_backtest_report(
         pd.DataFrame(stocks),
         _dividends_info=dividends_info,
     ).build()
-    trading_start_date = pd.Timestamp(
-        settings.get("trading_start_date") or settings.get("start_date")
+    trading_start_date = normalize_timestamp_for_index(
+        settings.get("trading_start_date") or settings.get("start_date"),
+        close.index,
     )
     if trading_start_date < close.index.min():
         trading_start_date = close.index.min()
@@ -233,6 +235,22 @@ def build_backtest_payload(
         "execution_events": execution_events,
     }
     return enrich_backtest_payload_with_stocks(result, stocks)
+
+
+def normalize_timestamp_for_index(value: Any, index: pd.Index) -> pd.Timestamp:
+    timestamp = pd.Timestamp(value)
+    if pd.isna(timestamp):
+        raise HTTPException(status_code=422, detail="trading_start_date is invalid.")
+
+    index_tz = getattr(index, "tz", None)
+    if index_tz is None:
+        if timestamp.tzinfo is not None:
+            return timestamp.tz_localize(None)
+        return timestamp
+
+    if timestamp.tzinfo is None:
+        return timestamp.tz_localize(index_tz)
+    return timestamp.tz_convert(index_tz)
 
 
 def build_close_prices(prices: pd.DataFrame) -> pd.DataFrame:

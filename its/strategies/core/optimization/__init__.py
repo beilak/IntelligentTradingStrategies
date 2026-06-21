@@ -7,6 +7,7 @@ from skfolio.optimization import (
 )
 
 from its.strategies.core.optimization.cvar_allocator import CVaR, CVaRHighRisk
+from its.strategies.core.optimization.cqm_allocator import CQMAllocator
 
 
 def HierarchicalRiskParity(*args, **kwargs) -> SkfolioHierarchicalRiskParity:
@@ -25,4 +26,5 @@ __all__ = [
     "HierarchicalRiskParity",
     "CVaR",
     "CVaRHighRisk",
+    "CQMAllocator",
 ]

@@ -1068,6 +1068,50 @@ graph = ["objgraph (>=1.7.2)"]
 profile = ["gprof2dot (>=2022.7.29)"]
 
 [[package]]
+name = "dimod"
+version = "0.12.22"
+description = "A shared API for binary quadratic model samplers."
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+files = [
+    {file = "dimod-0.12.22-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:60b8b516813bf89c1a166db0c01bbb14589afacc7fa02cd295fcdc50c041a1a5"},
+    {file = "dimod-0.12.22-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:589d923d5f8e8c9a3f99c2c2f25ebc3372236a42cce837599bc18f25b87c422e"},
+    {file = "dimod-0.12.22-cp310-cp310-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:d01e91ca2c44cc2d1b6f3a379bf63435749d0e4ab5d59570a82316ac8a87bfef"},
+    {file = "dimod-0.12.22-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:202847ac48280931b6ce90c59b91238b8e5ff734d96ba2dafc9131a6518a75a7"},
+    {file = "dimod-0.12.22-cp310-cp310-win_amd64.whl", hash = "sha256:04cfc3f5bd818829ae8434322b39231cc607e7314534da3e54eb6acb7fd83eb0"},
+    {file = "dimod-0.12.22-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:0218b2f01017092b6f1591a92df46fff9b8052b157cd302d5b077c63ac28cf53"},
+    {file = "dimod-0.12.22-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:e4ea8c46ac266af77f8de991446beeffc02a4dea3418b6cc32992de19b115998"},
+    {file = "dimod-0.12.22-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:d94db621407582d78125a0a0c60787d9749e67979cf015e3c9c518c92a01b84a"},
+    {file = "dimod-0.12.22-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:a831a3dabeff91174b54aff1b6ec4b7d01cf72a7de55520251bd5436c8beefaa"},
+    {file = "dimod-0.12.22-cp311-cp311-win_amd64.whl", hash = "sha256:69f5c1e9919f05024ae81365f1c13ce0683684c8f12475620841e0d1f97387eb"},
+    {file = "dimod-0.12.22-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:2ec5c49bba0dec84e3397bd36493efae36dbf1d2f7c3f4e71f9266011789f063"},
+    {file = "dimod-0.12.22-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:503eb703d6333cf31da031c1b926e3e9c5f04e679f3fb4e22e8e72eacf3bb050"},
+    {file = "dimod-0.12.22-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:f3778348b0f834a69583778218c84740c914b35a2238057afc15dd6974ccf84b"},
+    {file = "dimod-0.12.22-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:ca9e9bcd7ac681f699435694cf2a43592a70bf205088e1a9d05fc5d4088c8f29"},
+    {file = "dimod-0.12.22-cp312-cp312-win_amd64.whl", hash = "sha256:7e1698cc4d51d698b02dd17f20d5356a34a59583f7df523b645a9582d37a10ae"},
+    {file = "dimod-0.12.22-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:3726ce01d654f8f9b63779781ce2b887d2e5b7c91fccc7b46d7f40b57b2e0584"},
+    {file = "dimod-0.12.22-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:d022c6dc8ca7332b6703a337973272640dc8e51cb9560fe1b18f9c21792c5db4"},
+    {file = "dimod-0.12.22-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:d398094f1be6f98e072d88ee89189e8e2f7d298bffc20de91f81d62f903cf229"},
+    {file = "dimod-0.12.22-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:98568ef67e723e0c1868b0c033cd747b8ce9f97056e75bce7e3771e36eae2ed8"},
+    {file = "dimod-0.12.22-cp313-cp313-win_amd64.whl", hash = "sha256:ed65cab5902422dcf5908b50f031096b551478e632dce9e7d3fb4e643d2d5b58"},
+    {file = "dimod-0.12.22-cp314-cp314-macosx_10_15_x86_64.whl", hash = "sha256:d731a02c0d18bc97264e203fb2f6ecc6598ab6071e043fe554e9bf33fb233283"},
+    {file = "dimod-0.12.22-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:a5fe4d3b6771b194ee37895c83ea860217d28a2fb2373f389bf01f90f2efe03a"},
+    {file = "dimod-0.12.22-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:cdac827ba3676f60c0b8cf07276cffe3654e9b96258bef3dc276fab0c55c2880"},
+    {file = "dimod-0.12.22-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:774a6b9e2384f2c161758bb61fcaad065ab2637cc59ab578ff2f65e9e2adaeba"},
+    {file = "dimod-0.12.22-cp314-cp314-win_amd64.whl", hash = "sha256:991edf155e54aec01788b2a7b5d0fd3ddc4ff3855607f33a69cea29c4bc54c3a"},
+    {file = "dimod-0.12.22-cp314-cp314t-macosx_10_15_x86_64.whl", hash = "sha256:e59d9bbb00c42a7a75ec4cb208c92aa86a765d878722c87968a74c4e85fe49d1"},
+    {file = "dimod-0.12.22-cp314-cp314t-macosx_11_0_arm64.whl", hash = "sha256:5fbe781aa5a33e2f4e7615db5f8b61ce9ffde92a225196f8e696f694d5d70be3"},
+    {file = "dimod-0.12.22-cp314-cp314t-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:afd7989f383f22c74e32746adcdc0b6510206b54bfcab4e0e0adb88027abe492"},
+    {file = "dimod-0.12.22-cp314-cp314t-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:8d779b2f43c5b837aa53126a02f515b6013e642fcb9afd309e663e22ba10240c"},
+    {file = "dimod-0.12.22-cp314-cp314t-win_amd64.whl", hash = "sha256:78b97bc584de5be64af2a69b4865624ee03bddedb3f8f30a328c04ea460471fb"},
+    {file = "dimod-0.12.22.tar.gz", hash = "sha256:303549a92c10318a59ff5e9089e4216661738538cd82e594b3ed692438c8be29"},
+]
+
+[package.dependencies]
+numpy = ">=1.17.3"
+
+[[package]]
 name = "executing"
 version = "2.2.1"
 description = "Get the currently executing AST node of a frame, and other information"
@@ -4940,4 +4984,4 @@ repair = ["scipy (>=1.6.3)"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">3.12, <3.13"
-content-hash = "eb751c99f47e57e5630d270571c818ba7dfd54968edffa929c0e346d7d4ce033"
+content-hash = "e8c5e8912b2e9be39137febffafed0d8f10cdc1607883e1874cedf136f3e2f9e"

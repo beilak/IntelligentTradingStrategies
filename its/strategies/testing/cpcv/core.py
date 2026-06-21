@@ -62,7 +62,10 @@ def generate_cpcv_report(
         pd.DataFrame(stocks),
         _dividends_info=dividends_info,
     ).build()
-    strategy.pipeline.fit(x_train)
+    try:
+        strategy.pipeline.fit(x_train)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     n_test_folds = settings.get("n_test_folds", 6)
     cv = CombinatorialPurgedCV(
@@ -70,18 +73,21 @@ def generate_cpcv_report(
         n_test_folds=n_test_folds,
     )
     cv_summary = series_to_rows(cv.summary(x_test), "value")
-    population = cross_val_predict(
-        strategy.pipeline,
-        x_test,
-        cv=cv,
-        n_jobs=1,
-        portfolio_params={
-            "annualized_factor": annualized_factor(
-                settings.get("interval", "CANDLE_INTERVAL_DAY")
-            ),
-            "tag": strategy.name,
-        },
-    )
+    try:
+        population = cross_val_predict(
+            strategy.pipeline,
+            x_test,
+            cv=cv,
+            n_jobs=1,
+            portfolio_params={
+                "annualized_factor": annualized_factor(
+                    settings.get("interval", "CANDLE_INTERVAL_DAY")
+                ),
+                "tag": strategy.name,
+            },
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     paths = population_to_paths(population)
     unique_path_count = count_unique_paths(paths)
     cv_summary.append(

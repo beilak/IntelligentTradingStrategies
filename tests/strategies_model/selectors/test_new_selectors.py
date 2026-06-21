@@ -2,8 +2,9 @@ import warnings
 
 import numpy as np
 import pandas as pd
+import pytest
 
-from its.strategies.core.selectors import SectorSelector
+from its.strategies.core.selectors import SectorSelector, TickerSelector
 from its.strategies.core.selectors import (
     CrossSectionalMomentumSelector,
     DividendHistorySelector,
@@ -58,6 +59,49 @@ def test_sector_selector_preserves_dataframe_feature_names_without_warning() -> 
 
     assert caught_warnings == []
     assert list(transformed.columns) == ["VKCO"]
+
+
+def test_ticker_selector_selects_explicit_dataframe_columns_in_input_order() -> None:
+    prices = pd.DataFrame(
+        {
+            "SBER": [100, 101, 102],
+            "VKCO": [200, 202, 204],
+            "GAZP": [150, 151, 152],
+        }
+    )
+
+    selector = TickerSelector(tickers=["GAZP", "UNKNOWN", "SBER"]).fit(prices)
+    transformed = selector.transform(prices)
+
+    assert selector.to_keep_.tolist() == [True, False, True]
+    assert list(transformed.columns) == ["SBER", "GAZP"]
+
+
+def test_ticker_selector_can_select_numpy_assets_by_generated_names() -> None:
+    values = np.asarray(
+        [
+            [1.0, 2.0, 3.0],
+            [4.0, 5.0, 6.0],
+        ]
+    )
+
+    selector = TickerSelector(tickers=["asset_1"]).fit(values)
+    transformed = selector.transform(values)
+
+    assert selector.to_keep_.tolist() == [False, True, False]
+    assert transformed.tolist() == [[2.0], [5.0]]
+
+
+def test_ticker_selector_rejects_empty_selection_by_default() -> None:
+    prices = pd.DataFrame(
+        {
+            "GAZP": [100, 101, 102],
+            "LKOH": [200, 202, 204],
+        }
+    )
+
+    with pytest.raises(ValueError, match="Requested tickers: SBER, TRNFP"):
+        TickerSelector(tickers=["SBER", "TRNFP"]).fit(prices)
 
 
 def test_dividend_history_preserves_dataframe_columns() -> None:

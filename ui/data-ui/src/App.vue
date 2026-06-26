@@ -3,6 +3,7 @@ import {
   Activity,
   BarChart3,
   CandlestickChart as CandleIcon,
+  ChevronDown,
   CircleHelp,
   Coins,
   Database,
@@ -65,6 +66,7 @@ const search = ref("");
 const classCode = ref("TQBR");
 const currencyClassCode = ref("");
 const interval = ref("CANDLE_INTERVAL_DAY");
+const selectedSectors = ref<string[]>([]);
 const selectedFigi = ref("");
 const selectedCurrencyFigi = ref("");
 const startDate = ref(formatDate(addDays(new Date(), -180)));
@@ -136,6 +138,14 @@ const selectedClassCode = computed({
 const activeClassOptions = computed(() =>
   activeTab.value === "currencies" ? currencyFilters.value.class_codes : filters.value.class_codes,
 );
+const sectorOptions = computed(() => {
+  const values = new Set(filters.value.sectors);
+  selectedSectors.value.forEach((sector) => values.add(sector));
+  return [...values];
+});
+const selectedSectorSummary = computed(() =>
+  selectedSectors.value.length > 0 ? `${t.value.selected}: ${selectedSectors.value.length}` : t.value.all,
+);
 const isBusy = computed(
   () =>
     isLoadingStocks.value ||
@@ -202,6 +212,7 @@ async function loadStocks() {
     const response = await getStocks({
       class_code: classCode.value,
       search: search.value,
+      sector: selectedSectors.value,
       limit: 300,
     });
     stocks.value = response.items;
@@ -455,6 +466,10 @@ function onClassCodeChange() {
     void loadCurrencies();
     return;
   }
+  void loadStocks();
+}
+
+function onSectorFilterChange() {
   void loadStocks();
 }
 
@@ -819,6 +834,28 @@ function setActiveTab(tab: ViewTab) {
             <span>{{ t.to }}</span>
             <input v-model="endDate" type="date" @change="onToolbarChange" />
           </label>
+
+          <div v-if="activeTab === 'instruments'" class="control sector-filter">
+            <span>{{ t.sector }}</span>
+            <details class="multi-select">
+              <summary>
+                <span>{{ selectedSectorSummary }}</span>
+                <ChevronDown :size="16" />
+              </summary>
+              <div class="multi-select-options">
+                <label v-for="sector in sectorOptions" :key="sector" class="multi-select-option">
+                  <input
+                    v-model="selectedSectors"
+                    type="checkbox"
+                    :value="sector"
+                    @change="onSectorFilterChange"
+                  />
+                  <span>{{ sector }}</span>
+                </label>
+                <span v-if="sectorOptions.length === 0" class="multi-select-empty">{{ t.empty }}</span>
+              </div>
+            </details>
+          </div>
 
           <button class="refresh-button" type="submit" :disabled="isBusy">
             <RefreshCw :class="{ spin: isBusy }" :size="17" />

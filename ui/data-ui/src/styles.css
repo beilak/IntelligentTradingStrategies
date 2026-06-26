@@ -264,7 +264,8 @@ td small {
 
 .input-shell,
 .control input,
-.control select {
+.control select,
+.multi-select summary {
   background: #0b0e14;
   border: 1px solid #2b3342;
   border-radius: 8px;
@@ -299,8 +300,89 @@ td small {
 
 .control input:focus,
 .control select:focus,
-.input-shell:focus-within {
+.input-shell:focus-within,
+.multi-select[open] summary,
+.multi-select summary:focus {
   border-color: #54d6a4;
+}
+
+.sector-filter {
+  min-width: 180px;
+}
+
+.multi-select {
+  position: relative;
+}
+
+.multi-select summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  list-style: none;
+  outline: 0;
+  padding: 0 10px;
+  user-select: none;
+}
+
+.multi-select summary svg {
+  color: #8992a3;
+  flex: 0 0 auto;
+  transition: transform 0.16s ease;
+}
+
+.multi-select[open] summary svg {
+  transform: rotate(180deg);
+}
+
+.multi-select summary::-webkit-details-marker {
+  display: none;
+}
+
+.multi-select-options {
+  background: #0b0e14;
+  border: 1px solid #2b3342;
+  border-radius: 8px;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
+  display: grid;
+  gap: 2px;
+  left: 0;
+  margin-top: 6px;
+  max-height: 260px;
+  min-width: 220px;
+  overflow: auto;
+  padding: 6px;
+  position: absolute;
+  top: 100%;
+  z-index: 30;
+}
+
+.multi-select-option {
+  align-items: center;
+  border-radius: 6px;
+  color: #c8ceda;
+  cursor: pointer;
+  display: flex;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 8px;
+}
+
+.multi-select-option:hover {
+  background: rgba(84, 214, 164, 0.08);
+}
+
+.multi-select-option input {
+  accent-color: #54d6a4;
+  min-height: auto;
+  padding: 0;
+}
+
+.multi-select-empty {
+  color: #8992a3;
+  font-size: 12px;
+  padding: 8px;
 }
 
 .refresh-button {

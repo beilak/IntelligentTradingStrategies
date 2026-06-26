@@ -18,6 +18,7 @@ const REFRESH_TOKEN_KEY = "its-auth-refresh-token";
 interface StockParams {
   class_code?: string;
   search?: string;
+  sector?: string[];
   limit?: number;
   offset?: number;
 }

@@ -270,7 +270,7 @@ def create_app() -> FastAPI:
         search: str | None = None,
         tickers: Annotated[list[str] | None, Query()] = None,
         exchange: str | None = None,
-        sector: str | None = None,
+        sector: Annotated[list[str] | None, Query()] = None,
         country_of_risk: str | None = None,
         limit: Annotated[int, Query(ge=1, le=500)] = 200,
         offset: Annotated[int, Query(ge=0)] = 0,
@@ -283,7 +283,7 @@ def create_app() -> FastAPI:
             search=search,
             tickers=split_query_list(tickers),
             exchange=exchange,
-            sector=sector,
+            sectors=split_query_list(sector),
             country_of_risk=country_of_risk,
         )
         total = len(filtered)
@@ -1136,7 +1136,7 @@ def filter_stocks(
     search: str | None,
     tickers: list[str],
     exchange: str | None,
-    sector: str | None,
+    sectors: list[str],
     country_of_risk: str | None,
 ) -> pd.DataFrame:
     filtered = stocks_df.copy()
@@ -1160,9 +1160,10 @@ def filter_stocks(
         filtered = filtered.loc[
             filtered["exchange"].astype(str).str.upper() == exchange.upper()
         ]
-    if sector:
+    if sectors:
+        sector_set = {sector.lower() for sector in sectors}
         filtered = filtered.loc[
-            filtered["sector"].astype(str).str.lower() == sector.lower()
+            filtered["sector"].astype(str).str.lower().isin(sector_set)
         ]
     if country_of_risk:
         filtered = filtered.loc[

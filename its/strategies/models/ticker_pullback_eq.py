@@ -11,8 +11,8 @@ class ModelPullbackWithEQBuilder(StrategyBuilder):
 
     TICKERS = ["SBER", "TRNFP"]
     MARKER = "high"
-    LOOKBACK_BARS = 20
-    THRESHOLD_PCT = 0.1
+    LOOKBACK_BARS = 10
+    THRESHOLD_PCT = 0.01
 
     @override
     def build(self) -> Strategy:

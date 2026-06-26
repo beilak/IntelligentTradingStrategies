@@ -362,6 +362,7 @@ function splitTableRow(line) {
 
 function inlineMarkdown(text) {
   const code = [];
+  const linkedImages = [];
   let value = text.replace(/`([^`]+)`/g, (_, snippet) => {
     const token = `@@CODE_${code.length}@@`;
     code.push(`<code>${escapeHtml(snippet)}</code>`);
@@ -369,6 +370,18 @@ function inlineMarkdown(text) {
   });
 
   value = escapeHtml(value);
+  value = value.replace(
+    /\[!\[([^\]]*)\]\(([^)]+)\)\]\(([^)]+)\)/g,
+    (_, alt, imageTarget, linkTarget) => {
+      const token = `@@LINKED_IMAGE_${linkedImages.length}@@`;
+      const src = resolveAssetUrl(unescapeHtml(imageTarget.trim()));
+      const href = resolveLinkUrl(unescapeHtml(linkTarget.trim()));
+      linkedImages.push(
+        `<a href="${escapeAttr(href)}" target="_blank" rel="noopener noreferrer"><img src="${escapeAttr(src)}" alt="${escapeAttr(unescapeHtml(alt))}" loading="lazy"></a>`,
+      );
+      return token;
+    },
+  );
   value = value.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, target) => {
     const src = resolveAssetUrl(unescapeHtml(target.trim()));
     return `<img src="${escapeAttr(src)}" alt="${escapeAttr(unescapeHtml(alt))}" loading="lazy">`;
@@ -382,6 +395,9 @@ function inlineMarkdown(text) {
 
   code.forEach((html, index) => {
     value = value.replace(`@@CODE_${index}@@`, html);
+  });
+  linkedImages.forEach((html, index) => {
+    value = value.replace(`@@LINKED_IMAGE_${index}@@`, html);
   });
   return value;
 }

@@ -54,6 +54,7 @@ from its.strategies.models.ga_generated_20260522224030_997fef23_top_3 import (
 )
 from its.strategies.models.ticker_pullback_eq import ModelPullbackWithEQBuilder
 from its.strategies.models.ticker_turnover_pullback_eq import (
+    ModelTurnoverAutoRegressionWithInverseVolatilityBuilder,
     ModelTurnoverPullbackWithEQBuilder,
     ModelTurnoverRangePullbackWithInverseVolatilityBuilder,
 )
@@ -71,6 +72,7 @@ from its.strategies.models.top_turnover_inverse_volatility import (
 )
 
 __all__ = [
+    "ModelTurnoverAutoRegressionWithInverseVolatilityBuilder",
     "ModelTurnoverRangePullbackWithInverseVolatilityBuilder",
     "ModelTurnoverPullbackWithEQBuilder",
     "ModelTurnoverWithEQBuilder",

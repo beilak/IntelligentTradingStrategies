@@ -1,5 +1,6 @@
 import type {
   BacktestResult,
+  BacktestRun,
   BacktestSavedTest,
   BacktestSettings,
   CpcvResult,
@@ -117,6 +118,22 @@ export async function runBacktestTest(
   });
 }
 
+export async function startBacktestRun(
+  modelName: string,
+  settings: BacktestSettings,
+): Promise<BacktestRun> {
+  return request<BacktestRun>(`/models/${encodeURIComponent(modelName)}/backtest/runs`, {
+    method: "POST",
+    body: JSON.stringify(settings),
+  });
+}
+
+export async function getBacktestRun(modelName: string, runId: string): Promise<BacktestRun> {
+  return request<BacktestRun>(
+    `/models/${encodeURIComponent(modelName)}/backtest/runs/${encodeURIComponent(runId)}`,
+  );
+}
+
 export async function listAvailableRiskModels(modelName: string): Promise<{ items: RiskModelDefinition[] }> {
   return request<{ items: RiskModelDefinition[] }>(
     `/models/${encodeURIComponent(modelName)}/risk-models/available`,
@@ -181,6 +198,25 @@ export async function runTradingStrategyBacktestTest(
     method: "POST",
     body: JSON.stringify(settings),
   });
+}
+
+export async function startTradingStrategyBacktestRun(
+  strategyName: string,
+  settings: BacktestSettings,
+): Promise<BacktestRun> {
+  return request<BacktestRun>(
+    `/trading-strategies/${encodeURIComponent(strategyName)}/backtest/runs`,
+    { method: "POST", body: JSON.stringify(settings) },
+  );
+}
+
+export async function getTradingStrategyBacktestRun(
+  strategyName: string,
+  runId: string,
+): Promise<BacktestRun> {
+  return request<BacktestRun>(
+    `/trading-strategies/${encodeURIComponent(strategyName)}/backtest/runs/${encodeURIComponent(runId)}`,
+  );
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {

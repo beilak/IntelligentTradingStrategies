@@ -22,12 +22,14 @@ import {
 import { computed, onMounted, ref, watch } from "vue";
 import {
     getBacktestTest,
+    getBacktestRun,
     getCpcvTest,
     getLatestStrategyComparison,
     getModelDetail,
     getRegistry,
     getRiskModelTest,
     getTradingStrategyBacktestTest,
+    getTradingStrategyBacktestRun,
     getTradingStrategyDetail,
     getWalkForwardTest,
     listAvailableRiskModels,
@@ -37,11 +39,11 @@ import {
     listTradingStrategies,
     listTradingStrategyBacktestTests,
     listWalkForwardTests,
-    runBacktestTest,
+    startBacktestRun,
     runCpcvTest,
     runRiskModelTest,
     setTradingStrategyProdReady,
-    runTradingStrategyBacktestTest,
+    startTradingStrategyBacktestRun,
     runWalkForwardTest,
 } from "./api";
 import { messages, cpcvMetricTranslations } from "./i18n";
@@ -708,15 +710,31 @@ async function runBacktest() {
     isBacktestRunning.value = true;
     backtestError.value = "";
     try {
-        backtestResult.value = isTradingStrategyTab.value
-            ? await runTradingStrategyBacktestTest(
+        let run = isTradingStrategyTab.value
+            ? await startTradingStrategyBacktestRun(
                   selectedModelName.value,
                   backendBacktestSettings(),
               )
-            : await runBacktestTest(
+            : await startBacktestRun(
                   selectedModelName.value,
                   backendBacktestSettings(),
               );
+        while (run.status === "queued" || run.status === "running") {
+            await new Promise((resolve) => window.setTimeout(resolve, 1_000));
+            run = isTradingStrategyTab.value
+                ? await getTradingStrategyBacktestRun(
+                      selectedModelName.value,
+                      run.run_id,
+                  )
+                : await getBacktestRun(selectedModelName.value, run.run_id);
+        }
+        if (run.status === "failed") {
+            throw new Error(run.error ?? "Backtest failed");
+        }
+        if (!run.result) {
+            throw new Error("Backtest completed without a result");
+        }
+        backtestResult.value = run.result;
         await loadSavedBacktestTests(selectedModelName.value);
     } catch (err) {
         backtestError.value = formatError(err);

@@ -1,12 +1,19 @@
 from typing import override
 
+from sklearn.preprocessing import FunctionTransformer
+
 from its.strategies.core.optimization import EqualWeighted, InverseVolatility
 from its.strategies.core.selectors import IntradayTurnoverSelector
 from its.strategies.core.signals import (
+    AutoRegressionGrowthSignal,
     CloseBelowRecentMarkerSignal,
     RangeLowProximitySignal,
 )
 from its.strategies.core.types.strategy_types import Pipeline, Strategy, StrategyBuilder
+
+
+def _recent_rows(values, *, bars: int):
+    return values.iloc[-bars:] if hasattr(values, "iloc") else values[-bars:]
 
 
 class ModelTurnoverPullbackWithEQBuilder(StrategyBuilder):
@@ -89,6 +96,59 @@ class ModelTurnoverRangePullbackWithInverseVolatilityBuilder(StrategyBuilder):
                             min_range_pct=self.MIN_RANGE_PCT,
                             max_close_to_low_pct=self.MAX_CLOSE_TO_LOW_PCT,
                             asset_universe_prices=self._asset_universe_prices,
+                        ),
+                    ),
+                    ("allocation", InverseVolatility()),
+                ]
+            ),
+        )
+
+
+class ModelTurnoverAutoRegressionWithInverseVolatilityBuilder(StrategyBuilder):
+    """Select liquid assets with a positive autoregression forecast."""
+
+    AUTOREGRESSION_LOOKBACK_BARS = 7
+    AUTOREGRESSION_LAGS = 2
+    FORECAST_BARS = 2
+    MIN_PREDICTED_GROWTH_PCT = 0.01
+    TURNOVER_LOOKBACK_BARS = 1
+    MIN_TURNOVER_RUB = 10_000_000
+
+    @override
+    def build(self) -> Strategy:
+        return Strategy(
+            name="Turnover_autoregression_with_inverse_volatility",
+            description=(
+                f"Select liquid assets whose AutoReg({self.AUTOREGRESSION_LAGS}) "
+                f"forecast over {self.FORECAST_BARS} bar(s), trained on the last "
+                f"{self.AUTOREGRESSION_LOOKBACK_BARS} bars, is at least "
+                f"{self.MIN_PREDICTED_GROWTH_PCT:.0%}; allocate by inverse volatility"
+            ),
+            pipeline=Pipeline(
+                steps=[
+                    (
+                        "turnover_pre_selection",
+                        IntradayTurnoverSelector(
+                            asset_universe_prices=self._asset_universe_prices,
+                            lookback_bars=self.TURNOVER_LOOKBACK_BARS,
+                            min_turnover=self.MIN_TURNOVER_RUB,
+                        ),
+                    ),
+                    (
+                        "autoregression_growth_signal",
+                        AutoRegressionGrowthSignal(
+                            lookback_bars=self.AUTOREGRESSION_LOOKBACK_BARS,
+                            lags=self.AUTOREGRESSION_LAGS,
+                            forecast_bars=self.FORECAST_BARS,
+                            min_growth_pct=self.MIN_PREDICTED_GROWTH_PCT,
+                        ),
+                    ),
+                    (
+                        "allocation_window",
+                        FunctionTransformer(
+                            _recent_rows,
+                            kw_args={"bars": self.AUTOREGRESSION_LOOKBACK_BARS},
+                            validate=False,
                         ),
                     ),
                     ("allocation", InverseVolatility()),

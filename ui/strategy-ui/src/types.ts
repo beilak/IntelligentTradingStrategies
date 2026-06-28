@@ -338,6 +338,16 @@ export interface BacktestResult {
   }>;
 }
 
+export interface BacktestRun {
+  run_id: string;
+  subject_name: string;
+  status: "queued" | "running" | "completed" | "failed";
+  created_at: string;
+  updated_at: string;
+  result: BacktestResult | null;
+  error: string | null;
+}
+
 export interface RiskModelDefinition {
   id: string;
   title: string;

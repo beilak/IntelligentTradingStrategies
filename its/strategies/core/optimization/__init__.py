@@ -1,13 +1,12 @@
-from skfolio.optimization import (
-    EqualWeighted,
-    InverseVolatility as SkfolioInverseVolatility,
-)
-from skfolio.optimization import (
-    HierarchicalRiskParity as SkfolioHierarchicalRiskParity,
-)
+from skfolio.moments import EmpiricalCovariance
+from skfolio.optimization import EqualWeighted
+from skfolio.optimization import \
+    HierarchicalRiskParity as SkfolioHierarchicalRiskParity
+from skfolio.optimization import InverseVolatility as SkfolioInverseVolatility
+from skfolio.prior import EmpiricalPrior
 
-from its.strategies.core.optimization.cvar_allocator import CVaR, CVaRHighRisk
 from its.strategies.core.optimization.cqm_allocator import CQMAllocator
+from its.strategies.core.optimization.cvar_allocator import CVaR, CVaRHighRisk
 
 
 def HierarchicalRiskParity(*args, **kwargs) -> SkfolioHierarchicalRiskParity:
@@ -16,6 +15,10 @@ def HierarchicalRiskParity(*args, **kwargs) -> SkfolioHierarchicalRiskParity:
 
 
 def InverseVolatility(*args, **kwargs) -> SkfolioInverseVolatility:
+    kwargs.setdefault(
+        "prior_estimator",
+        EmpiricalPrior(covariance_estimator=EmpiricalCovariance(nearest=False)),
+    )
     kwargs.setdefault("fallback", EqualWeighted())
     return SkfolioInverseVolatility(*args, **kwargs)
 

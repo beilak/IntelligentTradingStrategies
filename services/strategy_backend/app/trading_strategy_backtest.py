@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 
 from its.authz.context import AuthContext
 from its.authz.dependencies import require_permissions
@@ -16,7 +16,9 @@ from its.strategies.testing.backtest import (
 )
 from services.strategy_backend.app.backtest import (
     BacktestRunRequest,
+    BACKTEST_RUNS,
     enrich_cached_backtest,
+    queue_backtest_run,
     run_backtest_flow,
 )
 
@@ -80,3 +82,40 @@ async def run_trading_strategy_backtest_test(
 
 def cache_subject(strategy_name: str) -> str:
     return f"trading_strategy.{strategy_name}"
+
+
+@router.post("/runs")
+async def start_trading_strategy_backtest_run(
+    strategy_name: str,
+    request: BacktestRunRequest,
+    background_tasks: BackgroundTasks,
+    http_request: Request,
+    _auth: AuthContext = Depends(
+        require_permissions(
+            Permissions.STRATEGY_TEST_RUN,
+            Permissions.DATA_INSTRUMENTS_READ,
+            Permissions.DATA_PRICES_READ,
+            Permissions.DATA_DIVIDENDS_READ,
+        )
+    ),
+) -> dict[str, Any]:
+    return queue_backtest_run(
+        subject_name=strategy_name,
+        request=request,
+        output_path=cache_path(cache_subject(strategy_name), request.test_name),
+        report_factory=generate_trading_strategy_backtest_report,
+        authorization=http_request.headers.get("authorization"),
+        background_tasks=background_tasks,
+    )
+
+
+@router.get("/runs/{run_id}")
+async def get_trading_strategy_backtest_run(
+    strategy_name: str,
+    run_id: str,
+    _auth: AuthContext = Depends(require_permissions(Permissions.STRATEGY_TEST_READ)),
+) -> dict[str, Any]:
+    run = BACKTEST_RUNS.get(run_id)
+    if run is None or run["subject_name"] != strategy_name:
+        raise HTTPException(status_code=404, detail="Backtest run was not found.")
+    return run

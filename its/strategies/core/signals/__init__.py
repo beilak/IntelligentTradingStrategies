@@ -1,5 +1,8 @@
 """Signal models transform, score, rank, or prioritize selected assets."""
 
+from its.strategies.core.signals.autoregression_growth_signal import (
+    AutoRegressionGrowthSignal,
+)
 from its.strategies.core.signals.close_below_recent_marker_signal import (
     CloseBelowRecentMarkerSignal,
 )
@@ -14,6 +17,7 @@ from its.strategies.core.signals.two_candle_trend_signal import (
 )
 
 __all__ = [
+    "AutoRegressionGrowthSignal",
     "CloseBelowRecentMarkerSignal",
     "KeepAllSignal",
     "PriceBreakoutSignal",

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Create ITS Strategy"
+  short_description: "Create tested ITS strategies and components"
+  default_prompt: "Use $create-its-strategy to create or modify an ITS strategy component with registration and tests."

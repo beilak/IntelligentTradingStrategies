@@ -52,11 +52,10 @@ from its.strategies.models.ga_generated_20260522224030_997fef23_top_2 import (
 from its.strategies.models.ga_generated_20260522224030_997fef23_top_3 import (
     Generated20260522224030997fef23Top3Builder,
 )
-from its.strategies.models.ticker_pullback_eq import (
-    ModelPullbackWithEQBuilder,
-)
+from its.strategies.models.ticker_pullback_eq import ModelPullbackWithEQBuilder
 from its.strategies.models.ticker_turnover_pullback_eq import (
     ModelTurnoverPullbackWithEQBuilder,
+    ModelTurnoverRangePullbackWithInverseVolatilityBuilder,
 )
 from its.strategies.models.top_turnover_cqm import (
     ModelHighTurnoverWithCQMBuilder,
@@ -72,6 +71,7 @@ from its.strategies.models.top_turnover_inverse_volatility import (
 )
 
 __all__ = [
+    "ModelTurnoverRangePullbackWithInverseVolatilityBuilder",
     "ModelTurnoverPullbackWithEQBuilder",
     "ModelTurnoverWithEQBuilder",
     "ModelHighTurnoverWithEQBuilder",

@@ -4722,18 +4722,25 @@ function polarPoint(cx: number, cy: number, radius: number, ratio: number) {
                                                     }}
                                                 </span>
                                                 <button
-                                                    v-if="item.record.weights.length > 12"
+                                                    v-if="item.record.weights.length > 0"
                                                     class="icon-text-button compact-action"
                                                     type="button"
                                                     @click="
                                                         openWeightsModal(item.record)
                                                     "
                                                 >
-                                                    {{ t.showAll }} (+{{
-                                                        item.record.weights.length -
-                                                        12
-                                                    }}
-                                                    {{ t.hiddenAssets }})
+                                                    <template
+                                                        v-if="item.record.weights.length > 12"
+                                                    >
+                                                        {{ t.showAll }} (+{{
+                                                            item.record.weights.length -
+                                                            12
+                                                        }}
+                                                        {{ t.hiddenAssets }})
+                                                    </template>
+                                                    <template v-else>
+                                                        {{ t.details }}
+                                                    </template>
                                                 </button>
                                             </td>
                                         </tr>

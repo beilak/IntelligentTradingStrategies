@@ -56,6 +56,12 @@ def test_generate_backtest_report_normalizes_naive_start_date_to_price_timezone(
         settings={
             "start_date": "2024-01-01",
             "trading_start_date": "2024-01-01",
+            "rebalance_freq": "3ME",
+            "rebalance_on": "last",
+            "fees": 0.0008,
+            "slippage": 0.0,
+            "freq": "1D",
+            "init_cash": 1_000_000.0,
         },
     )
 

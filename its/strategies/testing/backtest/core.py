@@ -10,14 +10,10 @@ from typing import Any
 import pandas as pd
 from fastapi import HTTPException
 
-from its.strategies.testing.backtest.vectorbt_backtest import (
-    backtest_strategies_vectorbt,
-)
-from its.strategies.testing.cpcv import (
-    load_registered_model,
-    safe_float,
-    timestamp_to_string,
-)
+from its.strategies.testing.backtest.vectorbt_backtest import \
+    backtest_strategies_vectorbt
+from its.strategies.testing.cpcv import (load_registered_model, safe_float,
+                                         timestamp_to_string)
 from its.strategies_model.core.trading_strategy import TradingStrategy
 
 CACHE_DIR = Path(
@@ -58,13 +54,13 @@ def generate_backtest_report(
     results = backtest_strategies_vectorbt(
         strategies={strategy.name: strategy},
         prices=close,
-        rebalance_freq=settings.get("rebalance_freq", "3ME"),
-        rebalance_on=settings.get("rebalance_on", "last"),
+        rebalance_freq=settings["rebalance_freq"],
+        rebalance_on=settings["rebalance_on"],
         trading_start_date=trading_start_date,
-        fees=settings.get("fees", 0.0008),
-        slippage=settings.get("slippage", 0.0),
-        freq=settings.get("freq", "1D"),
-        init_cash=settings.get("init_cash", 1_000_000.0),
+        fees=settings["fees"],
+        slippage=settings["slippage"],
+        freq=settings["freq"],
+        init_cash=settings["init_cash"],
     )
     return build_backtest_payload(
         model_name=model_name,
@@ -114,13 +110,13 @@ def generate_trading_strategy_backtest_report(
         prices=close,
         high=high,
         low=low,
-        rebalance_freq=settings.get("rebalance_freq", "3ME"),
-        rebalance_on=settings.get("rebalance_on", "last"),
+        rebalance_freq=settings["rebalance_freq"],
+        rebalance_on=settings["rebalance_on"],
         trading_start_date=trading_start_date,
-        fees=settings.get("fees", 0.0008),
-        slippage=settings.get("slippage", 0.0),
-        freq=settings.get("freq", "1D"),
-        init_cash=settings.get("init_cash", 1_000_000.0),
+        fees=settings["fees"],
+        slippage=settings["slippage"],
+        freq=settings["freq"],
+        init_cash=settings["init_cash"],
     )
     return build_backtest_payload(
         model_name=strategy_name,
@@ -208,9 +204,9 @@ def build_backtest_payload(
                 "value": format_percent(
                     total_return * (1 - tax_rate) if total_return is not None else None
                 ),
-                "numeric_value": total_return * (1 - tax_rate)
-                if total_return is not None
-                else None,
+                "numeric_value": (
+                    total_return * (1 - tax_rate) if total_return is not None else None
+                ),
             },
             {
                 "metric": "Max Drawdown",
@@ -338,8 +334,6 @@ def weights_to_records(
     clean = weights.dropna(how="all").fillna(0)
     for index, row in clean.iterrows():
         non_zero = row[row.abs() > 1e-12].sort_values(ascending=False)
-        if non_zero.empty:
-            continue
         records.append(
             {
                 "time": timestamp_to_string(index),

@@ -1,25 +1,20 @@
 import pandas as pd
 
 from its.strategies.models import ModelPullbackWithEQBuilder
+from its.strategies.testing.backtest.core import weights_to_records
+from its.strategies.testing.backtest.vectorbt_backtest import \
+    backtest_strategies_vectorbt
 
 
-def test_pullback_model_handles_empty_signal_before_equal_weight_allocation() -> None:
+def test_pullback_backtest_uses_zero_weights_when_signal_selects_nothing() -> None:
     dates = pd.bdate_range("2024-01-01", periods=25)
-    returns = pd.DataFrame(
-        {
-            "SBER": [0.0] * len(dates),
-            "TRNFP": [0.0] * len(dates),
-            "GAZP": [0.0] * len(dates),
-        },
-        index=dates,
-    )
     asset_universe_prices = pd.DataFrame(
         [
             {
                 "time": date,
                 "ticker": ticker,
                 "high": 100.0,
-                "close": 99.0,
+                "close": 99.5,
                 "is_complete": True,
             }
             for date in dates
@@ -30,10 +25,26 @@ def test_pullback_model_handles_empty_signal_before_equal_weight_allocation() ->
     strategy = ModelPullbackWithEQBuilder(
         _asset_universe_prices=asset_universe_prices,
     ).build()
-    strategy.pipeline.fit(returns)
+    prices = pd.DataFrame(
+        {"SBER": 99.5, "TRNFP": 99.5, "GAZP": 99.5},
+        index=dates,
+    )
 
-    signal = strategy.pipeline.named_steps["pullback_signal"]
-    allocation = strategy.pipeline.named_steps["allocation"]
+    result = backtest_strategies_vectorbt(
+        strategies={strategy.name: strategy},
+        prices=prices,
+        rebalance_freq="5D",
+        rebalance_on="last",
+        trading_start_date=dates[10],
+        freq="1D",
+    )[strategy.name]
 
-    assert signal.empty_selection_ is True
-    assert allocation.weights_.tolist() == [0.5, 0.5]
+    rebalance_weights = result.weights.dropna(how="all")
+    assert not rebalance_weights.empty
+    assert (rebalance_weights == 0.0).all().all()
+
+    records = weights_to_records(result.weights)
+    assert records
+    assert records[0]["total_weight"] == 0.0
+    assert records[0]["asset_count"] == 0
+    assert records[0]["weights"] == []

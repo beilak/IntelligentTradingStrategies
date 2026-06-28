@@ -107,6 +107,24 @@ const availableRiskModels = ref<RiskModelDefinition[]>([]);
 const cpcvResult = ref<CpcvResult | null>(null);
 const walkForwardResult = ref<WalkForwardResult | null>(null);
 const backtestResult = ref<BacktestResult | null>(null);
+const rebalancePage = ref(1);
+const rebalancePageSize = 40;
+const indexedRebalanceWeights = computed(() => {
+    const records = backtestResult.value?.rebalance_weights ?? [];
+    return records
+        .map((record, index) => ({ record, number: index + 1 }))
+        .reverse();
+});
+const rebalancePageCount = computed(() =>
+    Math.max(1, Math.ceil(indexedRebalanceWeights.value.length / rebalancePageSize)),
+);
+const paginatedRebalanceWeights = computed(() => {
+    const start = (rebalancePage.value - 1) * rebalancePageSize;
+    return indexedRebalanceWeights.value.slice(start, start + rebalancePageSize);
+});
+watch(backtestResult, () => {
+    rebalancePage.value = 1;
+});
 const riskModelResult = ref<RiskModelResult | null>(null);
 const comparisonResult = ref<StrategyComparisonResult | null>(null);
 const cpcvSettings = ref<CpcvSettings>(defaultCpcvSettings());
@@ -114,6 +132,37 @@ const walkForwardSettings = ref<WalkForwardSettings>(
     defaultWalkForwardSettings(),
 );
 const backtestSettings = ref<BacktestSettings>(defaultBacktestSettings());
+const rebalanceFrequencyUnits = [
+    "D",
+    "B",
+    "W",
+    "MS",
+    "ME",
+    "QS",
+    "QE",
+    "YS",
+    "YE",
+] as const;
+const rebalanceFrequencyParts = computed(() => {
+    const match = backtestSettings.value.rebalance_freq.match(/^(\d+)([A-Z]+)$/i);
+    return {
+        amount: match ? Number(match[1]) : 1,
+        unit: match?.[2]?.toUpperCase() ?? "ME",
+    };
+});
+const rebalanceFrequencyAmount = computed({
+    get: () => rebalanceFrequencyParts.value.amount,
+    set: (value: number) => {
+        const amount = Number.isFinite(value) ? Math.max(1, Math.trunc(value)) : 1;
+        backtestSettings.value.rebalance_freq = `${amount}${rebalanceFrequencyParts.value.unit}`;
+    },
+});
+const rebalanceFrequencyUnit = computed({
+    get: () => rebalanceFrequencyParts.value.unit,
+    set: (value: string) => {
+        backtestSettings.value.rebalance_freq = `${rebalanceFrequencyParts.value.amount}${value}`;
+    },
+});
 const riskModelSettings = ref<RiskModelSettings>(defaultRiskModelSettings());
 const activeRiskModelId = ref("monte_carlo");
 const activeFieldTooltip = ref("");
@@ -4104,12 +4153,30 @@ function polarPoint(cx: number, cy: number, radius: number, ratio: number) {
                                     v-model="backtestSettings.class_code"
                                     type="text"
                             /></label>
-                            <label
-                                ><span>{{ t.rebalanceFreq }}</span
-                                ><input
-                                    v-model="backtestSettings.rebalance_freq"
-                                    type="text"
-                            /></label>
+                            <label>
+                                <span>{{ t.rebalanceFreq }}</span>
+                                <div class="frequency-input">
+                                    <input
+                                        v-model.number="rebalanceFrequencyAmount"
+                                        aria-label="Rebalance frequency value"
+                                        min="1"
+                                        step="1"
+                                        type="number"
+                                    />
+                                    <select
+                                        v-model="rebalanceFrequencyUnit"
+                                        aria-label="Rebalance frequency unit"
+                                    >
+                                        <option
+                                            v-for="unit in rebalanceFrequencyUnits"
+                                            :key="unit"
+                                            :value="unit"
+                                        >
+                                            {{ unit }}
+                                        </option>
+                                    </select>
+                                </div>
+                            </label>
                             <label>
                                 <span>{{ t.rebalanceOn }}</span>
                                 <select v-model="backtestSettings.rebalance_on">
@@ -4597,55 +4664,55 @@ function polarPoint(cx: number, cy: number, radius: number, ratio: number) {
                                 <table>
                                     <tbody>
                                         <tr
-                                            v-for="record in backtestResult.rebalance_weights.slice(
-                                                0,
-                                                40,
-                                            )"
-                                            :key="record.time"
+                                            v-for="item in paginatedRebalanceWeights"
+                                            :key="item.record.time"
                                         >
                                             <th>
+                                                <strong>#{{ item.number }}</strong>
+                                                <br />
                                                 {{
-                                                    formatDateTime(record.time)
+                                                    formatDateTime(item.record.time)
                                                 }}
                                             </th>
                                             <td>
                                                 <strong
                                                     >{{ t.totalWeight }}:
                                                     {{
-                                                        formatWeight(
-                                                            record.total_weight,
+                                                            formatWeight(
+                                                            item.record.total_weight,
                                                         )
                                                     }}
                                                     /
                                                     {{
-                                                        record.asset_count
+                                                        item.record.asset_count
                                                     }}</strong
                                                 >
                                                 <br />
                                                 <span
-                                                    v-for="item in record.weights.slice(
+                                                    v-for="weight in item.record.weights.slice(
                                                         0,
                                                         12,
                                                     )"
-                                                    :key="`${record.time}-${item.ticker}`"
+                                                    :key="`${item.record.time}-${weight.ticker}`"
                                                     class="weight-pill"
                                                 >
-                                                    {{ item.ticker }}
+                                                    {{ weight.ticker }}
                                                     {{
                                                         formatWeight(
-                                                            item.weight,
+                                                            weight.weight,
                                                         )
                                                     }}
                                                 </span>
                                                 <button
+                                                    v-if="item.record.weights.length > 12"
                                                     class="icon-text-button compact-action"
                                                     type="button"
                                                     @click="
-                                                        openWeightsModal(record)
+                                                        openWeightsModal(item.record)
                                                     "
                                                 >
                                                     {{ t.showAll }} (+{{
-                                                        record.weights.length -
+                                                        item.record.weights.length -
                                                         12
                                                     }}
                                                     {{ t.hiddenAssets }})
@@ -4654,6 +4721,28 @@ function polarPoint(cx: number, cy: number, radius: number, ratio: number) {
                                         </tr>
                                     </tbody>
                                 </table>
+                            </div>
+                            <div
+                                v-if="rebalancePageCount > 1"
+                                class="table-pagination"
+                            >
+                                <button
+                                    :disabled="rebalancePage === 1"
+                                    type="button"
+                                    @click="rebalancePage--"
+                                >
+                                    {{ t.previousPage }}
+                                </button>
+                                <span>
+                                    {{ t.page }} {{ rebalancePage }} / {{ rebalancePageCount }}
+                                </span>
+                                <button
+                                    :disabled="rebalancePage === rebalancePageCount"
+                                    type="button"
+                                    @click="rebalancePage++"
+                                >
+                                    {{ t.nextPage }}
+                                </button>
                             </div>
                         </div>
                     </div>

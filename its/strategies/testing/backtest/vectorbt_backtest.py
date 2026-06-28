@@ -1,16 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import (
-    Any,
-    Dict,
-    Iterable,
-    List,
-    Mapping,
-    Optional,
-    Tuple,
-    Union,
-)
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -45,7 +36,7 @@ def backtest_strategies_vectorbt(
     init_cash: float = 100_000.0,
     fees: float = 0.0,
     slippage: float = 0.0,
-    freq: Optional[str] = None,
+    freq: Optional[str],
     seed: int = 42,
 ) -> Dict[str, BacktestResult]:
     """
@@ -217,24 +208,47 @@ def _make_schedule(index: pd.Index, freq: Union[str, int, None], on: str) -> pd.
     if on not in {"first", "last"}:
         raise ValueError("on must be 'first' or 'last'.")
 
+    normalized_freq = freq.upper()
+    if on == "first" and normalized_freq.endswith("ME"):
+        return _month_end_first_schedule(index, normalized_freq)
+
     offset = _schedule_offset(freq)
     start = index[0]
     end = index[-1]
-    schedule = [start]
-    period_start = start
+    if on == "first":
+        schedule = []
+        period_start = start + offset
+    else:
+        schedule = [start]
+        period_start = start
 
     while period_start <= end:
         period_end = period_start + offset
         period_index = index[(index >= period_start) & (index < period_end)]
         if len(period_index) > 0:
             rebalance_date = period_index[-1] if on == "last" else period_index[0]
-            if rebalance_date != schedule[-1]:
+            if not schedule or rebalance_date != schedule[-1]:
                 schedule.append(rebalance_date)
         period_start = period_end
 
-    if schedule[-1] != end and on == "last":
+    if schedule and schedule[-1] != end and on == "last":
         schedule.append(end)
 
+    return pd.Index(schedule)
+
+
+def _month_end_first_schedule(index: pd.Index, freq: str) -> pd.Index:
+    """Select the first trading date after each calendar month-end boundary."""
+    start = pd.Timestamp(index[0])
+    end = pd.Timestamp(index[-1])
+    boundaries = pd.date_range(start=start.normalize(), end=end, freq=freq)
+    schedule = []
+    for boundary in boundaries:
+        candidates = index[index > boundary]
+        if len(candidates) > 0:
+            rebalance_date = candidates[0]
+            if not schedule or rebalance_date != schedule[-1]:
+                schedule.append(rebalance_date)
     return pd.Index(schedule)
 
 
@@ -302,7 +316,13 @@ def _build_weights(
         _limit_pipeline_price_context(strategy, train_end)
         prices_close_returns_for_fit = _build_train_returns(train_prices)
 
-        strategy.pipeline.fit(prices_close_returns_for_fit)
+        try:
+            strategy.pipeline.fit(prices_close_returns_for_fit)
+        except ValueError:
+            if not _pipeline_selected_no_assets(strategy.pipeline):
+                raise
+            weights.loc[rebalance_date] = 0.0
+            continue
 
         ptf_stat = strategy.pipeline.predict(prices_close_returns_for_fit)
         weights_dict = getattr(ptf_stat, "weights_dict", None)
@@ -318,6 +338,21 @@ def _build_weights(
     return weights
 
 
+def _pipeline_selected_no_assets(pipeline: Any) -> bool:
+    """Return True only when a fitted selector produced an empty asset set."""
+    for _, step in getattr(pipeline, "steps", [])[:-1]:
+        get_mask = getattr(step, "_get_support_mask", None)
+        if not callable(get_mask):
+            continue
+        try:
+            mask = np.asarray(get_mask(), dtype=bool)
+        except Exception:
+            continue
+        if mask.size > 0 and not mask.any():
+            return True
+    return False
+
+
 def _filter_trainable_prices(
     train_prices: pd.DataFrame,
     rebalance_prices: pd.Series,
@@ -329,7 +364,9 @@ def _filter_trainable_prices(
 
 
 def _build_train_returns(train_prices: pd.DataFrame) -> pd.DataFrame:
-    returns = train_prices.pct_change(fill_method=None).replace([np.inf, -np.inf], np.nan)
+    returns = train_prices.pct_change(fill_method=None).replace(
+        [np.inf, -np.inf], np.nan
+    )
     return returns.fillna(0)
 
 
@@ -454,7 +491,16 @@ def _limit_pipeline_price_context(strategy: Any, train_end: pd.Timestamp) -> Non
     for _, step in steps:
         prices = getattr(step, "asset_universe_prices", None)
         if isinstance(prices, pd.DataFrame) and "time" in prices.columns:
-            limited = prices.copy()
+            full_prices = getattr(
+                step,
+                "_backtest_full_asset_universe_prices",
+                None,
+            )
+            if not isinstance(full_prices, pd.DataFrame):
+                full_prices = prices.copy()
+                step._backtest_full_asset_universe_prices = full_prices
+
+            limited = full_prices.copy()
             limited["time"] = pd.to_datetime(limited["time"], errors="coerce")
             step.asset_universe_prices = limited.loc[
                 limited["time"] <= train_end

@@ -2745,6 +2745,21 @@ test = ["hypothesis (>=6.46.1)", "pytest (>=7.3.2)", "pytest-xdist (>=2.2.0)"]
 xml = ["lxml (>=4.9.2)"]
 
 [[package]]
+name = "pandas-stubs"
+version = "3.0.3.260530"
+description = "Type annotations for pandas"
+optional = false
+python-versions = ">=3.11"
+groups = ["main"]
+files = [
+    {file = "pandas_stubs-3.0.3.260530-py3-none-any.whl", hash = "sha256:a6277eb1c8cebf48d9b2413fcd2e9a6b4ff479c934a223c29eacbc3058c4cb55"},
+    {file = "pandas_stubs-3.0.3.260530.tar.gz", hash = "sha256:d1efe47b2e5a312c047d7feabec5cb7a55365747983420077e9fcbe9ab74f714"},
+]
+
+[package.dependencies]
+numpy = ">=1.23.5"
+
+[[package]]
 name = "parso"
 version = "0.8.7"
 description = "A Python Parser"
@@ -5014,4 +5029,4 @@ repair = ["scipy (>=1.6.3)"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">3.12, <3.13"
-content-hash = "e8c5e8912b2e9be39137febffafed0d8f10cdc1607883e1874cedf136f3e2f9e"
+content-hash = "4a874ec49f3f298532f27472c1f90914505b0b0c8468fdcc106c1e8930bf0c1b"

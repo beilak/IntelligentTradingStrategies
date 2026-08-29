@@ -315,6 +315,7 @@ export interface BacktestResult {
     final_value: number | null;
     points: Array<{ time: string; value: number }>;
   };
+  pnl_source?: BacktestPnlSource;
   rebalance_weights: Array<{
     time: string;
     total_weight: number;
@@ -336,6 +337,129 @@ export interface BacktestResult {
     return_pct: number | null;
     weight: number | null;
   }>;
+}
+
+export interface BacktestPnlSource {
+  method: string;
+  currency: string;
+  initial_nav: number;
+  external_flows: false;
+  taxes_applied: false;
+  daily_asset_pnl: Array<{
+    time: string;
+    contributions: Record<string, number>;
+  }>;
+  orders: Array<{
+    id: number;
+    time: string;
+    ticker: string;
+    side: "buy" | "sell";
+    size: number;
+    price: number;
+    fees: number;
+    reference_price: number | null;
+    slippage_cost: number;
+  }>;
+  trades: Array<{
+    id: number;
+    ticker: string;
+    size: number;
+    entry_time: string;
+    exit_time: string;
+    pnl: number | null;
+    return: number | null;
+    status: "open" | "closed" | string;
+  }>;
+}
+
+export interface BacktestPnlEquityPoint {
+  date: string;
+  nav: number;
+  daily_pnl: number;
+  cumulative_pnl: number;
+  daily_return: number;
+  cumulative_return: number;
+  drawdown: number;
+}
+
+export interface BacktestPnlAttributionRow {
+  ticker: string;
+  name: string;
+  opening_quantity: number;
+  ending_quantity: number;
+  opening_value: number;
+  ending_value: number;
+  pnl_contribution: number;
+  contribution_pct: number | null;
+  realized_pnl: number;
+  turnover: number;
+  orders: number;
+}
+
+export interface BacktestPnlReport {
+  generated_at: string;
+  model_name: string;
+  strategy_name: string;
+  test_name: string;
+  period: {
+    from: string;
+    to: string;
+    calendar_days: number;
+    observations: number;
+  };
+  currency: string;
+  summary: {
+    opening_nav: number;
+    ending_nav: number;
+    total_pnl: number;
+    twr: number;
+    mwr: number | null;
+    annualized_return: number | null;
+    realized_pnl: number;
+    unrealized_pnl_estimate: number;
+    fees: number;
+    slippage: number;
+    estimated_tax: number;
+    after_tax_pnl_estimate: number;
+    turnover: number;
+    turnover_ratio: number | null;
+    orders: number;
+    buys: number;
+    sells: number;
+  };
+  risk: {
+    annualized_volatility: number;
+    sharpe_ratio: number | null;
+    sortino_ratio: number | null;
+    max_drawdown: number;
+    calmar_ratio: number | null;
+    profit_factor: number | null;
+    positive_days: number;
+    negative_days: number;
+    win_rate: number | null;
+    best_day_pnl: number;
+    worst_day_pnl: number;
+    average_day_pnl: number;
+    historical_var_95_return: number | null;
+    historical_var_95_amount: number | null;
+  };
+  components: Array<{ key: string; label: string; value: number }>;
+  equity_curve: BacktestPnlEquityPoint[];
+  monthly_returns: Array<{
+    month: string;
+    return: number;
+    pnl: number;
+    ending_nav: number;
+  }>;
+  attribution: BacktestPnlAttributionRow[];
+  methodology: {
+    method: string;
+    engine: string;
+    has_detailed_source: boolean;
+    external_flows: false;
+    taxes_applied: false;
+    warnings: string[];
+  };
 }
 
 export interface BacktestRun {

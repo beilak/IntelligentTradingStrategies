@@ -6,6 +6,7 @@ import {
     ChevronDown,
     CircleHelp,
     DatabaseZap,
+    FileChartColumn,
     FolderOpen,
     GitBranch,
     Globe2,
@@ -19,7 +20,7 @@ import {
     Trophy,
     X,
 } from "lucide-vue-next";
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, defineAsyncComponent, onMounted, ref, watch } from "vue";
 import {
     getBacktestTest,
     getBacktestRun,
@@ -69,6 +70,10 @@ import type {
     WalkForwardSavedTest,
     WalkForwardSettings,
 } from "./types";
+
+const BacktestPnlReportModal = defineAsyncComponent(
+    () => import("./components/BacktestPnlReportModal.vue"),
+);
 
 const savedLocale = localStorage.getItem(
     "its-strategy-locale",
@@ -126,6 +131,7 @@ const paginatedRebalanceWeights = computed(() => {
 });
 watch(backtestResult, () => {
     rebalancePage.value = 1;
+    showBacktestPnlModal.value = false;
 });
 const riskModelResult = ref<RiskModelResult | null>(null);
 const comparisonResult = ref<StrategyComparisonResult | null>(null);
@@ -171,6 +177,7 @@ const activeFieldTooltip = ref("");
 const showCpcvModal = ref(false);
 const showWalkForwardModal = ref(false);
 const showBacktestModal = ref(false);
+const showBacktestPnlModal = ref(false);
 const showRiskModelModal = ref(false);
 const showRiskModelMenu = ref(false);
 const showComparisonModal = ref(false);
@@ -565,8 +572,17 @@ function labelFor(groupId: string) {
     return typeof value === "string" ? value : groupId;
 }
 
-function formatError(err: unknown) {
-    return err instanceof Error ? err.message : String(err);
+function formatError(err: unknown): string {
+    if (err instanceof Error) return err.message;
+    if (typeof err === "string") return err;
+    if (err && typeof err === "object") {
+        try {
+            return JSON.stringify(err);
+        } catch {
+            return "Не удалось прочитать детали ошибки";
+        }
+    }
+    return String(err);
 }
 
 async function loadSavedCpcvTests(modelName = selectedModelName.value) {
@@ -4305,6 +4321,20 @@ function polarPoint(cx: number, cy: number, radius: number, ratio: number) {
                     </div>
 
                     <div v-if="backtestResult" class="cpcv-results">
+                        <div class="backtest-report-actions">
+                            <button
+                                class="icon-text-button backtest-pnl-trigger"
+                                type="button"
+                                @click="showBacktestPnlModal = true"
+                            >
+                                <FileChartColumn :size="17" />
+                                <span>{{
+                                    locale === "ru"
+                                        ? "Отчет PnL"
+                                        : "PnL Report"
+                                }}</span>
+                            </button>
+                        </div>
                         <div class="result-strip">
                             <article>
                                 <span>{{ t.source }}</span>
@@ -4773,6 +4803,13 @@ function polarPoint(cx: number, cy: number, radius: number, ratio: number) {
                     </div>
                 </div>
             </div>
+
+            <BacktestPnlReportModal
+                v-if="showBacktestPnlModal && backtestResult"
+                :result="backtestResult"
+                :locale="locale"
+                @close="showBacktestPnlModal = false"
+            />
 
             <div
                 v-if="showWeightsModal"

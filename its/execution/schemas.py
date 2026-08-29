@@ -26,7 +26,7 @@ class OrderTicket(BaseModel):
     comment: str | None = Field(default=None, max_length=500)
 
     @model_validator(mode="after")
-    def validate_price(self) -> "OrderTicket":
+    def validate_price(self) -> OrderTicket:
         if self.order_type == "limit" and self.price is None:
             raise ValueError("price is required for limit orders")
         return self
@@ -57,4 +57,16 @@ class StrategyRunRequest(BaseModel):
     class_code: str = Field(default="TQBR", min_length=1, max_length=32)
     order_type: StrategyOrderKind = "limit"
     limit_offset_pct: float = Field(default=0.001, ge=0, le=0.1)
-    min_order_value: float = Field(default=100.0, ge=0)
+    min_order_value: float = Field(default=0.0, ge=0)
+    cash_buffer_pct: float = Field(default=0.01, ge=0, le=0.2)
+
+
+class StrategyExecutionRequest(StrategyRunRequest):
+    plan_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    confirmation: Literal["execute_market_orders"]
+
+    @model_validator(mode="after")
+    def validate_market_orders(self) -> StrategyExecutionRequest:
+        if self.order_type != "market":
+            raise ValueError("strategy execution supports market orders only")
+        return self

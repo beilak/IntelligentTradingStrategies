@@ -227,9 +227,53 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   });
   if (!response.ok) {
     const payload = await response.json().catch(() => null);
-    throw new Error(payload?.detail ?? response.statusText);
+    throw new Error(apiErrorMessage(payload?.detail, response.statusText));
   }
   return response.json() as Promise<T>;
+}
+
+function apiErrorMessage(detail: unknown, fallback: string): string {
+  if (typeof detail === "string" && detail.trim()) return detail.trim();
+  if (!detail || typeof detail !== "object") return fallback;
+
+  if (Array.isArray(detail)) {
+    const validationErrors = detail
+      .map((item) => {
+        if (!item || typeof item !== "object") return String(item);
+        const error = item as { loc?: unknown; msg?: unknown };
+        const location = Array.isArray(error.loc) ? error.loc.join(".") : "";
+        const message = typeof error.msg === "string" ? error.msg : JSON.stringify(item);
+        return location ? `${location}: ${message}` : message;
+      })
+      .filter(Boolean);
+    return validationErrors.length ? validationErrors.join("; ") : fallback;
+  }
+
+  const value = detail as {
+    message?: unknown;
+    error?: unknown;
+    required_permissions?: unknown;
+    required_roles?: unknown;
+  };
+  const message =
+    typeof value.message === "string" && value.message.trim()
+      ? value.message.trim()
+      : typeof value.error === "string" && value.error.trim()
+        ? value.error.trim()
+        : fallback;
+  const requiredPermissions = stringList(value.required_permissions);
+  const requiredRoles = stringList(value.required_roles);
+  const requirements = [
+    requiredPermissions.length ? `Требуются права: ${requiredPermissions.join(", ")}.` : "",
+    requiredRoles.length ? `Требуются роли: ${requiredRoles.join(", ")}.` : "",
+  ].filter(Boolean);
+  return requirements.length ? `${message} ${requirements.join(" ")}` : message;
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && Boolean(item))
+    : [];
 }
 
 async function authHeaders(): Promise<Record<string, string>> {

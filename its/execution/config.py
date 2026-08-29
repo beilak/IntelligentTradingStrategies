@@ -15,7 +15,7 @@ class ExecutionAccountConfig:
 class ExecutionSettings:
     token: str | None
     accounts: tuple[ExecutionAccountConfig, ...]
-    order_submission_mode: str = "real"
+    order_submission_mode: str = "stub"
 
     @property
     def token_configured(self) -> bool:
@@ -115,8 +115,8 @@ def parse_order_submission_mode(
         value = environ.get(name)
         if not value:
             continue
-        return ORDER_SUBMISSION_MODE_ALIASES.get(value.strip().lower(), "real")
-    return "real"
+        return ORDER_SUBMISSION_MODE_ALIASES.get(value.strip().lower(), "stub")
+    return "stub"
 
 
 def _parse_account_value(raw_value: str) -> list[ExecutionAccountConfig]:

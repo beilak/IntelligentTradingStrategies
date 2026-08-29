@@ -9,6 +9,37 @@ import pandas as pd
 
 from its.strategies.core.types.strategy_types import Strategy as CoreStrategy
 
+PositionLifecycleMode = tp.Literal["rebalance_target", "hold_until_exit"]
+
+
+@dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
+class PositionLifecycleConfig:
+    """Describe how core rebalance output controls open positions."""
+
+    mode: PositionLifecycleMode = "rebalance_target"
+    allocation_pct: float | None = None
+    universe_selector_step: str | None = None
+    close_on_universe_removal: bool = False
+
+    def __post_init__(self) -> None:
+        if self.mode not in {"rebalance_target", "hold_until_exit"}:
+            raise ValueError(
+                "mode must be either 'rebalance_target' or 'hold_until_exit'."
+            )
+        if self.allocation_pct is not None and (
+            not math.isfinite(self.allocation_pct) or not 0 <= self.allocation_pct <= 1
+        ):
+            raise ValueError("allocation_pct must be in the interval [0, 1].")
+        if self.mode == "hold_until_exit" and self.allocation_pct is None:
+            raise ValueError(
+                "allocation_pct is required when mode is 'hold_until_exit'."
+            )
+        if self.close_on_universe_removal and not self.universe_selector_step:
+            raise ValueError(
+                "universe_selector_step is required when "
+                "close_on_universe_removal is enabled."
+            )
+
 
 @dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
 class PositionContext:
@@ -20,8 +51,11 @@ class PositionContext:
     entry_price: float
     current_price: float
     weight: float
+    open_price: float | None = None
     high_price: float | None = None
     low_price: float | None = None
+    active_stop_price: float | None = None
+    closed_low_history: tuple[float, ...] = ()
     metadata: tp.Mapping[str, tp.Any] = dataclasses.field(default_factory=dict)
 
 
@@ -47,6 +81,21 @@ class PositionExitPolicy(tp.Protocol):
 
     def evaluate(self, context: PositionContext) -> PositionExitDecision | None:
         """Return a close-position decision or None to keep holding."""
+
+
+@tp.runtime_checkable
+class RebalanceAwareExitPolicy(PositionExitPolicy, tp.Protocol):
+    """Exit policy that refreshes a persisted stop after each rebalance."""
+
+    @property
+    def required_history_bars(self) -> int: ...
+
+    def refresh_stop(
+        self,
+        context: PositionContext,
+        previous_stop: float | None,
+    ) -> float | None:
+        """Return the stop that becomes active after the rebalance bar."""
 
 
 class HoldToRebalancePolicy:
@@ -162,6 +211,72 @@ class FixedStopTakeProfitPolicy:
         )
 
 
+class DonchianTrailingStopPolicy:
+    """Long-only rolling lowest-low stop refreshed at rebalances."""
+
+    def __init__(self, *, trail_lookback_bars: int = 10) -> None:
+        if trail_lookback_bars <= 0:
+            raise ValueError("trail_lookback_bars must be positive.")
+        self.trail_lookback_bars = trail_lookback_bars
+
+    @property
+    def name(self) -> str:
+        return "donchian_trailing_stop"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Long-only trailing stop at the lowest low of the previous "
+            f"{self.trail_lookback_bars} completed bars, refreshed at rebalances."
+        )
+
+    @property
+    def required_history_bars(self) -> int:
+        return self.trail_lookback_bars
+
+    def refresh_stop(
+        self,
+        context: PositionContext,
+        previous_stop: float | None,
+    ) -> float | None:
+        history = context.closed_low_history[-self.trail_lookback_bars :]
+        if len(history) < self.trail_lookback_bars:
+            return previous_stop if is_finite_positive(previous_stop) else None
+        if not all(is_finite_positive(value) for value in history):
+            return previous_stop if is_finite_positive(previous_stop) else None
+
+        candidate = min(history)
+        if is_finite_positive(previous_stop):
+            return max(float(previous_stop), candidate)
+        return candidate
+
+    def evaluate(self, context: PositionContext) -> PositionExitDecision | None:
+        stop = context.active_stop_price
+        if not is_finite_positive(stop) or not is_finite_positive(context.entry_price):
+            return None
+
+        current_price = context.current_price
+        if not is_finite_positive(current_price):
+            return None
+        low_price = (
+            context.low_price
+            if is_finite_positive(context.low_price)
+            else current_price
+        )
+        if low_price > stop:
+            return None
+
+        execution_price = float(stop)
+        if is_finite_positive(context.open_price) and context.open_price < stop:
+            execution_price = float(context.open_price)
+        return PositionExitDecision(
+            reason="trailing_stop",
+            execution_price=execution_price,
+            threshold_price=float(stop),
+            return_pct=execution_price / context.entry_price - 1,
+        )
+
+
 @dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
 class TradingStrategy:
     """Full trading strategy: core portfolio model plus trade-management logic."""
@@ -172,12 +287,25 @@ class TradingStrategy:
     exit_policy: PositionExitPolicy = dataclasses.field(
         default_factory=HoldToRebalancePolicy
     )
+    position_lifecycle: PositionLifecycleConfig = dataclasses.field(
+        default_factory=PositionLifecycleConfig
+    )
+    supports_live_execution: bool = True
     metadata: tp.Mapping[str, tp.Any] = dataclasses.field(default_factory=dict)
 
     def evaluate_position(
         self, context: PositionContext
     ) -> PositionExitDecision | None:
         return self.exit_policy.evaluate(context)
+
+    def refresh_position_stop(
+        self,
+        context: PositionContext,
+        previous_stop: float | None,
+    ) -> float | None:
+        if isinstance(self.exit_policy, RebalanceAwareExitPolicy):
+            return self.exit_policy.refresh_stop(context, previous_stop)
+        return previous_stop
 
 
 @tp.runtime_checkable
@@ -188,10 +316,18 @@ class TradingStrategyProtocol(tp.Protocol):
     description: str
     core: CoreStrategy
     exit_policy: PositionExitPolicy
+    position_lifecycle: PositionLifecycleConfig
+    supports_live_execution: bool
 
     def evaluate_position(
         self, context: PositionContext
     ) -> PositionExitDecision | None: ...
+
+    def refresh_position_stop(
+        self,
+        context: PositionContext,
+        previous_stop: float | None,
+    ) -> float | None: ...
 
 
 class TradingStrategyBuilder(abc.ABC):
@@ -229,6 +365,14 @@ class TradingStrategyBuilder(abc.ABC):
         """Build trade-management logic. Override this for stop/take rules."""
         return HoldToRebalancePolicy()
 
+    def build_position_lifecycle(self) -> PositionLifecycleConfig:
+        """Build how core targets interact with positions between rebalances."""
+        return PositionLifecycleConfig()
+
+    def build_supports_live_execution(self) -> bool:
+        """Return whether the live runner can safely execute this strategy."""
+        return True
+
     def build_metadata(self) -> dict[str, tp.Any]:
         return {}
 
@@ -238,6 +382,8 @@ class TradingStrategyBuilder(abc.ABC):
             description=self.description,
             core=self.build_core_strategy(),
             exit_policy=self.build_exit_policy(),
+            position_lifecycle=self.build_position_lifecycle(),
+            supports_live_execution=self.build_supports_live_execution(),
             metadata=self.build_metadata(),
         )
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import date
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, Query, Request, WebSocket, WebSocketDisconnect
@@ -9,13 +10,16 @@ from sqlalchemy.orm import Session
 
 from its.authz.context import AuthContext
 from its.authz.dependencies import get_auth_context
+from its.authz.errors import forbidden_error
 from its.authz.jwt import decode_access_context
+from its.authz.permissions import Permissions
 from its.db.session import get_session
 from its.event_log.integration import install_event_log
 from its.execution.schemas import (
     OrderTicket,
     StopOrderTicket,
     StrategyAssignmentRequest,
+    StrategyExecutionRequest,
     StrategyRunRequest,
 )
 from its.execution.service import ExecutionService
@@ -66,20 +70,41 @@ def create_app() -> FastAPI:
             operations_days=operations_days,
         )
 
+    @app.get(f"{API_PREFIX}/accounts/{{account_id}}/pnl-report")
+    async def pnl_report(
+        account_id: str,
+        http_request: Request,
+        _auth: Annotated[AuthContext, Depends(get_auth_context)],
+        session: Annotated[Session, Depends(get_session)],
+        from_date: date,
+        to_date: date,
+        strategy_name: str | None = None,
+    ) -> dict[str, Any]:
+        return await service.get_pnl_report(
+            account_id,
+            from_date=from_date,
+            to_date=to_date,
+            strategy_name=strategy_name,
+            session=session,
+            authorization=http_request.headers.get("authorization"),
+        )
+
     @app.post(f"{API_PREFIX}/accounts/{{account_id}}/orders")
     async def create_order(
         account_id: str,
         ticket: OrderTicket,
-        _auth: Annotated[AuthContext, Depends(get_auth_context)],
+        auth: Annotated[AuthContext, Depends(get_auth_context)],
     ) -> dict[str, Any]:
+        require_order_submission_access(service, auth)
         return await service.submit_order(account_id, ticket)
 
     @app.post(f"{API_PREFIX}/accounts/{{account_id}}/stop-orders")
     async def create_stop_order(
         account_id: str,
         ticket: StopOrderTicket,
-        _auth: Annotated[AuthContext, Depends(get_auth_context)],
+        auth: Annotated[AuthContext, Depends(get_auth_context)],
     ) -> dict[str, Any]:
+        require_order_submission_access(service, auth)
         return await service.submit_stop_order(account_id, ticket)
 
     @app.get(f"{API_PREFIX}/market-data/last-price")
@@ -138,6 +163,27 @@ def create_app() -> FastAPI:
             payload,
             session,
             authorization=http_request.headers.get("authorization"),
+        )
+
+    @app.post(
+        f"{API_PREFIX}/accounts/{{account_id}}/strategies/{{strategy_name}}/executions"
+    )
+    async def execute_assigned_strategy(
+        account_id: str,
+        strategy_name: str,
+        payload: StrategyExecutionRequest,
+        http_request: Request,
+        auth: Annotated[AuthContext, Depends(get_auth_context)],
+        session: Annotated[Session, Depends(get_session)],
+    ) -> dict[str, Any]:
+        require_order_submission_access(service, auth)
+        return await service.execute_assigned_strategy(
+            account_id,
+            strategy_name,
+            payload,
+            session,
+            authorization=http_request.headers.get("authorization"),
+            requested_by_user_id=auth.user_id,
         )
 
     @app.websocket(f"{API_PREFIX}/ws/orderbook")
@@ -200,3 +246,16 @@ async def send_ws_error(websocket: WebSocket, message: str) -> None:
 def optional_text(value: object) -> str | None:
     text = str(value or "").strip()
     return text or None
+
+
+def require_order_submission_access(
+    service: ExecutionService,
+    auth: AuthContext,
+) -> None:
+    permission = (
+        Permissions.TRADING_PAPER_START
+        if service.settings.order_submission_mode == "stub"
+        else Permissions.TRADING_LIVE_START
+    )
+    if not auth.has_permission(permission):
+        raise forbidden_error(required_permissions=[permission])

@@ -18,8 +18,8 @@ let resizeObserver: ResizeObserver | null = null;
 
 const targetRows = computed(() =>
   [...(props.result?.target_weights ?? [])]
-    .filter((item) => item.target_weight > 0)
-    .sort((a, b) => b.target_weight - a.target_weight)
+    .filter((item) => item.target_weight > 0 || item.current_weight > 0)
+    .sort((a, b) => Math.max(b.target_weight, b.current_weight) - Math.max(a.target_weight, a.current_weight))
     .slice(0, 12),
 );
 
@@ -120,11 +120,25 @@ function renderChart() {
       ],
       series: [
         {
+          name: "Текущий вес",
+          type: "bar",
+          data: targetRows.value.map((item) => +(item.current_weight * 100).toFixed(3)),
+          itemStyle: { color: "#66d9ef" },
+          barMaxWidth: 18,
+        },
+        {
           name: "Целевой вес",
           type: "bar",
           data: targetRows.value.map((item) => +(item.target_weight * 100).toFixed(3)),
           itemStyle: { color: "#54d6a4" },
-          barMaxWidth: 28,
+          barMaxWidth: 18,
+        },
+        {
+          name: "План с учетом лотов",
+          type: "bar",
+          data: targetRows.value.map((item) => +(item.planned_weight * 100).toFixed(3)),
+          itemStyle: { color: "#ffcc66" },
+          barMaxWidth: 18,
         },
         {
           name: "План приказов",

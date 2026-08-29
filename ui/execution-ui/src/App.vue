@@ -7,6 +7,7 @@ import {
   BriefcaseBusiness,
   CircleHelp,
   ClipboardCheck,
+  FileChartColumn,
   Home,
   Landmark,
   Link2,
@@ -28,11 +29,13 @@ import {
   createOrder,
   createStopOrder,
   assignExecutionStrategy,
+  executeExecutionStrategy,
   getAccounts,
   getCurrentUser,
   getExecutionStrategies,
   getLastPrice,
   getOverview,
+  getPnlReport,
   getPrices,
   getTradableInstruments,
   runExecutionStrategy,
@@ -40,11 +43,14 @@ import {
 } from "./api";
 import AllocationBarChart from "./components/AllocationBarChart.vue";
 import AllocationChart from "./components/AllocationChart.vue";
+import MetricHelp from "./components/MetricHelp.vue";
 import OrderBookPanel from "./components/OrderBookPanel.vue";
 import TicketCandlestickChart from "./components/TicketCandlestickChart.vue";
 import OperationsCashflowChart from "./components/OperationsCashflowChart.vue";
+import PnlReportCharts from "./components/PnlReportCharts.vue";
 import StrategyPlanChart from "./components/StrategyPlanChart.vue";
 import { MARKET_TIME_ZONE, formatMarketDateInput } from "./marketTime";
+import { PNL_HELP } from "./pnlHelp";
 import type {
   AccountItem,
   AccountOverview,
@@ -57,10 +63,13 @@ import type {
   OperationItem,
   OrderBookSnapshot,
   OrderTicket,
+  PnlReport,
   PortfolioPosition,
   StopOrderTicket,
   StrategyRunRequest,
   StrategyRunResult,
+  StrategyExecutionResult,
+  StrategyExecutionOrderResult,
   StubResponse,
   TradableInstrument,
   User,
@@ -98,9 +107,19 @@ const latestStub = ref<StubResponse | null>(null);
 const selectedInstrument = ref<TradableInstrument | null>(null);
 const isInstrumentPickerOpen = ref(false);
 const isStrategyModalOpen = ref(false);
+const isPnlModalOpen = ref(false);
+const isLoadingPnlReport = ref(false);
+const pnlError = ref("");
+const pnlReport = ref<PnlReport | null>(null);
+const pnlSettings = ref({
+  from_date: formatDateInput(new Date(new Date().getFullYear(), 0, 1)),
+  to_date: formatDateInput(new Date()),
+  strategy_name: "",
+});
 const isLoadingStrategies = ref(false);
 const isAssigningStrategy = ref(false);
 const isRunningStrategy = ref(false);
+const isExecutingStrategy = ref(false);
 const strategyError = ref("");
 const strategyAssignments = ref<ExecutionStrategyAssignment[]>([]);
 const availableStrategies = ref<ExecutionStrategyItem[]>([]);
@@ -108,14 +127,16 @@ const strategyTotal = ref(0);
 const selectedStrategyName = ref("");
 const strategyAssignComment = ref("");
 const strategyRunResult = ref<StrategyRunResult | null>(null);
+const strategyExecutionResult = ref<StrategyExecutionResult | null>(null);
 const strategyRunSettings = ref<StrategyRunRequest>({
   start_date: formatDateInput(addDays(new Date(), -365)),
   end_date: formatDateInput(new Date()),
   interval: "CANDLE_INTERVAL_DAY",
   class_code: "TQBR",
-  order_type: "limit",
+  order_type: "market",
   limit_offset_pct: 0.001,
-  min_order_value: 100,
+  min_order_value: 0,
+  cash_buffer_pct: 0.01,
 });
 const isLoadingInstruments = ref(false);
 const instrumentError = ref("");
@@ -228,6 +249,25 @@ const selectedAvailableStrategy = computed(() =>
 const assignedStrategyNames = computed(() =>
   new Set(strategyAssignments.value.map((item) => item.strategy_name)),
 );
+const requiredSubmissionPermission = computed(() =>
+  overview.value?.order_submission_mode === "stub" ? "trading.paper.start" : "trading.live.start",
+);
+const canSubmitOrders = computed(() =>
+  user.value?.permissions.includes(requiredSubmissionPermission.value) ?? false,
+);
+const strategyPlanAlreadyExecuted = computed(
+  () =>
+    Boolean(strategyRunResult.value?.plan_id) &&
+    strategyExecutionResult.value?.plan_id === strategyRunResult.value?.plan_id,
+);
+const strategyStopPositionCount = computed(
+  () => new Set((strategyRunResult.value?.stop_orders ?? []).map((row) => row.ticker)).size,
+);
+const strategyExecutionFailures = computed(() =>
+  (strategyExecutionResult.value?.results ?? []).filter(
+    (row) => row.status === "failed" || row.status === "skipped",
+  ),
+);
 
 watch(
   () => orderTicket.value.order_type,
@@ -237,6 +277,16 @@ watch(
     }
   },
 );
+
+watch(selectedAccountId, () => {
+  strategyRunResult.value = null;
+  strategyExecutionResult.value = null;
+});
+
+watch(selectedStrategyName, () => {
+  strategyRunResult.value = null;
+  strategyExecutionResult.value = null;
+});
 
 onMounted(async () => {
   await requireAuth();
@@ -298,8 +348,15 @@ async function loadOverview() {
 async function selectAccount(account: AccountItem) {
   if (!account.is_available) return;
   selectedAccountId.value = account.id;
+  strategyRunResult.value = null;
+  strategyExecutionResult.value = null;
+  pnlReport.value = null;
+  pnlError.value = "";
   await loadOverview();
   if (isStrategyModalOpen.value) {
+    await loadExecutionStrategies();
+  }
+  if (isPnlModalOpen.value) {
     await loadExecutionStrategies();
   }
 }
@@ -347,6 +404,35 @@ async function openStrategyModal() {
   isStrategyModalOpen.value = true;
   strategyError.value = "";
   await loadExecutionStrategies();
+}
+
+async function openPnlReport() {
+  isPnlModalOpen.value = true;
+  pnlError.value = "";
+  if (!strategyAssignments.value.length) {
+    await loadExecutionStrategies();
+  }
+  if (!pnlSettings.value.strategy_name && strategyAssignments.value.length === 1) {
+    pnlSettings.value.strategy_name = strategyAssignments.value[0].strategy_name;
+  }
+}
+
+async function generatePnlReport() {
+  if (!selectedAccountId.value) return;
+  isLoadingPnlReport.value = true;
+  pnlError.value = "";
+  try {
+    pnlReport.value = await getPnlReport(selectedAccountId.value, {
+      from_date: pnlSettings.value.from_date,
+      to_date: pnlSettings.value.to_date,
+      strategy_name: textOrNull(pnlSettings.value.strategy_name),
+    });
+  } catch (cause) {
+    pnlError.value = errorMessage(cause);
+    pnlReport.value = null;
+  } finally {
+    isLoadingPnlReport.value = false;
+  }
 }
 
 async function loadExecutionStrategies() {
@@ -397,6 +483,7 @@ async function unassignStrategy(strategyName: string) {
     await unassignExecutionStrategy(selectedAccountId.value, strategyName);
     if (selectedStrategyName.value === strategyName) {
       strategyRunResult.value = null;
+      strategyExecutionResult.value = null;
     }
     await loadExecutionStrategies();
   } catch (cause) {
@@ -411,6 +498,7 @@ async function runSelectedStrategy() {
   isRunningStrategy.value = true;
   strategyError.value = "";
   try {
+    strategyExecutionResult.value = null;
     strategyRunResult.value = await runExecutionStrategy(
       selectedAccountId.value,
       selectedStrategyName.value,
@@ -424,6 +512,38 @@ async function runSelectedStrategy() {
   }
 }
 
+async function executeSelectedStrategy() {
+  const plan = strategyRunResult.value;
+  if (!selectedAccountId.value || !selectedStrategyName.value || !plan) return;
+  const orderCount = plan.orders.length;
+  const mode = overview.value?.order_submission_mode === "stub" ? "STUB" : "LIVE";
+  const confirmed = window.confirm(
+    `${mode}: исполнить ${orderCount} рыночных заявок по плану ${plan.plan_id.slice(0, 12)}? ` +
+      "Сначала будут отправлены продажи, затем покупки. Стоп-заявки не входят в пакет.",
+  );
+  if (!confirmed) return;
+
+  isExecutingStrategy.value = true;
+  strategyError.value = "";
+  try {
+    strategyExecutionResult.value = await executeExecutionStrategy(
+      selectedAccountId.value,
+      selectedStrategyName.value,
+      {
+        ...normalizeStrategyRunSettings(),
+        order_type: "market",
+        plan_id: plan.plan_id,
+        confirmation: "execute_market_orders",
+      },
+    );
+    await loadOverview();
+  } catch (cause) {
+    strategyError.value = errorMessage(cause);
+  } finally {
+    isExecutingStrategy.value = false;
+  }
+}
+
 function normalizeStrategyRunSettings(): StrategyRunRequest {
   return {
     ...strategyRunSettings.value,
@@ -431,6 +551,7 @@ function normalizeStrategyRunSettings(): StrategyRunRequest {
     end_date: textOrNull(strategyRunSettings.value.end_date),
     limit_offset_pct: Number(strategyRunSettings.value.limit_offset_pct),
     min_order_value: Number(strategyRunSettings.value.min_order_value),
+    cash_buffer_pct: Number(strategyRunSettings.value.cash_buffer_pct),
   };
 }
 
@@ -783,6 +904,49 @@ function strategyStopKindLabel(value: string): string {
   return value;
 }
 
+function strategyDeltaLabel(value: number): string {
+  if (value > 0) return `Купить ${value}`;
+  if (value < 0) return `Продать ${Math.abs(value)}`;
+  return "Без изменений";
+}
+
+function strategyConstraintLabel(value: string | null): string {
+  if (value === "below_one_lot") return "Целевая сумма меньше одного лота";
+  if (value === "cash_limited") return "Ограничено доступными деньгами";
+  if (value === "below_min_order") return "Ниже минимальной суммы заявки";
+  return "";
+}
+
+function strategyExecutionError(row: StrategyExecutionOrderResult): string {
+  const brokerResponse = row.response?.broker_response as
+    | { message?: unknown; detail?: unknown }
+    | null
+    | undefined;
+  return (
+    readableErrorDetail(row.error) ||
+    readableErrorDetail(row.response?.message) ||
+    readableErrorDetail(brokerResponse?.message) ||
+    readableErrorDetail(brokerResponse?.detail) ||
+    readableErrorDetail(row.response?.broker_response) ||
+    (row.status === "skipped" ? "Заявка пропущена" : "Брокер отклонил заявку без текста ошибки")
+  );
+}
+
+function readableErrorDetail(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  if (!value || typeof value !== "object") return "";
+  const detail = value as { message?: unknown; detail?: unknown; error?: unknown };
+  for (const candidate of [detail.message, detail.detail, detail.error]) {
+    const result = readableErrorDetail(candidate);
+    if (result) return result;
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
 function formatDateOnly(value?: string | null): string {
   if (!value) return "n/a";
   return new Intl.DateTimeFormat("ru-RU", {
@@ -884,6 +1048,10 @@ function clearOrderBookStaleTimer() {
           <option :value="90">90 дней</option>
           <option :value="365">365 дней</option>
         </select>
+        <button class="secondary-button pnl-report-trigger" type="button" @click="openPnlReport">
+          <FileChartColumn :size="17" />
+          Отчет PnL
+        </button>
         <button class="icon-button" type="button" title="Обновить" aria-label="Обновить" @click="loadOverview">
           <RefreshCw :class="{ spin: isLoadingOverview }" :size="18" />
         </button>
@@ -1095,10 +1263,13 @@ function clearOrderBookStaleTimer() {
                   />
                 </label>
               </div>
-              <button class="primary-button" type="submit" :disabled="isSubmittingOrder || !selectedAccountId">
+              <button class="primary-button" type="submit" :disabled="isSubmittingOrder || !selectedAccountId || !canSubmitOrders">
                 <Send :size="16" />
                 {{ submitOrderLabel }}
               </button>
+              <small v-if="!canSubmitOrders" class="permission-hint">
+                Нужна роль «Торговый оператор» (право {{ requiredSubmissionPermission }})
+              </small>
             </form>
 
             <form v-else class="ticket-form" @submit.prevent="submitStopOrder">
@@ -1136,10 +1307,13 @@ function clearOrderBookStaleTimer() {
                   <input v-model.number="stopTicket.stop_price" min="0" required step="0.0000001" type="number" />
                 </label>
               </div>
-              <button class="primary-button" type="submit" :disabled="isSubmittingStop || !selectedAccountId">
+              <button class="primary-button" type="submit" :disabled="isSubmittingStop || !selectedAccountId || !canSubmitOrders">
                 <Send :size="16" />
                 {{ submitStopOrderLabel }}
               </button>
+              <small v-if="!canSubmitOrders" class="permission-hint">
+                Нужна роль «Торговый оператор» (право {{ requiredSubmissionPermission }})
+              </small>
             </form>
 
             <div v-if="latestStub" class="stub-result">
@@ -1509,6 +1683,259 @@ function clearOrderBookStaleTimer() {
       </section>
     </div>
 
+    <div v-if="isPnlModalOpen" class="instrument-modal-backdrop" @click.self="isPnlModalOpen = false">
+      <section class="pnl-modal" role="dialog" aria-modal="true" aria-label="Отчет PnL">
+        <header class="instrument-modal-head">
+          <div>
+            <span>Execution · T-Invest</span>
+            <strong>Отчет PnL</strong>
+          </div>
+          <button class="icon-button" type="button" title="Закрыть" aria-label="Закрыть" @click="isPnlModalOpen = false">
+            <X :size="18" />
+          </button>
+        </header>
+
+        <div class="pnl-modal-body">
+          <section class="pnl-report-toolbar">
+            <label>
+              <span class="metric-label-with-help">Период с <MetricHelp :help="PNL_HELP.periodFrom" /></span>
+              <input v-model="pnlSettings.from_date" type="date" :max="pnlSettings.to_date" />
+            </label>
+            <label>
+              <span class="metric-label-with-help">Период по <MetricHelp :help="PNL_HELP.periodTo" /></span>
+              <input v-model="pnlSettings.to_date" type="date" :min="pnlSettings.from_date" :max="formatDateInput(new Date())" />
+            </label>
+            <label>
+              <span class="metric-label-with-help">Контекст стратегии <MetricHelp :help="PNL_HELP.strategyContext" /></span>
+              <select v-model="pnlSettings.strategy_name">
+                <option value="">Весь счет</option>
+                <option v-for="assignment in strategyAssignments" :key="assignment.id" :value="assignment.strategy_name">
+                  {{ assignment.strategy_name }}
+                </option>
+              </select>
+            </label>
+            <button class="primary-button" type="button" :disabled="isLoadingPnlReport" @click="generatePnlReport">
+              <FileChartColumn :class="{ spin: isLoadingPnlReport }" :size="17" />
+              Сгенерировать отчет
+            </button>
+          </section>
+
+          <div v-if="pnlError" class="inline-error">{{ pnlError }}</div>
+
+          <div v-if="isLoadingPnlReport" class="pnl-report-loading">
+            <Loader2 class="spin" :size="28" />
+            <span>Загружаем полную историю операций и дневные цены T-Invest…</span>
+          </div>
+
+          <template v-else-if="pnlReport">
+            <section class="pnl-report-identity">
+              <div>
+                <span class="metric-label-with-help">Счет <MetricHelp :help="PNL_HELP.account" /></span>
+                <strong>{{ pnlReport.account_name }}</strong>
+                <small>{{ shortId(pnlReport.account_id) }}</small>
+              </div>
+              <div>
+                <span class="metric-label-with-help">Период <MetricHelp :help="PNL_HELP.reportPeriod" /></span>
+                <strong>{{ formatDateOnly(pnlReport.period.from) }} — {{ formatDateOnly(pnlReport.period.to) }}</strong>
+                <small>{{ pnlReport.period.calendar_days }} дней · {{ pnlReport.period.observations }} наблюдений</small>
+              </div>
+              <div>
+                <span class="metric-label-with-help">Стратегия <MetricHelp :help="PNL_HELP.strategyScope" /></span>
+                <strong>{{ pnlReport.strategy.name || "Весь счет" }}</strong>
+                <small>{{ pnlReport.strategy.attribution_mode === "dedicated_account_proxy" ? "прокси выделенного счета" : "результат счета" }}</small>
+              </div>
+              <div>
+                <span class="metric-label-with-help">Сформирован <MetricHelp :help="PNL_HELP.generatedAt" /></span>
+                <strong>{{ formatDateTime(pnlReport.generated_at) }}</strong>
+                <small>{{ pnlReport.data_quality.operations_source }}</small>
+              </div>
+            </section>
+
+            <ul v-if="pnlReport.data_quality.warnings.length" class="pnl-quality-warnings">
+              <li v-for="warning in pnlReport.data_quality.warnings" :key="warning">{{ warning }}</li>
+            </ul>
+
+            <section class="pnl-kpi-grid">
+              <article class="pnl-kpi primary">
+                <span class="metric-label-with-help">Итоговый PnL <MetricHelp :help="PNL_HELP.totalPnl" /></span>
+                <strong :class="{ positive: pnlReport.summary.total_pnl >= 0, negative: pnlReport.summary.total_pnl < 0 }">
+                  {{ formatValue(pnlReport.summary.total_pnl) }}
+                </strong>
+                <small>после внешних вводов и выводов</small>
+              </article>
+              <article class="pnl-kpi">
+                <span class="metric-label-with-help">TWR <MetricHelp :help="PNL_HELP.twr" /></span>
+                <strong :class="{ positive: pnlReport.summary.twr >= 0, negative: pnlReport.summary.twr < 0 }">
+                  {{ formatPercent(pnlReport.summary.twr) }}
+                </strong>
+                <small>time-weighted return</small>
+              </article>
+              <article class="pnl-kpi">
+                <span class="metric-label-with-help">MWR / XIRR <MetricHelp :help="PNL_HELP.mwr" /></span>
+                <strong>{{ formatPercent(pnlReport.summary.mwr) }}</strong>
+                <small>money-weighted, годовых</small>
+              </article>
+              <article class="pnl-kpi">
+                <span class="metric-label-with-help">NAV начало → конец <MetricHelp :help="PNL_HELP.nav" /></span>
+                <strong>{{ formatValue(pnlReport.summary.opening_nav) }}</strong>
+                <small>{{ formatValue(pnlReport.summary.ending_nav) }}</small>
+              </article>
+              <article class="pnl-kpi">
+                <span class="metric-label-with-help">Max drawdown <MetricHelp :help="PNL_HELP.maxDrawdown" /></span>
+                <strong class="negative">{{ formatPercent(pnlReport.risk.max_drawdown) }}</strong>
+                <small>по cash-flow adjusted кривой</small>
+              </article>
+              <article class="pnl-kpi">
+                <span class="metric-label-with-help">Sharpe / Sortino <MetricHelp :help="PNL_HELP.sharpeSortino" /></span>
+                <strong>{{ formatNumber(pnlReport.risk.sharpe_ratio) }} / {{ formatNumber(pnlReport.risk.sortino_ratio) }}</strong>
+                <small>безрисковая ставка 0%</small>
+              </article>
+              <article class="pnl-kpi">
+                <span class="metric-label-with-help">Волатильность <MetricHelp :help="PNL_HELP.annualizedVolatility" /></span>
+                <strong>{{ formatPercent(pnlReport.risk.annualized_volatility) }}</strong>
+                <small>annualized · 252</small>
+              </article>
+              <article class="pnl-kpi">
+                <span class="metric-label-with-help">Profit factor / Win rate <MetricHelp :help="PNL_HELP.profitFactorWinRate" /></span>
+                <strong>{{ formatNumber(pnlReport.risk.profit_factor) }} / {{ formatPercent(pnlReport.risk.win_rate) }}</strong>
+                <small>{{ pnlReport.risk.positive_days }}+ / {{ pnlReport.risk.negative_days }}− дней</small>
+              </article>
+            </section>
+
+            <PnlReportCharts :report="pnlReport" />
+
+            <section class="pnl-detail-grid">
+              <article class="pnl-detail-card">
+                <header>
+                  <span>Денежный результат</span>
+                  <strong>Costs &amp; income</strong>
+                </header>
+                <dl>
+                  <div><dt class="metric-label-with-help">Realized PnL брокера <MetricHelp :help="PNL_HELP.realizedPnl" /></dt><dd>{{ formatValue(pnlReport.summary.realized_pnl_broker) }}</dd></div>
+                  <div><dt class="metric-label-with-help">Unrealized, оценка на конец <MetricHelp :help="PNL_HELP.unrealizedPnl" /></dt><dd>{{ formatValue(pnlReport.summary.unrealized_pnl_estimate) }}</dd></div>
+                  <div><dt class="metric-label-with-help">Дивиденды <MetricHelp :help="PNL_HELP.dividends" /></dt><dd>{{ formatValue(pnlReport.summary.dividends) }}</dd></div>
+                  <div><dt class="metric-label-with-help">Купоны <MetricHelp :help="PNL_HELP.coupons" /></dt><dd>{{ formatValue(pnlReport.summary.coupons) }}</dd></div>
+                  <div><dt class="metric-label-with-help">Комиссии <MetricHelp :help="PNL_HELP.fees" /></dt><dd class="negative">{{ formatValue(pnlReport.summary.fees) }}</dd></div>
+                  <div><dt class="metric-label-with-help">Налоги <MetricHelp :help="PNL_HELP.taxes" /></dt><dd class="negative">{{ formatValue(pnlReport.summary.taxes) }}</dd></div>
+                  <div><dt class="metric-label-with-help">Вводы <MetricHelp :help="PNL_HELP.inflows" /></dt><dd>{{ formatValue(pnlReport.summary.inflows) }}</dd></div>
+                  <div><dt class="metric-label-with-help">Выводы <MetricHelp :help="PNL_HELP.outflows" /></dt><dd>{{ formatValue(pnlReport.summary.outflows) }}</dd></div>
+                </dl>
+              </article>
+
+              <article class="pnl-detail-card">
+                <header>
+                  <span>Торговая активность</span>
+                  <strong>Execution statistics</strong>
+                </header>
+                <dl>
+                  <div><dt class="metric-label-with-help">Сделок <MetricHelp :help="PNL_HELP.trades" /></dt><dd>{{ pnlReport.summary.trades }}</dd></div>
+                  <div><dt class="metric-label-with-help">Покупок / продаж <MetricHelp :help="PNL_HELP.buysSells" /></dt><dd>{{ pnlReport.summary.buys }} / {{ pnlReport.summary.sells }}</dd></div>
+                  <div><dt class="metric-label-with-help">Оборот <MetricHelp :help="PNL_HELP.turnover" /></dt><dd>{{ formatValue(pnlReport.summary.turnover) }}</dd></div>
+                  <div><dt class="metric-label-with-help">Turnover ratio <MetricHelp :help="PNL_HELP.turnoverRatio" /></dt><dd>{{ formatPercent(pnlReport.summary.turnover_ratio) }}</dd></div>
+                  <div><dt class="metric-label-with-help">Лучший день <MetricHelp :help="PNL_HELP.bestDay" /></dt><dd class="positive">{{ formatValue(pnlReport.risk.best_day_pnl) }}</dd></div>
+                  <div><dt class="metric-label-with-help">Худший день <MetricHelp :help="PNL_HELP.worstDay" /></dt><dd class="negative">{{ formatValue(pnlReport.risk.worst_day_pnl) }}</dd></div>
+                  <div><dt class="metric-label-with-help">Historical VaR 95% <MetricHelp :help="PNL_HELP.historicalVar95" /></dt><dd>{{ formatValue(pnlReport.risk.historical_var_95_amount) }}</dd></div>
+                  <div><dt class="metric-label-with-help">Calmar <MetricHelp :help="PNL_HELP.calmar" /></dt><dd>{{ formatNumber(pnlReport.risk.calmar_ratio) }}</dd></div>
+                </dl>
+              </article>
+            </section>
+
+            <section class="pnl-table-card">
+              <header>
+                <div>
+                  <span class="metric-label-with-help">Attribution <MetricHelp :help="PNL_HELP.attribution" /></span>
+                  <strong>Вклад инструментов в PnL</strong>
+                </div>
+                <small>{{ pnlReport.attribution.length }} инструментов</small>
+              </header>
+              <div class="pnl-table-shell">
+                <table class="pnl-table">
+                  <thead>
+                    <tr>
+                      <th><span class="metric-label-with-help">Ticker <MetricHelp :help="PNL_HELP.ticker" /></span></th>
+                      <th><span class="metric-label-with-help">Кол-во начало <MetricHelp :help="PNL_HELP.openingQuantity" /></span></th>
+                      <th><span class="metric-label-with-help">Кол-во конец <MetricHelp :help="PNL_HELP.endingQuantity" /></span></th>
+                      <th><span class="metric-label-with-help">Стоимость начало <MetricHelp :help="PNL_HELP.openingValue" /></span></th>
+                      <th><span class="metric-label-with-help">Стоимость конец <MetricHelp :help="PNL_HELP.endingValue" /></span></th>
+                      <th><span class="metric-label-with-help">Вклад PnL <MetricHelp :help="PNL_HELP.pnlContribution" /></span></th>
+                      <th><span class="metric-label-with-help">Realized <MetricHelp :help="PNL_HELP.instrumentRealized" /></span></th>
+                      <th><span class="metric-label-with-help">Оборот <MetricHelp :help="PNL_HELP.instrumentTurnover" /></span></th>
+                      <th><span class="metric-label-with-help">Сделок <MetricHelp :help="PNL_HELP.instrumentTrades" /></span></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="row in pnlReport.attribution" :key="row.instrument_id">
+                      <td><strong>{{ row.ticker }}</strong><small>{{ row.name }}</small></td>
+                      <td>{{ formatNumber(row.opening_quantity, 4) }}</td>
+                      <td>{{ formatNumber(row.ending_quantity, 4) }}</td>
+                      <td>{{ formatValue(row.opening_value) }}</td>
+                      <td>{{ formatValue(row.ending_value) }}</td>
+                      <td :class="{ positive: row.pnl_contribution >= 0, negative: row.pnl_contribution < 0 }">
+                        {{ formatValue(row.pnl_contribution) }}
+                      </td>
+                      <td>{{ formatValue(row.realized_pnl_broker) }}</td>
+                      <td>{{ formatValue(row.turnover) }}</td>
+                      <td>{{ row.trades }}</td>
+                    </tr>
+                    <tr v-if="!pnlReport.attribution.length"><td colspan="9">Нет инструментов за период</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="pnl-table-card monthly-card">
+              <header>
+                <div>
+                  <span class="metric-label-with-help">Monthly performance <MetricHelp :help="PNL_HELP.monthlyPerformance" /></span>
+                  <strong>Доходность по месяцам</strong>
+                </div>
+              </header>
+              <div class="pnl-table-shell">
+                <table class="pnl-table monthly-table">
+                  <thead>
+                    <tr>
+                      <th><span class="metric-label-with-help">Месяц <MetricHelp :help="PNL_HELP.month" /></span></th>
+                      <th><span class="metric-label-with-help">Доходность <MetricHelp :help="PNL_HELP.monthReturn" /></span></th>
+                      <th><span class="metric-label-with-help">PnL <MetricHelp :help="PNL_HELP.monthPnl" /></span></th>
+                      <th><span class="metric-label-with-help">NAV на конец <MetricHelp :help="PNL_HELP.monthEndingNav" /></span></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="row in pnlReport.monthly_returns" :key="row.month">
+                      <td>{{ row.month }}</td>
+                      <td :class="{ positive: row.return >= 0, negative: row.return < 0 }">{{ formatPercent(row.return) }}</td>
+                      <td :class="{ positive: row.pnl >= 0, negative: row.pnl < 0 }">{{ formatValue(row.pnl) }}</td>
+                      <td>{{ formatValue(row.ending_nav) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <footer class="pnl-methodology">
+              <strong class="metric-label-with-help">Методика <MetricHelp :help="PNL_HELP.methodology" /></strong>
+              <span>
+                Transaction replay + mark-to-market. Операции: {{ pnlReport.data_quality.operations }};
+                <span class="metric-label-with-help">покрытие ценами <MetricHelp :help="PNL_HELP.priceCoverage" /></span>:
+                {{ pnlReport.data_quality.priced_instruments }} из {{ pnlReport.data_quality.total_instruments }}
+                ({{ formatPercent(pnlReport.data_quality.price_coverage) }}).
+              </span>
+              <span>
+                Источники: {{ pnlReport.data_quality.operations_source }} · {{ pnlReport.data_quality.prices_source }}.
+                Отчет аналитический и не заменяет официальный брокерский или налоговый отчет.
+              </span>
+            </footer>
+          </template>
+
+          <section v-else class="pnl-empty-state">
+            <FileChartColumn :size="34" />
+            <strong>Выберите период и сформируйте отчет</strong>
+            <span>Будут загружены операции, комиссии, налоги, выплаты и дневные цены T-Invest.</span>
+          </section>
+        </div>
+      </section>
+    </div>
+
     <div v-if="isStrategyModalOpen" class="instrument-modal-backdrop" @click.self="isStrategyModalOpen = false">
       <section class="strategy-modal" role="dialog" aria-modal="true" aria-label="Стратегии счета">
         <header class="instrument-modal-head">
@@ -1556,7 +1983,7 @@ function clearOrderBookStaleTimer() {
 
             <section class="strategy-box">
               <header>
-                <span>Ручной запуск</span>
+                <span>План ребалансировки</span>
                 <strong>{{ selectedStrategyAssignment?.strategy_name ?? (selectedStrategyName || "n/a") }}</strong>
               </header>
               <div class="strategy-run-grid">
@@ -1582,18 +2009,17 @@ function clearOrderBookStaleTimer() {
                 </label>
                 <label>
                   <span>Приказы</span>
-                  <select v-model="strategyRunSettings.order_type">
-                    <option value="limit">Limit</option>
+                  <select v-model="strategyRunSettings.order_type" disabled>
                     <option value="market">Market</option>
                   </select>
                 </label>
                 <label>
-                  <span>Offset limit</span>
-                  <input v-model.number="strategyRunSettings.limit_offset_pct" min="0" max="0.1" step="0.0005" type="number" />
+                  <span>Мин. сумма (0 = все дельты)</span>
+                  <input v-model.number="strategyRunSettings.min_order_value" min="0" step="100" type="number" />
                 </label>
                 <label>
-                  <span>Мин. сумма</span>
-                  <input v-model.number="strategyRunSettings.min_order_value" min="0" step="100" type="number" />
+                  <span>Резерв cash (0.01 = 1%)</span>
+                  <input v-model.number="strategyRunSettings.cash_buffer_pct" min="0" max="0.2" step="0.005" type="number" />
                 </label>
               </div>
               <button
@@ -1603,7 +2029,7 @@ function clearOrderBookStaleTimer() {
                 @click="runSelectedStrategy"
               >
                 <Play :class="{ spin: isRunningStrategy }" :size="16" />
-                Запустить dry-run
+                Рассчитать план
               </button>
             </section>
           </aside>
@@ -1664,22 +2090,136 @@ function clearOrderBookStaleTimer() {
               </article>
               <article>
                 <span>Целевые бумаги</span>
-                <strong>{{ strategyRunResult?.summary.target_positions ?? 0 }}</strong>
+                <strong>
+                  {{ strategyRunResult?.summary.planned_target_positions ?? 0 }} из
+                  {{ strategyRunResult?.summary.model_target_positions ?? 0 }}
+                </strong>
               </article>
               <article>
                 <span>Приказы</span>
                 <strong>{{ strategyRunResult?.summary.orders ?? 0 }}</strong>
               </article>
               <article>
-                <span>Стоп/тейк</span>
-                <strong>{{ strategyRunResult?.summary.stop_orders ?? 0 }}</strong>
+                <span>Стоп/тейк / позиции</span>
+                <strong>{{ strategyRunResult?.summary.stop_orders ?? 0 }} / {{ strategyStopPositionCount }}</strong>
               </article>
               <article>
-                <span>Net cash</span>
-                <strong :class="{ positive: Number(strategyRunResult?.summary.net_cash_need ?? 0) <= 0, negative: Number(strategyRunResult?.summary.net_cash_need ?? 0) > 0 }">
-                  {{ formatValue(strategyRunResult?.summary.net_cash_need) }}
+                <span>Cash сейчас</span>
+                <strong>{{ formatValue(strategyRunResult?.summary.available_cash) }}</strong>
+              </article>
+              <article>
+                <span>Cash после плана</span>
+                <strong :class="{ positive: Number(strategyRunResult?.summary.estimated_cash_after_orders ?? 0) >= 0, negative: Number(strategyRunResult?.summary.estimated_cash_after_orders ?? 0) < 0 }">
+                  {{ formatValue(strategyRunResult?.summary.estimated_cash_after_orders) }}
                 </strong>
               </article>
+            </section>
+
+            <section v-if="strategyRunResult" class="strategy-box execution-box">
+              <header>
+                <span>Исполнение модели</span>
+                <strong>{{ submissionModeLabel }} / {{ strategyRunResult.plan_id.slice(0, 12) }}</strong>
+              </header>
+              <div class="execution-copy">
+                <span>
+                  Сервер повторно сверит портфель и план, затем отправит рыночные продажи и только после них покупки.
+                  Стопы и тейки в этот пакет не входят.
+                </span>
+                <div class="strategy-plan-explanation">
+                  <span>
+                    Модель: <strong>{{ strategyRunResult.summary.model_target_positions }}</strong> бумаг;
+                    достижимо целыми лотами: <strong>{{ strategyRunResult.summary.planned_target_positions }}</strong>.
+                  </span>
+                  <span>
+                    Ниже стоимости одного лота: <strong>{{ strategyRunResult.summary.below_one_lot_target_positions }}</strong>;
+                    ограничено деньгами: <strong>{{ strategyRunResult.summary.cash_limited_target_positions }}</strong>.
+                  </span>
+                  <span>
+                    Для одного лота каждой цели по известным ценам нужно минимум
+                    <strong>{{ formatValue(strategyRunResult.summary.minimum_one_lot_cost) }}</strong>.
+                  </span>
+                </div>
+                <ul v-if="strategyRunResult.execution.warnings.length" class="execution-warnings">
+                  <li v-for="warning in strategyRunResult.execution.warnings" :key="warning">{{ warning }}</li>
+                </ul>
+                <ul v-if="strategyRunResult.execution.blocking_reasons.length" class="execution-blockers">
+                  <li v-for="reason in strategyRunResult.execution.blocking_reasons" :key="reason">{{ reason }}</li>
+                </ul>
+              </div>
+              <button
+                class="primary-button execute-button"
+                type="button"
+                :disabled="
+                  isExecutingStrategy ||
+                  !canSubmitOrders ||
+                  !strategyRunResult.execution.ready ||
+                  strategyPlanAlreadyExecuted
+                "
+                @click="executeSelectedStrategy"
+              >
+                <Send :class="{ spin: isExecutingStrategy }" :size="16" />
+                {{
+                  strategyPlanAlreadyExecuted
+                    ? "План уже отправлен"
+                    : `Исполнить ${strategyRunResult.orders.length} рыночных заявок`
+                }}
+              </button>
+              <small v-if="!canSubmitOrders" class="permission-hint">
+                Нужна роль «Торговый оператор» (право {{ requiredSubmissionPermission }})
+              </small>
+
+              <div v-if="strategyExecutionResult" class="execution-result">
+                <strong>{{ strategyExecutionResult.status }}</strong>
+                <span>
+                  submitted {{ strategyExecutionResult.summary.submitted }}, simulated
+                  {{ strategyExecutionResult.summary.simulated }}, failed
+                  {{ strategyExecutionResult.summary.failed }}, skipped
+                  {{ strategyExecutionResult.summary.skipped }}
+                </span>
+                <div v-if="strategyExecutionFailures.length" class="execution-failure-summary">
+                  <strong>Не исполнено: {{ strategyExecutionFailures.length }}</strong>
+                  <ul>
+                    <li
+                      v-for="row in strategyExecutionFailures"
+                      :key="`failure-${row.ticker}-${row.side}`"
+                    >
+                      <b>
+                        {{ row.ticker }} · {{ strategySideLabel(row.side) }}
+                        {{ row.quantity_lots }} лот.
+                      </b>
+                      <span>{{ strategyExecutionError(row) }}</span>
+                    </li>
+                  </ul>
+                </div>
+                <div class="strategy-table-shell compact-strategy-table">
+                  <table class="strategy-table execution-result-table">
+                    <thead>
+                      <tr>
+                        <th>Ticker</th>
+                        <th>Side</th>
+                        <th>Lots</th>
+                        <th>Status</th>
+                        <th>Broker ID</th>
+                        <th>Ошибка</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="row in strategyExecutionResult.results" :key="`${row.ticker}-${row.side}`">
+                        <td>{{ row.ticker }}</td>
+                        <td>{{ strategySideLabel(row.side) }}</td>
+                        <td>{{ row.quantity_lots }}</td>
+                        <td :class="{ positive: row.status === 'submitted' || row.status === 'simulated', negative: row.status === 'failed' }">
+                          {{ row.status }}
+                        </td>
+                        <td>{{ row.broker_order_id || "n/a" }}</td>
+                        <td class="execution-error-cell">
+                          {{ row.status === "failed" || row.status === "skipped" ? strategyExecutionError(row) : "—" }}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </section>
 
             <section class="strategy-box chart-box">
@@ -1702,9 +2242,10 @@ function clearOrderBookStaleTimer() {
                       <tr>
                         <th>Ticker</th>
                         <th>Сейчас</th>
-                        <th>Цель</th>
-                        <th>Лоты</th>
-                        <th>Delta</th>
+                        <th>Модель</th>
+                        <th>Один лот</th>
+                        <th>План</th>
+                        <th>Действие</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1713,15 +2254,27 @@ function clearOrderBookStaleTimer() {
                           <strong>{{ row.ticker }}</strong>
                           <small>{{ row.name }}</small>
                         </td>
-                        <td>{{ formatPercent(row.current_weight) }}</td>
-                        <td>{{ formatPercent(row.target_weight) }}</td>
-                        <td>{{ formatNumber(row.current_lots, 0) }} -> {{ row.target_lots }}</td>
+                        <td>
+                          {{ formatPercent(row.current_weight) }}
+                          <small>{{ formatNumber(row.current_lots, 0) }} лот.</small>
+                        </td>
+                        <td>
+                          {{ formatPercent(row.target_weight) }}
+                          <small>{{ formatValue(row.target_value) }}</small>
+                        </td>
+                        <td>{{ formatValue(row.one_lot_value) }}</td>
+                        <td>
+                          {{ row.target_lots }} лот.
+                          <small>{{ formatPercent(row.planned_weight) }}</small>
+                        </td>
                         <td :class="{ positive: row.delta_lots > 0, negative: row.delta_lots < 0 }">
-                          {{ row.delta_lots }}
+                          {{ strategyDeltaLabel(row.delta_lots) }}
+                          <small v-if="row.constraint">{{ strategyConstraintLabel(row.constraint) }}</small>
+                          <small v-if="row.blocked_lots">blocked {{ row.blocked_lots }}</small>
                         </td>
                       </tr>
                       <tr v-if="!strategyRunResult?.target_weights.length">
-                        <td colspan="5">Нет расчета</td>
+                        <td colspan="6">Нет расчета</td>
                       </tr>
                     </tbody>
                   </table>
@@ -1770,8 +2323,8 @@ function clearOrderBookStaleTimer() {
 
             <section class="strategy-box">
               <header>
-                <span>Стопы и тейки</span>
-                <strong>{{ strategyRunResult?.stop_orders.length ?? 0 }}</strong>
+                <span>Стопы и тейки для позиций после плана</span>
+                <strong>{{ strategyRunResult?.stop_orders.length ?? 0 }} / {{ strategyStopPositionCount }} поз.</strong>
               </header>
               <div class="strategy-table-shell compact-strategy-table">
                 <table class="strategy-table">

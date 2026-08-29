@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-import uuid
 import importlib
 import inspect
 import sys
+import uuid
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
-from typing import Any, AsyncIterator
+from typing import Any
 
+import httpx
 from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -16,6 +18,8 @@ from sqlalchemy.orm import Session
 from t_tech.invest import (
     AsyncClient,
     ExchangeOrderType,
+    GetOperationsByCursorRequest,
+    OperationState,
     OrderBookInstrument,
     OrderDirection,
     OrderType,
@@ -29,21 +33,26 @@ from t_tech.invest import (
 )
 from t_tech.invest.exceptions import AioRequestError, InvestError
 
+from its.db.models.strategy import (
+    TradingStrategyAccountAssignment,
+    TradingStrategyProductionState,
+)
 from its.execution.config import ExecutionAccountConfig, load_execution_settings
+from its.execution.pnl_report import build_pnl_report
 from its.execution.schemas import (
     OrderTicket,
     StopOrderTicket,
     StrategyAssignmentRequest,
+    StrategyExecutionRequest,
     StrategyRunRequest,
 )
 from its.execution.serialization import serialize_quotation, serialize_sdk_value
 from its.execution.strategy_runner import (
+    DATA_BACKEND_BASE_URL,
     StrategyRunSettings,
+    auth_headers,
     build_strategy_run_preview,
-)
-from its.db.models.strategy import (
-    TradingStrategyAccountAssignment,
-    TradingStrategyProductionState,
+    handle_data_response,
 )
 
 
@@ -189,6 +198,193 @@ class ExecutionService:
             "section_errors": errors,
         }
 
+    async def get_pnl_report(
+        self,
+        account_id: str,
+        *,
+        from_date: date,
+        to_date: date,
+        strategy_name: str | None,
+        session: Session,
+        authorization: str | None,
+    ) -> dict[str, Any]:
+        account_ref = self._require_account(account_id)
+        token = self._require_token()
+        today = datetime.now(UTC).date()
+        if from_date > to_date:
+            raise HTTPException(
+                status_code=422,
+                detail="from_date must be before or equal to to_date.",
+            )
+        if to_date > today:
+            raise HTTPException(
+                status_code=422,
+                detail="to_date cannot be in the future.",
+            )
+        if (to_date - from_date).days > 365 * 10:
+            raise HTTPException(
+                status_code=422,
+                detail="PnL report period cannot exceed 10 years.",
+            )
+
+        assignments = list(
+            session.scalars(
+                select(TradingStrategyAccountAssignment)
+                .where(TradingStrategyAccountAssignment.account_id == account_id)
+                .order_by(TradingStrategyAccountAssignment.created_at)
+            )
+        )
+        assigned_names = [row.strategy_name for row in assignments]
+        if strategy_name and strategy_name not in assigned_names:
+            raise HTTPException(
+                status_code=404,
+                detail="Strategy is not assigned to this execution account.",
+            )
+
+        try:
+            async with AsyncClient(token) as client:
+                accounts_response = await client.users.get_accounts()
+                broker_account = next(
+                    (
+                        account
+                        for account in accounts_response.accounts
+                        if account.id == account_id
+                    ),
+                    None,
+                )
+                if broker_account is None:
+                    raise HTTPException(
+                        status_code=404,
+                        detail="Configured account was not returned by T-Invest.",
+                    )
+                operations = await self._get_all_operations(
+                    client,
+                    account_id=account_id,
+                    to=datetime.combine(to_date, time.max, UTC),
+                )
+                current_portfolio = None
+                if to_date == today:
+                    current_portfolio = serialize_sdk_value(
+                        await client.operations.get_portfolio(account_id=account_id)
+                    )
+        except HTTPException:
+            raise
+        except (AioRequestError, InvestError) as error:
+            raise self._broker_error(error) from error
+
+        portfolio_positions = (current_portfolio or {}).get("positions") or []
+        figis = sorted(
+            {
+                str(figi)
+                for figi in [
+                    *(row.get("figi") for row in operations),
+                    *(row.get("figi") for row in portfolio_positions),
+                ]
+                if figi
+            }
+        )
+        prices = await self._get_pnl_prices(
+            figis,
+            from_date=from_date - timedelta(days=14),
+            to_date=to_date,
+            authorization=authorization,
+        )
+        account_item = self._build_account_item(
+            ExecutionAccountConfig(account_ref.account_id, account_ref.name),
+            broker_account,
+        )
+        current_portfolio_value = _extract_value(
+            (current_portfolio or {}).get("total_amount_portfolio")
+        )
+        report = build_pnl_report(
+            account_id=account_id,
+            account_name=str(
+                account_item.get("name") or account_ref.name or account_id
+            ),
+            from_date=from_date,
+            to_date=to_date,
+            operations=operations,
+            prices=prices,
+            strategy_name=strategy_name,
+            assigned_strategies=assigned_names,
+            current_portfolio_value=current_portfolio_value,
+        )
+        report["generated_at"] = datetime.now(UTC).isoformat()
+        return report
+
+    async def _get_all_operations(
+        self,
+        client: Any,
+        *,
+        account_id: str,
+        to: datetime,
+    ) -> list[dict[str, Any]]:
+        cursor: str | None = None
+        result: list[dict[str, Any]] = []
+        for _ in range(100):
+            response = await client.operations.get_operations_by_cursor(
+                GetOperationsByCursorRequest(
+                    account_id=account_id,
+                    to=to,
+                    cursor=cursor,
+                    limit=1000,
+                    state=OperationState.OPERATION_STATE_EXECUTED,
+                    without_commissions=False,
+                    without_trades=False,
+                    without_overnights=False,
+                )
+            )
+            payload = serialize_sdk_value(response) or {}
+            result.extend(payload.get("items") or [])
+            if not payload.get("has_next"):
+                return result
+            next_cursor = str(payload.get("next_cursor") or "").strip()
+            if not next_cursor or next_cursor == cursor:
+                raise HTTPException(
+                    status_code=502,
+                    detail="T-Invest returned an invalid operations cursor.",
+                )
+            cursor = next_cursor
+        raise HTTPException(
+            status_code=502,
+            detail="T-Invest operations history exceeded the pagination safety limit.",
+        )
+
+    async def _get_pnl_prices(
+        self,
+        figis: list[str],
+        *,
+        from_date: date,
+        to_date: date,
+        authorization: str | None,
+    ) -> list[dict[str, Any]]:
+        if not figis:
+            return []
+        result: list[dict[str, Any]] = []
+        async with httpx.AsyncClient(timeout=None) as client:
+            for index in range(0, len(figis), 50):
+                params: list[tuple[str, str]] = [
+                    ("figis", figi) for figi in figis[index : index + 50]
+                ]
+                params.extend(
+                    [
+                        ("instrument_type", "all"),
+                        ("class_code", ""),
+                        ("start_date", from_date.isoformat()),
+                        ("end_date", to_date.isoformat()),
+                        ("interval", "CANDLE_INTERVAL_DAY"),
+                        ("is_complete", "false"),
+                    ]
+                )
+                response = await client.get(
+                    f"{DATA_BACKEND_BASE_URL}/prices",
+                    params=params,
+                    headers=auth_headers(authorization),
+                )
+                payload = handle_data_response(response)
+                result.extend(payload.get("items") or [])
+        return result
+
     async def submit_order(
         self,
         account_id: str,
@@ -284,6 +480,13 @@ class ExecutionService:
 
         payload = serialize_sdk_value(response)
         broker_order_id = payload.get("order_id") or order_id
+        execution_status = payload.get("execution_report_status")
+        rejected = "REJECT" in str(execution_status or "").upper()
+        default_message = (
+            "T-Invest rejected the order."
+            if rejected
+            else "Order was submitted to T-Invest."
+        )
         return {
             "id": broker_order_id,
             "broker_order_id": broker_order_id,
@@ -291,11 +494,11 @@ class ExecutionService:
             "account_id": account.account_id,
             "account_name": account.name,
             "created_at": now.isoformat(),
-            "status": payload.get("execution_report_status") or "submitted_to_broker",
+            "status": execution_status or "submitted_to_broker",
             "submission_mode": "real",
             "would_submit": True,
-            "submitted": True,
-            "message": payload.get("message") or "Order was submitted to T-Invest.",
+            "submitted": not rejected,
+            "message": payload.get("message") or default_message,
             "ticket": ticket.model_dump(mode="json"),
             "broker_response": payload,
         }
@@ -578,10 +781,25 @@ class ExecutionService:
                 detail="Assign this strategy to the account before running it.",
             )
 
+        production_state = (
+            session.execute(
+                select(TradingStrategyProductionState).where(
+                    TradingStrategyProductionState.strategy_name == strategy_name
+                )
+            )
+            .scalars()
+            .one_or_none()
+        )
+        if production_state is None or not production_state.is_prod_ready:
+            raise HTTPException(
+                status_code=422,
+                detail="The assigned strategy is no longer marked as production-ready.",
+            )
+
         overview = await self.get_account_overview(
             account.account_id, operations_days=1
         )
-        return await build_strategy_run_preview(
+        preview = await build_strategy_run_preview(
             strategy_name=strategy_name,
             account_id=account.account_id,
             account_overview=overview,
@@ -593,9 +811,262 @@ class ExecutionService:
                 order_type=request.order_type,
                 limit_offset_pct=request.limit_offset_pct,
                 min_order_value=request.min_order_value,
+                cash_buffer_pct=request.cash_buffer_pct,
             ),
             authorization=authorization,
         )
+        if self.settings.order_submission_mode == "real" and preview.get("orders"):
+            try:
+                availability = await self.get_market_order_availability(
+                    preview["orders"]
+                )
+            except HTTPException as error:
+                preview["execution"]["ready"] = False
+                preview["execution"]["blocking_reasons"].append(
+                    broker_error_message(error.detail)
+                )
+            else:
+                preview["execution"]["market_order_availability"] = availability
+                unavailable = [row for row in availability if not row["available"]]
+                if unavailable:
+                    tickers = ", ".join(row["ticker"] for row in unavailable)
+                    preview["execution"]["ready"] = False
+                    preview["execution"]["blocking_reasons"].append(
+                        "T-Invest сейчас не принимает рыночные заявки для: "
+                        f"{tickers}. Дождитесь доступности market-заявок или "
+                        "используйте отдельный подтверждаемый режим лимитных заявок."
+                    )
+        return preview
+
+    async def get_market_order_availability(
+        self,
+        orders: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        token = self._require_token()
+        instrument_ids = list(
+            dict.fromkeys(
+                str(row.get("instrument_id") or "")
+                for row in orders
+                if row.get("instrument_id")
+            )
+        )
+        if not instrument_ids:
+            return []
+
+        try:
+            async with AsyncClient(token) as client:
+                response = await client.market_data.get_trading_statuses(
+                    instrument_ids=instrument_ids
+                )
+        except (AioRequestError, InvestError) as error:
+            raise self._broker_error(error) from error
+
+        payload = serialize_sdk_value(response) or {}
+        statuses = payload.get("trading_statuses") or []
+        status_by_id: dict[str, dict[str, Any]] = {}
+        for status in statuses:
+            for key in ("instrument_uid", "figi"):
+                value = status.get(key)
+                if value:
+                    status_by_id[str(value)] = status
+
+        result: list[dict[str, Any]] = []
+        for order in orders:
+            instrument_id = str(order.get("instrument_id") or "")
+            status = status_by_id.get(instrument_id)
+            result.append(
+                {
+                    "ticker": str(order.get("ticker") or instrument_id),
+                    "instrument_id": instrument_id,
+                    "available": bool(
+                        status
+                        and status.get("api_trade_available_flag") is True
+                        and status.get("market_order_available_flag") is True
+                    ),
+                    "api_trade_available_flag": (
+                        status.get("api_trade_available_flag") if status else None
+                    ),
+                    "market_order_available_flag": (
+                        status.get("market_order_available_flag") if status else None
+                    ),
+                    "limit_order_available_flag": (
+                        status.get("limit_order_available_flag") if status else None
+                    ),
+                    "bestprice_order_available_flag": (
+                        status.get("bestprice_order_available_flag") if status else None
+                    ),
+                    "only_best_price": (
+                        status.get("only_best_price") if status else None
+                    ),
+                    "trading_status": (
+                        status.get("trading_status") if status else None
+                    ),
+                }
+            )
+        return result
+
+    async def execute_assigned_strategy(
+        self,
+        account_id: str,
+        strategy_name: str,
+        request: StrategyExecutionRequest,
+        session: Session,
+        authorization: str | None,
+        requested_by_user_id: Any,
+    ) -> dict[str, Any]:
+        preview = await self.run_assigned_strategy(
+            account_id,
+            strategy_name,
+            request,
+            session,
+            authorization,
+        )
+        if preview["plan_id"] != request.plan_id:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": (
+                        "The broker portfolio or strategy plan changed. "
+                        "Review the refreshed preview before executing it."
+                    ),
+                    "expected_plan_id": request.plan_id,
+                    "current_plan_id": preview["plan_id"],
+                },
+            )
+
+        execution = preview.get("execution") or {}
+        if not execution.get("ready"):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": "The strategy plan is not safe to execute.",
+                    "blocking_reasons": execution.get("blocking_reasons") or [],
+                },
+            )
+
+        return await self.execute_strategy_orders(
+            account_id=account_id,
+            strategy_name=strategy_name,
+            plan=preview,
+            requested_by_user_id=requested_by_user_id,
+        )
+
+    async def execute_strategy_orders(
+        self,
+        *,
+        account_id: str,
+        strategy_name: str,
+        plan: dict[str, Any],
+        requested_by_user_id: Any,
+    ) -> dict[str, Any]:
+        plan_id = str(plan["plan_id"])
+        orders = list(plan.get("orders") or [])
+        ordered_rows = [row for row in orders if row["side"] == "sell"] + [
+            row for row in orders if row["side"] == "buy"
+        ]
+        results: list[dict[str, Any]] = []
+        sell_failed = False
+
+        for index, row in enumerate(ordered_rows):
+            if row["side"] == "buy" and sell_failed:
+                results.append(
+                    strategy_order_result(
+                        row,
+                        status="skipped",
+                        error="Buy phase was skipped because at least one sell order failed.",
+                    )
+                )
+                continue
+
+            client_order_id = str(
+                uuid.uuid5(
+                    uuid.NAMESPACE_URL,
+                    (
+                        f"its:strategy-execution:{plan_id}:{index}:"
+                        f"{row['ticker']}:{row['side']}"
+                    ),
+                )
+            )
+            ticket = OrderTicket(
+                instrument_id=str(row["instrument_id"]),
+                figi=row.get("figi"),
+                side=row["side"],
+                order_type="market",
+                quantity=int(row["quantity_lots"]),
+                client_order_id=client_order_id,
+                comment=(
+                    f"Strategy {strategy_name}; plan {plan_id[:12]}; "
+                    f"requested_by={requested_by_user_id}"
+                ),
+            )
+            try:
+                response = await self.submit_order(account_id, ticket)
+            except HTTPException as error:
+                if row["side"] == "sell":
+                    sell_failed = True
+                results.append(
+                    strategy_order_result(
+                        row,
+                        status="failed",
+                        client_order_id=client_order_id,
+                        error=error.detail,
+                    )
+                )
+                continue
+
+            if response.get("submission_mode") == "stub":
+                status = "simulated"
+            elif response.get("submitted"):
+                status = "submitted"
+            else:
+                status = "failed"
+                if row["side"] == "sell":
+                    sell_failed = True
+            results.append(
+                strategy_order_result(
+                    row,
+                    status=status,
+                    client_order_id=client_order_id,
+                    response=response,
+                    error=(
+                        None
+                        if status != "failed"
+                        else response.get("message") or "Broker rejected the order."
+                    ),
+                )
+            )
+
+        failed = len([row for row in results if row["status"] == "failed"])
+        skipped = len([row for row in results if row["status"] == "skipped"])
+        submitted = len([row for row in results if row["status"] == "submitted"])
+        simulated = len([row for row in results if row["status"] == "simulated"])
+        if failed or skipped:
+            status = "partial"
+        elif simulated:
+            status = "simulated"
+        else:
+            status = "submitted"
+
+        return {
+            "execution_id": plan_id,
+            "plan_id": plan_id,
+            "account_id": account_id,
+            "strategy_name": strategy_name,
+            "requested_by_user_id": str(requested_by_user_id),
+            "executed_at": datetime.now(UTC).isoformat(),
+            "submission_mode": self.settings.order_submission_mode,
+            "status": status,
+            "sell_first": True,
+            "stop_orders_submitted": False,
+            "summary": {
+                "orders": len(results),
+                "submitted": submitted,
+                "simulated": simulated,
+                "failed": failed,
+                "skipped": skipped,
+            },
+            "results": results,
+        }
 
     async def _safe_call(
         self,
@@ -674,9 +1145,27 @@ class ExecutionService:
 
     @staticmethod
     def _broker_error(error: Exception) -> HTTPException:
+        metadata = getattr(error, "metadata", None)
+        broker_code = str(getattr(error, "details", "") or "")
+        broker_message = str(getattr(metadata, "message", "") or "")
+        tracking_id = str(getattr(metadata, "tracking_id", "") or "")
+        if broker_code == "30083":
+            message = (
+                "T-Invest отклонил тип заявки (код 30083): выбранный тип "
+                "недоступен для инструмента или текущего режима торгов."
+            )
+        elif broker_message:
+            message = f"T-Invest: {broker_message}"
+        else:
+            message = f"T-Invest request failed: {error}"
         return HTTPException(
             status_code=502,
-            detail=f"T-Invest request failed: {error}",
+            detail={
+                "message": message,
+                "broker_code": broker_code or None,
+                "broker_message": broker_message or None,
+                "tracking_id": tracking_id or None,
+            },
         )
 
 
@@ -771,6 +1260,37 @@ def compact_doc(doc: str, limit: int = 500) -> str:
     if len(text) <= limit:
         return text
     return f"{text[: limit - 1].rstrip()}..."
+
+
+def broker_error_message(detail: Any) -> str:
+    if isinstance(detail, str):
+        return detail
+    if isinstance(detail, dict) and isinstance(detail.get("message"), str):
+        return detail["message"]
+    return "Не удалось проверить доступность рыночных заявок в T-Invest."
+
+
+def strategy_order_result(
+    row: dict[str, Any],
+    *,
+    status: str,
+    client_order_id: str | None = None,
+    response: dict[str, Any] | None = None,
+    error: Any = None,
+) -> dict[str, Any]:
+    return {
+        "ticker": row.get("ticker"),
+        "figi": row.get("figi"),
+        "instrument_id": row.get("instrument_id"),
+        "side": row.get("side"),
+        "quantity_lots": row.get("quantity_lots"),
+        "estimated_amount": row.get("estimated_amount"),
+        "status": status,
+        "client_order_id": client_order_id,
+        "broker_order_id": (response or {}).get("broker_order_id"),
+        "response": response,
+        "error": error,
+    }
 
 
 def build_account_summary(sections: dict[str, Any]) -> dict[str, Any]:
@@ -986,6 +1506,6 @@ __all__ = [
     "build_allocation",
     "exchange_order_type",
     "mask_account_id",
-    "normalize_order_book",
     "normalize_client_order_id",
+    "normalize_order_book",
 ]

@@ -33,7 +33,17 @@ def test_parse_account_configs_from_json() -> None:
     ]
 
 
-def test_parse_order_submission_mode_defaults_to_real() -> None:
-    assert parse_order_submission_mode({}) == "real"
-    assert parse_order_submission_mode({"EXECUTION_ORDER_SUBMISSION_MODE": "stub"}) == "stub"
-    assert parse_order_submission_mode({"EXECUTION_ORDER_SUBMISSION_MODE": "live"}) == "real"
+def test_parse_order_submission_mode_defaults_to_stub() -> None:
+    assert parse_order_submission_mode({}) == "stub"
+    assert (
+        parse_order_submission_mode({"EXECUTION_ORDER_SUBMISSION_MODE": "stub"})
+        == "stub"
+    )
+    assert (
+        parse_order_submission_mode({"EXECUTION_ORDER_SUBMISSION_MODE": "live"})
+        == "real"
+    )
+    assert (
+        parse_order_submission_mode({"EXECUTION_ORDER_SUBMISSION_MODE": "typo"})
+        == "stub"
+    )

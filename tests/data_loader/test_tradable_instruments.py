@@ -25,6 +25,9 @@ def test_normalize_tradable_instrument_from_sdk_like_object() -> None:
         api_trade_available_flag=True,
         buy_available_flag=True,
         sell_available_flag=True,
+        limit_order_available_flag=True,
+        market_order_available_flag=False,
+        bestprice_order_available_flag=True,
     )
 
     assert normalize_tradable_instrument(instrument, "share") == {
@@ -45,6 +48,9 @@ def test_normalize_tradable_instrument_from_sdk_like_object() -> None:
         "buy_available_flag": True,
         "sell_available_flag": True,
         "api_trade_available_flag": True,
+        "limit_order_available_flag": True,
+        "market_order_available_flag": False,
+        "bestprice_order_available_flag": True,
     }
 
 

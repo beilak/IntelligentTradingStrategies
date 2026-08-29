@@ -10,10 +10,14 @@ from typing import Any
 import pandas as pd
 from fastapi import HTTPException
 
-from its.strategies.testing.backtest.vectorbt_backtest import \
-    backtest_strategies_vectorbt
-from its.strategies.testing.cpcv import (load_registered_model, safe_float,
-                                         timestamp_to_string)
+from its.strategies.testing.backtest.vectorbt_backtest import (
+    backtest_strategies_vectorbt,
+)
+from its.strategies.testing.cpcv import (
+    load_registered_model,
+    safe_float,
+    timestamp_to_string,
+)
 from its.strategies_model.core.trading_strategy import TradingStrategy
 
 CACHE_DIR = Path(
@@ -85,6 +89,7 @@ def generate_trading_strategy_backtest_report(
         raise HTTPException(status_code=404, detail="No prices found for Backtesting.")
 
     close = build_close_prices(prices)
+    open_prices = build_price_matrix(prices, "open", close)
     high = build_price_matrix(prices, "high", close)
     low = build_price_matrix(prices, "low", close)
     trading_strategy: TradingStrategy = strategy_cls(
@@ -108,6 +113,7 @@ def generate_trading_strategy_backtest_report(
     results = backtest_strategies_vectorbt(
         strategies={trading_strategy.name: trading_strategy},
         prices=close,
+        open=open_prices,
         high=high,
         low=low,
         rebalance_freq=settings["rebalance_freq"],
@@ -159,6 +165,10 @@ def build_backtest_payload(
     total_return = safe_float(portfolio.total_return())
     tax_rate = float(settings.get("tax_rate", 0.13))
     execution_events = execution_events_to_records(backtest_result.execution_events)
+    pnl_source = build_backtest_pnl_source(
+        backtest_result=backtest_result,
+        settings=settings,
+    )
 
     result = {
         "metadata": {
@@ -227,6 +237,7 @@ def build_backtest_payload(
         "equity_curve": series_to_curve("Equity Curve", value),
         "drawdown_curve": series_to_curve("Drawdown", drawdown),
         "rolling_sharpe": series_to_curve("Rolling Sharpe", rolling_sharpe),
+        "pnl_source": pnl_source,
         "rebalance_weights": weights_to_records(backtest_result.weights, stocks),
         "execution_events": execution_events,
     }
@@ -323,6 +334,153 @@ def series_to_curve(name: str, series: pd.Series) -> dict[str, Any]:
     }
 
 
+def build_backtest_pnl_source(
+    *,
+    backtest_result: Any,
+    settings: dict[str, Any],
+) -> dict[str, Any]:
+    """Return compact replay data for a PnL report over any backtest sub-period.
+
+    Portfolio-level PnL can be reconstructed from the existing equity curve.  This
+    source additionally preserves sparse per-asset daily contributions and order /
+    trade records so the UI can calculate exact attribution for a user-selected
+    interval without rerunning the model.
+    """
+
+    portfolio = backtest_result.portfolio
+    asset_values = portfolio.asset_value(group_by=False)
+    if isinstance(asset_values, pd.Series):
+        asset_values = asset_values.to_frame()
+    asset_values = asset_values.fillna(0.0)
+
+    asset_cash_flows = pd.DataFrame(
+        0.0,
+        index=asset_values.index,
+        columns=asset_values.columns,
+    )
+    orders = backtest_orders_to_records(
+        portfolio=portfolio,
+        order_prices=backtest_result.order_prices,
+    )
+    for order in orders:
+        timestamp = pd.Timestamp(order["time"])
+        ticker = order["ticker"]
+        if timestamp not in asset_cash_flows.index or ticker not in asset_cash_flows:
+            continue
+        gross_value = order["size"] * order["price"]
+        cash_flow = (
+            -(gross_value + order["fees"])
+            if order["side"] == "buy"
+            else gross_value - order["fees"]
+        )
+        asset_cash_flows.at[timestamp, ticker] += cash_flow
+
+    asset_value_changes = asset_values.diff()
+    if not asset_value_changes.empty:
+        asset_value_changes.iloc[0] = asset_values.iloc[0]
+    daily_contributions = asset_value_changes + asset_cash_flows
+
+    return {
+        "method": "vectorbt order replay + daily mark-to-market",
+        "currency": "RUB",
+        "initial_nav": float(settings.get("init_cash", 0.0)),
+        "external_flows": False,
+        "taxes_applied": False,
+        "daily_asset_pnl": dataframe_to_sparse_records(daily_contributions),
+        "orders": orders,
+        "trades": backtest_trades_to_records(portfolio),
+    }
+
+
+def dataframe_to_sparse_records(frame: pd.DataFrame) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for timestamp, row in frame.iterrows():
+        contributions = {
+            str(ticker): float(value)
+            for ticker, value in row.items()
+            if pd.notna(value) and abs(float(value)) > 1e-12
+        }
+        if contributions:
+            records.append(
+                {
+                    "time": timestamp_to_string(timestamp),
+                    "contributions": contributions,
+                }
+            )
+    return records
+
+
+def backtest_orders_to_records(
+    *,
+    portfolio: Any,
+    order_prices: pd.DataFrame,
+) -> list[dict[str, Any]]:
+    readable = portfolio.orders.records_readable
+    records: list[dict[str, Any]] = []
+    for _, row in readable.iterrows():
+        timestamp = pd.Timestamp(row["Timestamp"])
+        ticker = str(row["Column"])
+        side = str(row["Side"]).lower()
+        size = float(row["Size"])
+        price = float(row["Price"])
+        fees = float(row["Fees"])
+        reference_price = frame_value(order_prices, timestamp, ticker)
+        slippage_cost = 0.0
+        if reference_price is not None:
+            slippage_cost = max(
+                0.0,
+                size
+                * (
+                    price - reference_price
+                    if side == "buy"
+                    else reference_price - price
+                ),
+            )
+        records.append(
+            {
+                "id": int(row["Order Id"]),
+                "time": timestamp_to_string(timestamp),
+                "ticker": ticker,
+                "side": side,
+                "size": size,
+                "price": price,
+                "fees": fees,
+                "reference_price": reference_price,
+                "slippage_cost": slippage_cost,
+            }
+        )
+    return records
+
+
+def backtest_trades_to_records(portfolio: Any) -> list[dict[str, Any]]:
+    readable = portfolio.trades.records_readable
+    records: list[dict[str, Any]] = []
+    for _, row in readable.iterrows():
+        records.append(
+            {
+                "id": int(row["Exit Trade Id"]),
+                "ticker": str(row["Column"]),
+                "size": float(row["Size"]),
+                "entry_time": timestamp_to_string(row["Entry Timestamp"]),
+                "exit_time": timestamp_to_string(row["Exit Timestamp"]),
+                "pnl": safe_float(row["PnL"]),
+                "return": safe_float(row["Return"]),
+                "status": str(row["Status"]).lower(),
+            }
+        )
+    return records
+
+
+def frame_value(
+    frame: pd.DataFrame,
+    timestamp: pd.Timestamp,
+    ticker: str,
+) -> float | None:
+    if timestamp not in frame.index or ticker not in frame.columns:
+        return None
+    return safe_float(frame.at[timestamp, ticker])
+
+
 def weights_to_records(
     weights: pd.DataFrame,
     stocks: list[dict[str, Any]] | None = None,
@@ -338,7 +496,7 @@ def weights_to_records(
             {
                 "time": timestamp_to_string(index),
                 "total_weight": float(non_zero.sum()),
-                "asset_count": int(len(non_zero)),
+                "asset_count": len(non_zero),
                 "weights": [
                     {
                         "ticker": ticker,

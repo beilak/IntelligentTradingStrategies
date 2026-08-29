@@ -179,6 +179,113 @@ export interface AccountOverview {
   section_errors: Record<string, string>;
 }
 
+export interface PnlEquityPoint {
+  date: string;
+  nav: number;
+  daily_pnl: number;
+  cumulative_pnl: number;
+  daily_return: number;
+  cumulative_return: number;
+  drawdown: number;
+  external_flow: number;
+}
+
+export interface PnlMonthlyReturn {
+  month: string;
+  return: number;
+  pnl: number;
+  ending_nav: number;
+}
+
+export interface PnlAttributionRow {
+  instrument_id: string;
+  figi?: string | null;
+  ticker: string;
+  name: string;
+  opening_quantity: number;
+  ending_quantity: number;
+  opening_value: number;
+  ending_value: number;
+  pnl_contribution: number;
+  contribution_pct?: number | null;
+  realized_pnl_broker: number;
+  turnover: number;
+  trades: number;
+}
+
+export interface PnlReport {
+  account_id: string;
+  account_name: string;
+  generated_at: string;
+  strategy: {
+    name?: string | null;
+    attribution_mode: "account" | "dedicated_account_proxy" | "account_context_only";
+    is_exact: boolean;
+    assigned_strategies: string[];
+  };
+  period: {
+    from: string;
+    to: string;
+    calendar_days: number;
+    observations: number;
+  };
+  currency: string;
+  summary: {
+    opening_nav: number;
+    ending_nav: number;
+    total_pnl: number;
+    twr: number;
+    mwr?: number | null;
+    annualized_return?: number | null;
+    realized_pnl_broker: number;
+    unrealized_pnl_estimate: number;
+    net_external_flow: number;
+    inflows: number;
+    outflows: number;
+    dividends: number;
+    coupons: number;
+    fees: number;
+    taxes: number;
+    turnover: number;
+    turnover_ratio?: number | null;
+    trades: number;
+    buys: number;
+    sells: number;
+  };
+  risk: {
+    annualized_volatility: number;
+    sharpe_ratio?: number | null;
+    sortino_ratio?: number | null;
+    max_drawdown: number;
+    calmar_ratio?: number | null;
+    profit_factor?: number | null;
+    positive_days: number;
+    negative_days: number;
+    win_rate?: number | null;
+    best_day_pnl: number;
+    worst_day_pnl: number;
+    average_day_pnl: number;
+    historical_var_95_return?: number | null;
+    historical_var_95_amount?: number | null;
+  };
+  components: Array<{ key: string; label: string; value: number }>;
+  equity_curve: PnlEquityPoint[];
+  monthly_returns: PnlMonthlyReturn[];
+  attribution: PnlAttributionRow[];
+  data_quality: {
+    method: string;
+    operations_source: string;
+    prices_source: string;
+    operations: number;
+    priced_instruments: number;
+    total_instruments: number;
+    price_coverage: number;
+    missing_price_instruments: string[];
+    reconciliation_difference?: number | null;
+    warnings: string[];
+  };
+}
+
 export interface OrderTicket {
   instrument_id: string;
   figi?: string | null;
@@ -362,6 +469,7 @@ export interface StrategyRunRequest {
   order_type: "limit" | "market";
   limit_offset_pct: number;
   min_order_value: number;
+  cash_buffer_pct: number;
 }
 
 export interface StrategyTargetWeight {
@@ -374,14 +482,23 @@ export interface StrategyTargetWeight {
   lot: number;
   last_price: number;
   current_lots: number;
+  blocked_lots: number;
+  available_lots: number;
   current_quantity: number;
   current_value: number;
   current_weight: number;
   target_weight: number;
   target_value: number;
+  one_lot_value: number;
+  model_target_lots: number;
   target_lots: number;
+  planned_value: number;
+  planned_weight: number;
+  model_delta_lots: number;
   delta_lots: number;
   delta_value: number;
+  target_status: "buy" | "sell" | "keep" | "no_action";
+  constraint: "below_one_lot" | "cash_limited" | "below_min_order" | null;
 }
 
 export interface StrategyOrderPlanRow {
@@ -414,6 +531,7 @@ export interface StrategyStopPlanRow {
 }
 
 export interface StrategyRunResult {
+  plan_id: string;
   account_id: string;
   strategy_name: string;
   strategy_description: string;
@@ -426,6 +544,11 @@ export interface StrategyRunResult {
   };
   summary: {
     target_positions: number;
+    model_target_positions: number;
+    planned_target_positions: number;
+    below_one_lot_target_positions: number;
+    cash_limited_target_positions: number;
+    below_min_order_positions: number;
     orders: number;
     buy_orders: number;
     sell_orders: number;
@@ -433,8 +556,63 @@ export interface StrategyRunResult {
     gross_buy: number;
     gross_sell: number;
     net_cash_need: number;
+    estimated_cash_change: number;
+    available_cash: number;
+    buying_power_after_sells: number;
+    estimated_cash_after_orders: number;
+    conservative_cash_after_orders: number;
+    minimum_one_lot_cost: number;
+    lot_rounding_unallocated_value: number;
   };
   target_weights: StrategyTargetWeight[];
   orders: StrategyOrderPlanRow[];
   stop_orders: StrategyStopPlanRow[];
+  execution: {
+    ready: boolean;
+    blocking_reasons: string[];
+    warnings: string[];
+    order_type: "market";
+    sell_first: boolean;
+    stop_orders_included: boolean;
+  };
+}
+
+export interface StrategyExecutionRequest extends StrategyRunRequest {
+  plan_id: string;
+  confirmation: "execute_market_orders";
+}
+
+export interface StrategyExecutionOrderResult {
+  ticker: string;
+  figi?: string | null;
+  instrument_id?: string | null;
+  side: "buy" | "sell";
+  quantity_lots: number;
+  estimated_amount: number;
+  status: "submitted" | "simulated" | "failed" | "skipped";
+  client_order_id?: string | null;
+  broker_order_id?: string | null;
+  response?: StubResponse | null;
+  error?: unknown;
+}
+
+export interface StrategyExecutionResult {
+  execution_id: string;
+  plan_id: string;
+  account_id: string;
+  strategy_name: string;
+  requested_by_user_id: string;
+  executed_at: string;
+  submission_mode: "stub" | "real";
+  status: "submitted" | "simulated" | "partial";
+  sell_first: boolean;
+  stop_orders_submitted: boolean;
+  summary: {
+    orders: number;
+    submitted: number;
+    simulated: number;
+    failed: number;
+    skipped: number;
+  };
+  results: StrategyExecutionOrderResult[];
 }

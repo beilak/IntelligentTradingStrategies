@@ -110,6 +110,42 @@ def _shift_timestamp(value: pd.Timestamp, interval: CandleInterval) -> pd.Timest
     return pd.Timestamp(value + _interval_step(interval))
 
 
+def _floor_to_candle_start(
+    value: pd.Timestamp,
+    interval: CandleInterval,
+) -> pd.Timestamp:
+    timestamp = _normalize_timestamp(value)
+
+    if interval == CandleInterval.CANDLE_INTERVAL_MONTH:
+        return timestamp.to_period("M").start_time
+    if interval == CandleInterval.CANDLE_INTERVAL_WEEK:
+        return timestamp.to_period("W-SUN").start_time
+
+    return timestamp.floor(_interval_step(interval))
+
+
+def _ceil_to_candle_start(
+    value: pd.Timestamp,
+    interval: CandleInterval,
+) -> pd.Timestamp:
+    timestamp = _normalize_timestamp(value)
+    candle_start = _floor_to_candle_start(timestamp, interval)
+    if timestamp == candle_start:
+        return candle_start
+    return _shift_timestamp(candle_start, interval)
+
+
+def _normalize_candle_range(
+    start_date: pd.Timestamp,
+    end_date: pd.Timestamp,
+    interval: CandleInterval,
+) -> tuple[pd.Timestamp, pd.Timestamp]:
+    return (
+        _ceil_to_candle_start(start_date, interval),
+        _floor_to_candle_start(end_date, interval),
+    )
+
+
 def _previous_timestamp(
     value: pd.Timestamp,
     interval: CandleInterval,
@@ -209,7 +245,7 @@ def _merge_covered_ranges(
             merged_ranges.append([range_start, range_end])
             continue
 
-        previous_start, previous_end = merged_ranges[-1]
+        _, previous_end = merged_ranges[-1]
         if range_start <= _shift_timestamp(previous_end, interval):
             merged_ranges[-1][1] = max(previous_end, range_end)
             continue
@@ -260,10 +296,54 @@ def _build_cache_rows(
     end_date: pd.Timestamp,
     interval: CandleInterval,
     is_complete: bool,
+    *,
+    now: pd.Timestamp | None = None,
 ) -> pd.DataFrame:
     cache_key = _interval_to_cache_key(interval)
-    cache_start = _normalize_timestamp(start_date)
-    cache_end = _normalize_timestamp(end_date)
+    cache_start, cache_end = _normalize_candle_range(
+        start_date,
+        end_date,
+        interval,
+    )
+
+    if prices is None or prices.empty:
+        return pd.DataFrame()
+
+    cache_prices = prices.copy()
+    if "time" in cache_prices.columns:
+        cache_prices["time"] = pd.to_datetime(cache_prices["time"], errors="coerce")
+
+    current_time = now
+    if current_time is None:
+        current_time = pd.Timestamp.now(tz=MARKET_TIME_ZONE)
+    current_candle_start = _floor_to_candle_start(current_time, interval)
+    marker_end = min(
+        cache_end,
+        _previous_timestamp(current_candle_start, interval),
+    )
+
+    if "is_complete" in cache_prices.columns and "time" in cache_prices.columns:
+        complete_mask = cache_prices["is_complete"].map(_coerce_bool).fillna(False)
+        incomplete_times = cache_prices.loc[~complete_mask, "time"].dropna()
+        if not incomplete_times.empty:
+            first_incomplete = _floor_to_candle_start(
+                incomplete_times.min(),
+                interval,
+            )
+            marker_end = min(
+                marker_end,
+                _previous_timestamp(first_incomplete, interval),
+            )
+
+    cache_prices[CACHE_INTERVAL_COLUMN] = cache_key
+    cache_prices[CACHE_START_COLUMN] = cache_start
+    cache_prices[CACHE_END_COLUMN] = cache_end
+    cache_prices[CACHE_COMPLETE_COLUMN] = is_complete
+    cache_prices[CACHE_MARKER_COLUMN] = False
+    cache_prices[CACHE_SCHEMA_COLUMN] = CACHE_SCHEMA_VERSION
+
+    if marker_end < cache_start:
+        return cache_prices
 
     marker_row = pd.DataFrame(
         [
@@ -272,24 +352,13 @@ def _build_cache_rows(
                 "time": pd.NaT,
                 CACHE_INTERVAL_COLUMN: cache_key,
                 CACHE_START_COLUMN: cache_start,
-                CACHE_END_COLUMN: cache_end,
+                CACHE_END_COLUMN: marker_end,
                 CACHE_COMPLETE_COLUMN: is_complete,
                 CACHE_MARKER_COLUMN: True,
                 CACHE_SCHEMA_COLUMN: CACHE_SCHEMA_VERSION,
             }
         ]
     )
-
-    if prices is None or prices.empty:
-        return marker_row
-
-    cache_prices = prices.copy()
-    cache_prices[CACHE_INTERVAL_COLUMN] = cache_key
-    cache_prices[CACHE_START_COLUMN] = cache_start
-    cache_prices[CACHE_END_COLUMN] = cache_end
-    cache_prices[CACHE_COMPLETE_COLUMN] = is_complete
-    cache_prices[CACHE_MARKER_COLUMN] = False
-    cache_prices[CACHE_SCHEMA_COLUMN] = CACHE_SCHEMA_VERSION
 
     return pd.concat([cache_prices, marker_row], ignore_index=True, sort=False)
 
@@ -323,9 +392,21 @@ def _write_prices_cache(cache_rows: pd.DataFrame, cache_path: Path) -> None:
 
     if not price_rows.empty:
         price_rows = price_rows.sort_values(
-            [CACHE_SCHEMA_COLUMN, CACHE_INTERVAL_COLUMN, "figi", "time"]
+            [
+                CACHE_SCHEMA_COLUMN,
+                CACHE_INTERVAL_COLUMN,
+                CACHE_COMPLETE_COLUMN,
+                "figi",
+                "time",
+            ]
         ).drop_duplicates(
-            subset=[CACHE_SCHEMA_COLUMN, CACHE_INTERVAL_COLUMN, "figi", "time"],
+            subset=[
+                CACHE_SCHEMA_COLUMN,
+                CACHE_INTERVAL_COLUMN,
+                CACHE_COMPLETE_COLUMN,
+                "figi",
+                "time",
+            ],
             keep="last",
         )
 
@@ -374,8 +455,7 @@ def read_prices_from_cache(
     is_complete: bool = True,
     cache_path: Path | None = None,
 ) -> tuple[pd.DataFrame, dict[str, list[tuple[pd.Timestamp, pd.Timestamp]]]]:
-    start_date = _normalize_timestamp(start_date)
-    end_date = _normalize_timestamp(end_date)
+    start_date, end_date = _normalize_candle_range(start_date, end_date, interval)
     unique_figis = list(dict.fromkeys(figis))
 
     if not unique_figis or start_date > end_date:
@@ -421,7 +501,18 @@ def read_prices_from_cache(
             [CACHE_START_COLUMN, CACHE_END_COLUMN],
         ]
 
-        covered_ranges = list(figi_markers.itertuples(index=False, name=None))
+        covered_ranges = [
+            _normalize_candle_range(range_start, range_end, interval)
+            for range_start, range_end in figi_markers.itertuples(
+                index=False,
+                name=None,
+            )
+        ]
+        covered_ranges = [
+            (range_start, range_end)
+            for range_start, range_end in covered_ranges
+            if range_start <= range_end
+        ]
         figi_missing_ranges = _get_missing_ranges(
             covered_ranges=covered_ranges,
             start_date=start_date,
@@ -472,14 +563,15 @@ async def _get_price(
     is_complete: bool = True,
 ):
     response = []
-    start_date = _normalize_timestamp(start_date)
-    end_date = _normalize_timestamp(end_date)
+    start_date, end_date = _normalize_candle_range(start_date, end_date, interval)
     request_start = _market_timestamp_to_utc_datetime(
         _previous_timestamp(start_date, interval)
     )
-    request_end = _market_timestamp_to_utc_datetime(end_date)
+    request_end = _market_timestamp_to_utc_datetime(
+        _shift_timestamp(end_date, interval)
+    )
 
-    for i in range(0, 3):
+    for i in range(3):
         try:
             response = [
                 candle
@@ -511,9 +603,6 @@ async def _get_price(
     if prices.empty:
         logger.warning(f"No candles for {figi} ({start_date}-{end_date})")
         return prices
-
-    if "is_complete" in prices.columns and is_complete:
-        prices = prices.query("is_complete").copy()
 
     if "time" in prices.columns:
         prices.time = pd.to_datetime(prices.time, errors="coerce")
@@ -613,8 +702,7 @@ async def get_prices(
     interval: CandleInterval = CandleInterval.CANDLE_INTERVAL_DAY,
     is_complete: bool = True,
 ) -> pd.DataFrame:
-    start_date = _normalize_timestamp(start_date)
-    end_date = _normalize_timestamp(end_date)
+    start_date, end_date = _normalize_candle_range(start_date, end_date, interval)
     unique_figis = list(dict.fromkeys(figis))
 
     if not unique_figis or start_date > end_date:

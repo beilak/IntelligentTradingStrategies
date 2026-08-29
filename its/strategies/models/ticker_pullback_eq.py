@@ -1,16 +1,15 @@
-from typing import override
+from typing import ClassVar, override
 
 from its.strategies.core.optimization import EqualWeighted
 from its.strategies.core.selectors import TickerSelector
 from its.strategies.core.signals import CloseBelowRecentMarkerSignal
-from its.strategies.core.types.strategy_types import (Pipeline, Strategy,
-                                                      StrategyBuilder)
+from its.strategies.core.types.strategy_types import Pipeline, Strategy, StrategyBuilder
 
 
 class ModelPullbackWithEQBuilder(StrategyBuilder):
     """Build an explicit ticker pullback strategy with equal-weight allocation."""
 
-    TICKERS = ["TRNFP", "SBER"]
+    TICKERS: ClassVar[list[str]] = ["TRNFP", "SBER"]
     MARKER = "high"
     LOOKBACK_BARS = 10
     THRESHOLD_PCT = 0.01
@@ -30,7 +29,7 @@ class ModelPullbackWithEQBuilder(StrategyBuilder):
                         "ticker_pre_selection",
                         TickerSelector(
                             tickers=self.TICKERS,
-                            allow_empty_selection=False,
+                            allow_empty_selection=True,
                         ),
                     ),
                     (

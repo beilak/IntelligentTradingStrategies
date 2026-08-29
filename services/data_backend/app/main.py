@@ -15,9 +15,14 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from t_tech.invest import AsyncClient, CandleInterval
 
+from its.authz.context import AuthContext
+from its.authz.dependencies import require_permissions
+from its.authz.permissions import Permissions
 from its.data_loader.custom_bar.gold_bar import (
     build_custom_gold_bars,
     build_gold_bar_types,
+)
+from its.data_loader.custom_bar.gold_bar import (
     parse_gold_bar_type as parse_gold_bar_type_name,
 )
 from its.data_loader.monte_carlo import build_close_price_monte_carlo
@@ -32,9 +37,6 @@ from its.data_loader.t_invest_data_readers.stock_info import (
     get_currencies_info,
     get_stock_info,
 )
-from its.authz.context import AuthContext
-from its.authz.dependencies import require_permissions
-from its.authz.permissions import Permissions
 from its.db.models import RSSItem
 from its.db.session import get_session
 from its.event_log.integration import install_event_log
@@ -86,6 +88,9 @@ STOCK_COLUMNS = [
     "buy_available_flag",
     "sell_available_flag",
     "api_trade_available_flag",
+    "limit_order_available_flag",
+    "market_order_available_flag",
+    "bestprice_order_available_flag",
     "short_enabled_flag",
     "for_qual_investor_flag",
 ]
@@ -130,6 +135,9 @@ INSTRUMENT_COLUMNS = [
     "buy_available_flag",
     "sell_available_flag",
     "api_trade_available_flag",
+    "limit_order_available_flag",
+    "market_order_available_flag",
+    "bestprice_order_available_flag",
 ]
 
 PRICE_COLUMNS = [
@@ -1121,6 +1129,15 @@ def normalize_tradable_instrument(
         "sell_available_flag": instrument_attr(instrument, "sell_available_flag"),
         "api_trade_available_flag": instrument_attr(
             instrument, "api_trade_available_flag"
+        ),
+        "limit_order_available_flag": instrument_attr(
+            instrument, "limit_order_available_flag"
+        ),
+        "market_order_available_flag": instrument_attr(
+            instrument, "market_order_available_flag"
+        ),
+        "bestprice_order_available_flag": instrument_attr(
+            instrument, "bestprice_order_available_flag"
         ),
     }
 

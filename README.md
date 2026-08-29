@@ -7,13 +7,21 @@ Intelligent system for securities analysis and trading.
 Создай или обнови `.env` в корне проекта:
 
 ```dotenv
-tinvest_token=your_tinkoff_invest_token
+EXECUTION_TINVEST_TOKEN=your_tinkoff_invest_token
 EXECUTION_TINVEST_ACCOUNT_IDS=account_id_1,account_id_2
+EXECUTION_ORDER_SUBMISSION_MODE=stub
 ```
 
 Также поддерживаются имена `TINVEST_TOKEN` и `TINKOFF_INVEST_API_TOKEN`.
 Для Execution можно задать человекочитаемые имена счетов:
 `EXECUTION_TINVEST_ACCOUNTS=account_id_1:Main,account_id_2:IIS`.
+В режиме `stub` заявки проходят валидацию, но не отправляются брокеру. Для
+реального исполнения укажи `EXECUTION_ORDER_SUBMISSION_MODE=real`; ручные и
+модельные заявки требуют права `trading.live.start`.
+План ребалансировки использует лотность инструментов из DataHub, доступный cash
+счета и резерв на изменение цены/комиссию (`cash_buffer_pct`, по умолчанию 1%).
+UI отдельно показывает число целей модели и число позиций, достижимых целыми
+лотами при текущем размере портфеля.
 
 Запуск всей системы одной командой:
 
@@ -56,7 +64,7 @@ GlitchTip использует отдельную БД `glitchtip-postgres`. М�
 Их можно переопределить:
 
 ```bash
-GLITCHTIP_ADMIN_EMAIL=admin@example.com GLITCHTIP_ADMIN_PASSWORD=change_me GLITCHTIP_BOOTSTRAP_ORGANIZATION=ITS GLITCHTIP_BOOTSTRAP_PROJECT=its-platform docker compose --profile observability up --build
+OBSERVABILITY_ERRORS_ENABLED=true GLITCHTIP_ADMIN_EMAIL=admin@example.com GLITCHTIP_ADMIN_PASSWORD=change_me GLITCHTIP_BOOTSTRAP_ORGANIZATION=ITS GLITCHTIP_BOOTSTRAP_PROJECT=its-platform docker compose --profile observability up --build
 ```
 
 В Grafana по умолчанию создается datasource Prometheus и dashboard `ITS Platform Overview`.
@@ -112,7 +120,7 @@ ITS_GATEWAY_PORT=8090 docker compose up --build
 - `data-ui` - Vue 3 UI для визуализации рыночных данных, dark mode, RU/EN.
 - `strategy-backend` - Python, FastAPI. Отдает registry компонентов и готовых стратегий.
 - `strategy-ui` - Vue 3 UI для модельеров торговых стратегий, dark mode, RU/EN.
-- `execution-backend` - Python, FastAPI. Читает брокерские счета T-Invest и принимает stub-приказы.
+- `execution-backend` - Python, FastAPI. Читает счета T-Invest, принимает ручные заявки и исполняет подтвержденные планы ребалансировки production-стратегий.
 - `execution-ui` - Vue 3 UI личного кабинета брокерских счетов.
 - `tech-system-backend` - Python, FastAPI. Технические API платформы, включая auth/JWT.
 - `tech-system-ui` - Vue 3 UI для входа и регистрации.

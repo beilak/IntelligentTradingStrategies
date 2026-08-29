@@ -552,6 +552,21 @@ select {
   gap: 14px;
 }
 
+.backtest-report-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.backtest-pnl-trigger {
+  border-color: rgba(84, 214, 164, 0.38);
+  color: #b8f5dc;
+}
+
+.backtest-pnl-trigger:hover,
+.backtest-pnl-trigger:focus-visible {
+  border-color: rgba(84, 214, 164, 0.72);
+}
+
 .result-strip {
   display: grid;
   gap: 10px;

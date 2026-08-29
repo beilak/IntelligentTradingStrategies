@@ -5,7 +5,10 @@ import type {
   InstrumentsResponse,
   LastPriceResponse,
   OrderTicket,
+  PnlReport,
   PricesResponse,
+  StrategyExecutionRequest,
+  StrategyExecutionResult,
   StrategyRunRequest,
   StrategyRunResult,
   StopOrderTicket,
@@ -40,6 +43,16 @@ export async function getOverview(
   return request<AccountOverview>(
     `/accounts/${encodeURIComponent(accountId)}/overview`,
     { operations_days: operationsDays },
+  );
+}
+
+export async function getPnlReport(
+  accountId: string,
+  params: { from_date: string; to_date: string; strategy_name?: string | null },
+): Promise<PnlReport> {
+  return request<PnlReport>(
+    `/accounts/${encodeURIComponent(accountId)}/pnl-report`,
+    params,
   );
 }
 
@@ -78,6 +91,17 @@ export async function runExecutionStrategy(
 ): Promise<StrategyRunResult> {
   return post<StrategyRunResult>(
     `/accounts/${encodeURIComponent(accountId)}/strategies/${encodeURIComponent(strategyName)}/runs`,
+    payload,
+  );
+}
+
+export async function executeExecutionStrategy(
+  accountId: string,
+  strategyName: string,
+  payload: StrategyExecutionRequest,
+): Promise<StrategyExecutionResult> {
+  return post<StrategyExecutionResult>(
+    `/accounts/${encodeURIComponent(accountId)}/strategies/${encodeURIComponent(strategyName)}/executions`,
     payload,
   );
 }
@@ -200,9 +224,22 @@ async function handleResponse<T>(response: Response): Promise<T> {
   }
   if (!response.ok) {
     const payload = await response.json().catch(() => null);
-    throw new Error(payload?.detail ?? response.statusText);
+    throw new Error(apiErrorMessage(payload?.detail, response.statusText));
   }
   return response.json() as Promise<T>;
+}
+
+function apiErrorMessage(detail: unknown, fallback: string): string {
+  if (typeof detail === "string" && detail) return detail;
+  if (detail && typeof detail === "object") {
+    const value = detail as { message?: unknown; blocking_reasons?: unknown };
+    const message = typeof value.message === "string" ? value.message : fallback;
+    const reasons = Array.isArray(value.blocking_reasons)
+      ? value.blocking_reasons.filter((item): item is string => typeof item === "string")
+      : [];
+    return reasons.length ? `${message} ${reasons.join(" ")}` : message;
+  }
+  return fallback;
 }
 
 function appendParams(url: URL, params: Record<string, unknown>) {

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
@@ -91,6 +92,70 @@ async def test_submit_limit_order_posts_to_tinvest(monkeypatch) -> None:
     assert call["time_in_force"] == TimeInForceType.TIME_IN_FORCE_FILL_OR_KILL
     assert call["price_type"] == PriceType.PRICE_TYPE_CURRENCY
     assert utils.quotation_to_decimal(call["price"]) == Decimal("123.45")
+
+
+async def test_rejected_broker_response_is_not_marked_submitted(monkeypatch) -> None:
+    class FakeOrders:
+        async def post_order(self, **kwargs):
+            return PostOrderResponse(
+                order_id=kwargs["order_id"],
+                execution_report_status=(
+                    OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_REJECTED
+                ),
+                message="Order rejected: insufficient funds",
+            )
+
+    class FakeAsyncClient:
+        def __init__(self, _token: str) -> None:
+            self.orders = FakeOrders()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+    monkeypatch.setenv("EXECUTION_TINVEST_TOKEN", "token")
+    monkeypatch.setenv("EXECUTION_TINVEST_ACCOUNT_IDS", "acc-1")
+    monkeypatch.setenv("EXECUTION_ORDER_SUBMISSION_MODE", "real")
+    monkeypatch.setattr(service_module, "AsyncClient", FakeAsyncClient)
+
+    response = await ExecutionService().submit_order(
+        "acc-1",
+        OrderTicket(
+            instrument_id="uid-1",
+            side="buy",
+            order_type="market",
+            quantity=1,
+        ),
+    )
+
+    assert response["status"] == "EXECUTION_REPORT_STATUS_REJECTED"
+    assert response["submitted"] is False
+    assert response["message"] == "Order rejected: insufficient funds"
+
+
+def test_broker_error_30083_is_human_readable() -> None:
+    error = SimpleNamespace(
+        details="30083",
+        metadata=SimpleNamespace(
+            message="`order_type` is invalid",
+            tracking_id="tracking-1",
+        ),
+    )
+
+    response = ExecutionService._broker_error(error)
+
+    assert response.status_code == 502
+    assert response.detail == {
+        "message": (
+            "T-Invest отклонил тип заявки (код 30083): выбранный тип "
+            "недоступен для инструмента или текущего режима торгов."
+        ),
+        "broker_code": "30083",
+        "broker_message": "`order_type` is invalid",
+        "tracking_id": "tracking-1",
+    }
 
 
 async def test_submit_take_profit_stop_order_posts_to_tinvest(monkeypatch) -> None:

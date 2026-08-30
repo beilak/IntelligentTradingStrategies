@@ -14,6 +14,7 @@ from its.strategies.core.signals.extremum_range_long_signal import (
 )
 from its.strategies.core.signals.pass_signals import KeepAllSignal
 from its.strategies.core.signals.price_breakout_signal import PriceBreakoutSignal
+from its.strategies.core.signals.pyod_anomaly_signal import PyODAnomalySignal
 from its.strategies.core.signals.range_low_proximity_signal import (
     RangeLowProximitySignal,
 )
@@ -29,6 +30,7 @@ __all__ = [
     "ExtremumRangeLongSignal",
     "KeepAllSignal",
     "PriceBreakoutSignal",
+    "PyODAnomalySignal",
     "RangeLowProximitySignal",
     "SMACrossSignal",
     "TwoCandlePositiveTrendSignal",

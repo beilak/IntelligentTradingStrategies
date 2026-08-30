@@ -31,6 +31,7 @@ pandas = ">2.0.0,<3.0.0"
 async-lru = ">=2.3.0"
 skfolio = ">=0.20.1"
 vectorbt = ">=1.0.0"
+plotly = ">=5.22.0,<6"
 pygad = ">=3.6.0"
 reportlab = ">=4.5.0"
 sqlalchemy = ">=2.0.49"
@@ -41,6 +42,7 @@ pyjwt = ">=2.13.0"
 sentry-sdk = ">=2.58.0"
 dimod = ">=0.12.22"
 pandas-stubs = ">=3.0.3.260530"
+pyod = ">=3.0.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=8.0.1"
@@ -65,10 +67,10 @@ build-backend = "poetry.core.masonry.api"
 [tool.poetry.scripts]
 test = "pytest"
 
-[tool.pytest]
-testpaths = ["tests"]
-
 [tool.pytest.ini_options]
+testpaths = [
+  "tests",
+]
 pythonpath = [
   ".", "its",
 ]

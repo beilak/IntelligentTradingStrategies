@@ -73,6 +73,10 @@ from its.strategies.models.top_turnover_inverse_volatility import (
     ModelHighTurnoverWithInverseVolatilityBuilder,
     ModelTurnoverWithInverseVolatilityBuilder,
 )
+from its.strategies.models.turnover_anomaly_eq import (
+    ModelTurnoverAnomalyWithEQBuilder,
+    ModelTurnoverAnomalyWithInverseVolatilityBuilder,
+)
 from its.strategies.models.turnover_camarilla_inverse_volatility import (
     ModelTurnoverCamarillaWithInverseVolatilityBuilder,
 )
@@ -101,6 +105,8 @@ __all__ = [
     "ModelHighTurnoverWithEQBuilder",
     "ModelHighTurnoverWithInverseVolatilityBuilder",
     "ModelPullbackWithEQBuilder",
+    "ModelTurnoverAnomalyWithEQBuilder",
+    "ModelTurnoverAnomalyWithInverseVolatilityBuilder",
     "ModelTurnoverAutoRegressionWithInverseVolatilityBuilder",
     "ModelTurnoverCamarillaWithInverseVolatilityBuilder",
     "ModelTurnoverPullbackWithEQBuilder",

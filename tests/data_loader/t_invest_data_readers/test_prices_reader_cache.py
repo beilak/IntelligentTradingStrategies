@@ -1,9 +1,13 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pandas as pd
 import pytest
+from grpc import StatusCode
 from t_tech.invest import CandleInterval
+from t_tech.invest.exceptions import AioRequestError
 
 from its.data_loader.t_invest_data_readers.prices_reader import (
     CACHE_COMPLETE_COLUMN,
@@ -37,6 +41,29 @@ class CandleClientStub:
         self.request = kwargs
 
         async def iterate_candles():
+            for candle in self.candles:
+                yield candle
+
+        return iterate_candles()
+
+
+class TransientFailureCandleClientStub(CandleClientStub):
+    def __init__(self, candles: list[CandleStub], failures: int) -> None:
+        super().__init__(candles)
+        self.failures = failures
+        self.attempts = 0
+
+    def get_all_candles(self, **kwargs):
+        self.request = kwargs
+
+        async def iterate_candles():
+            self.attempts += 1
+            if self.attempts <= self.failures:
+                raise AioRequestError(
+                    StatusCode.UNKNOWN,
+                    "Stream removed (Data frame with END_STREAM flag received)",
+                    SimpleNamespace(ratelimit_reset=None),
+                )
             for candle in self.candles:
                 yield candle
 
@@ -377,6 +404,37 @@ async def test_price_download_keeps_incomplete_tail_for_cache_refresh() -> None:
         "2026-08-14",
         tz="Europe/Moscow",
     )
+
+
+@pytest.mark.asyncio
+async def test_price_download_retries_transient_stream_removal(monkeypatch) -> None:
+    client = TransientFailureCandleClientStub(
+        [
+            CandleStub(
+                time=datetime(2026, 8, 12, tzinfo=UTC),
+                close=100,
+                is_complete=True,
+            )
+        ],
+        failures=2,
+    )
+    sleep = AsyncMock()
+    monkeypatch.setattr(
+        "its.data_loader.t_invest_data_readers.prices_reader.asyncio.sleep",
+        sleep,
+    )
+
+    prices = await _get_price(
+        "figi-1",
+        pd.Timestamp("2026-08-10"),
+        pd.Timestamp("2026-08-13"),
+        client=client,
+        interval=CandleInterval.CANDLE_INTERVAL_DAY,
+    )
+
+    assert client.attempts == 3
+    assert prices["close"].tolist() == [100]
+    assert [call.args[0] for call in sleep.await_args_list] == [1.0, 2.0]
 
 
 def test_complete_and_all_candle_cache_rows_do_not_overwrite_each_other(

@@ -52,6 +52,16 @@ CACHE_METADATA_COLUMNS = [
 ]
 
 MAX_YEARS = 5
+PRICE_RETRY_ATTEMPTS = 6
+PRICE_RETRY_MAX_DELAY_SECONDS = 30.0
+TRANSIENT_PRICE_STATUS_CODES = {
+    StatusCode.ABORTED,
+    StatusCode.CANCELLED,
+    StatusCode.DEADLINE_EXCEEDED,
+    StatusCode.INTERNAL,
+    StatusCode.UNKNOWN,
+    StatusCode.UNAVAILABLE,
+}
 MARKET_TIME_ZONE = ZoneInfo("Europe/Moscow")
 
 
@@ -571,7 +581,7 @@ async def _get_price(
         _shift_timestamp(end_date, interval)
     )
 
-    for i in range(3):
+    for attempt in range(PRICE_RETRY_ATTEMPTS):
         try:
             response = [
                 candle
@@ -584,17 +594,40 @@ async def _get_price(
             ]
             break
         except AioRequestError as error:
-            logger.info(f"{error = }")
+            logger.warning(
+                "Price request failed for {} ({}-{}), attempt {}/{}: {} {}",
+                figi,
+                start_date,
+                end_date,
+                attempt + 1,
+                PRICE_RETRY_ATTEMPTS,
+                error.code,
+                error.details,
+            )
+            is_last_attempt = attempt >= PRICE_RETRY_ATTEMPTS - 1
             if error.code == StatusCode.RESOURCE_EXHAUSTED:
-                logger.info(
-                    f"Лимит исчерпан. Ждем {error.metadata.ratelimit_reset} сек."
-                )
-                await asyncio.sleep(error.metadata.ratelimit_reset)
-                if i >= 2:
+                if is_last_attempt:
                     raise
+                reset_seconds = getattr(error.metadata, "ratelimit_reset", None)
+                wait_seconds = (
+                    float(reset_seconds)
+                    if reset_seconds is not None
+                    else _price_retry_delay(attempt)
+                )
+                logger.info("Rate limit reached. Retrying in {} sec.", wait_seconds)
+                await asyncio.sleep(wait_seconds)
                 continue
-            if error.code == StatusCode.NOT_FOUND or i >= 2:
+            if error.code == StatusCode.NOT_FOUND:
                 raise
+            if error.code in TRANSIENT_PRICE_STATUS_CODES and not is_last_attempt:
+                wait_seconds = _price_retry_delay(attempt)
+                logger.info(
+                    "Transient price stream failure. Retrying in {} sec.",
+                    wait_seconds,
+                )
+                await asyncio.sleep(wait_seconds)
+                continue
+            raise
 
     raw_candles = dataclasses_to_dict(response)
 
@@ -617,6 +650,10 @@ async def _get_price(
         ].copy()
 
     return prices
+
+
+def _price_retry_delay(attempt: int) -> float:
+    return min(2.0**attempt, PRICE_RETRY_MAX_DELAY_SECONDS)
 
 
 async def _download_prices(

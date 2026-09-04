@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import math
 import os
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 import httpx
 import pandas as pd
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from its.authz.context import AuthContext
@@ -20,6 +23,12 @@ from its.strategies.testing.cpcv import (
     read_json,
     read_test_summary,
 )
+from services.strategy_backend.app.test_runs import (
+    find_test_run,
+    list_test_runs,
+    public_test_run,
+    queue_test_run,
+)
 
 DATA_BACKEND_BASE_URL = os.getenv(
     "DATA_BACKEND_BASE_URL",
@@ -27,6 +36,7 @@ DATA_BACKEND_BASE_URL = os.getenv(
 ).rstrip("/")
 
 router = APIRouter(prefix="/models/{model_name}/cpcv", tags=["cpcv"])
+MAX_CPCV_MODEL_FITS = max(1, int(os.getenv("STRATEGY_MAX_CPCV_MODEL_FITS", "200")))
 
 
 class CpcvRunRequest(BaseModel):
@@ -35,8 +45,10 @@ class CpcvRunRequest(BaseModel):
     end_date: date
     interval: str = "CANDLE_INTERVAL_DAY"
     class_code: str = "TQBR"
-    n_folds: int = Field(default=10, ge=2, le=30)
-    n_test_folds: int = Field(default=6, ge=1, le=29)
+    n_folds: int = Field(default=5, ge=2, le=30)
+    n_test_folds: int = Field(default=2, ge=1, le=29)
+    test_size: float = Field(default=0.33, ge=0.05, le=0.50)
+    n_jobs: int = Field(default=-1, ge=-1, le=32)
 
 
 @router.get("/tests")
@@ -73,10 +85,91 @@ async def run_cpcv_test(
         )
     ),
 ) -> dict[str, Any]:
+    return await run_cpcv_flow(
+        model_name=model_name,
+        request=request,
+        output_path=cache_path(model_name, request.test_name),
+        authorization=http_request.headers.get("authorization"),
+    )
+
+
+@router.post("/runs", status_code=status.HTTP_202_ACCEPTED)
+async def start_cpcv_run(
+    model_name: str,
+    request: CpcvRunRequest,
+    background_tasks: BackgroundTasks,
+    http_request: Request,
+    _auth: AuthContext = Depends(
+        require_permissions(
+            Permissions.STRATEGY_TEST_RUN,
+            Permissions.DATA_INSTRUMENTS_READ,
+            Permissions.DATA_PRICES_READ,
+            Permissions.DATA_DIVIDENDS_READ,
+        )
+    ),
+) -> dict[str, Any]:
+    validate_cpcv_request(request)
+    output_path = cache_path(model_name, request.test_name)
+    return public_test_run(
+        queue_test_run(
+            test_type="cpcv",
+            subject_name=model_name,
+            test_name=request.test_name,
+            output_path=output_path,
+            flow=run_cpcv_flow,
+            flow_kwargs={
+                "model_name": model_name,
+                "request": request,
+                "output_path": output_path,
+                "authorization": http_request.headers.get("authorization"),
+            },
+            background_tasks=background_tasks,
+        )
+    )
+
+
+@router.get("/runs")
+async def list_cpcv_runs(
+    model_name: str,
+    _auth: AuthContext = Depends(require_permissions(Permissions.STRATEGY_TEST_READ)),
+) -> dict[str, Any]:
+    return {
+        "items": [
+            public_test_run(run)
+            for run in list_test_runs(test_type="cpcv", subject_name=model_name)
+        ]
+    }
+
+
+@router.get("/runs/{run_id}")
+async def get_cpcv_run(
+    model_name: str,
+    run_id: str,
+    _auth: AuthContext = Depends(require_permissions(Permissions.STRATEGY_TEST_READ)),
+) -> dict[str, Any]:
+    run = find_test_run(run_id, test_type="cpcv", subject_name=model_name)
+    if run is None:
+        raise HTTPException(status_code=404, detail="CPCV run was not found.")
+    return public_test_run(run)
+
+
+def validate_cpcv_request(request: CpcvRunRequest) -> None:
     if request.n_test_folds >= request.n_folds:
         raise HTTPException(
             status_code=422,
             detail="n_test_folds must be lower than n_folds.",
+        )
+    if request.n_jobs == 0:
+        raise HTTPException(status_code=422, detail="n_jobs cannot be zero.")
+    model_fits = math.comb(request.n_folds, request.n_test_folds) * request.n_test_folds
+    if model_fits > MAX_CPCV_MODEL_FITS:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Selected CPCV settings require {model_fits} model fits; "
+                f"the safety limit is {MAX_CPCV_MODEL_FITS}. Reduce n_folds or "
+                "n_test_folds."
+            ),
         )
     if request.start_date >= request.end_date:
         raise HTTPException(
@@ -84,8 +177,15 @@ async def run_cpcv_test(
             detail="start_date must be before end_date.",
         )
 
-    path = cache_path(model_name, request.test_name)
-    authorization = http_request.headers.get("authorization")
+
+async def run_cpcv_flow(
+    *,
+    model_name: str,
+    request: CpcvRunRequest,
+    output_path: Path,
+    authorization: str | None,
+) -> dict[str, Any]:
+    validate_cpcv_request(request)
     stocks = await fetch_stocks(request, authorization=authorization)
     figis = [item["figi"] for item in stocks if item.get("figi")]
     if not figis:
@@ -97,7 +197,8 @@ async def run_cpcv_test(
     dividends_info = await fetch_dividends(figis, request, authorization=authorization)
 
     settings = request.model_dump(mode="json")
-    result = generate_cpcv_report(
+    result = await asyncio.to_thread(
+        generate_cpcv_report,
         model_name,
         stocks,
         prices,
@@ -105,8 +206,10 @@ async def run_cpcv_test(
         dividends_info=dividends_info,
     )
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     return result
 
 

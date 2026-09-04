@@ -263,27 +263,49 @@ def normalize_timestamp_for_index(value: Any, index: pd.Index) -> pd.Timestamp:
 def build_close_prices(prices: pd.DataFrame) -> pd.DataFrame:
     required_columns = {"time", "ticker", "close"}
     missing = required_columns.difference(prices.columns)
+
     if missing:
         raise HTTPException(
             status_code=422,
             detail=f"Prices payload is missing columns: {', '.join(sorted(missing))}.",
         )
+
     prices = prices.copy()
-    prices["time"] = pd.to_datetime(prices["time"], errors="coerce")
-    prices["close"] = pd.to_numeric(prices["close"], errors="coerce")
+
+    prices["time"] = pd.to_datetime(
+        prices["time"],
+        errors="coerce",
+        utc=True,
+    ).dt.tz_localize(None)
+
+    prices["close"] = pd.to_numeric(
+        prices["close"],
+        errors="coerce",
+    )
+
     prices = prices.dropna(subset=["time", "ticker", "close"])
+
     close = (
         prices.pivot_table(
-            index="time", columns="ticker", values="close", aggfunc="last"
+            index="time",
+            columns="ticker",
+            values="close",
+            aggfunc="last",
         )
         .sort_index()
         .replace(0, pd.NA)
         .ffill()
         .dropna(axis=1, how="all")
     )
+
     close = close.loc[:, close.nunique(dropna=True) > 1]
+
     if close.empty:
-        raise HTTPException(status_code=422, detail="Close price matrix is empty.")
+        raise HTTPException(
+            status_code=422,
+            detail="Close price matrix is empty.",
+        )
+
     return close
 
 
@@ -296,7 +318,11 @@ def build_price_matrix(
         return base.copy()
 
     prices = prices.copy()
-    prices["time"] = pd.to_datetime(prices["time"], errors="coerce")
+    prices["time"] = pd.to_datetime(
+        prices["time"],
+        errors="coerce",
+        utc=True,
+    ).dt.tz_localize(None)
     prices[price_column] = pd.to_numeric(prices[price_column], errors="coerce")
     prices = prices.dropna(subset=["time", "ticker", price_column])
     matrix = (

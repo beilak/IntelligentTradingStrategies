@@ -12,6 +12,9 @@ from its.strategies.core.signals.close_below_recent_marker_signal import (
 from its.strategies.core.signals.extremum_range_long_signal import (
     ExtremumRangeLongSignal,
 )
+from its.strategies.core.signals.long_only_cross_sectional_momentum import (
+    LongOnlyCrossSectionalMomentumSignal,
+)
 from its.strategies.core.signals.pass_signals import KeepAllSignal
 from its.strategies.core.signals.price_breakout_signal import PriceBreakoutSignal
 from its.strategies.core.signals.pyod_anomaly_signal import PyODAnomalySignal
@@ -29,6 +32,7 @@ __all__ = [
     "CloseBelowRecentMarkerSignal",
     "ExtremumRangeLongSignal",
     "KeepAllSignal",
+    "LongOnlyCrossSectionalMomentumSignal",
     "PriceBreakoutSignal",
     "PyODAnomalySignal",
     "RangeLowProximitySignal",

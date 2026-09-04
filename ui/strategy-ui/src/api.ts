@@ -3,6 +3,7 @@ import type {
   BacktestRun,
   BacktestSavedTest,
   BacktestSettings,
+  CpcvRun,
   CpcvResult,
   CpcvSavedTest,
   CpcvSettings,
@@ -16,6 +17,7 @@ import type {
   TradingStrategyProductionState,
   StrategyComparisonResult,
   WalkForwardResult,
+  WalkForwardRun,
   WalkForwardSavedTest,
   WalkForwardSettings,
 } from "./types";
@@ -74,6 +76,23 @@ export async function runCpcvTest(modelName: string, settings: CpcvSettings): Pr
   });
 }
 
+export async function startCpcvRun(modelName: string, settings: CpcvSettings): Promise<CpcvRun> {
+  return request<CpcvRun>(`/models/${encodeURIComponent(modelName)}/cpcv/runs`, {
+    method: "POST",
+    body: JSON.stringify(settings),
+  });
+}
+
+export async function getCpcvRun(modelName: string, runId: string): Promise<CpcvRun> {
+  return request<CpcvRun>(
+    `/models/${encodeURIComponent(modelName)}/cpcv/runs/${encodeURIComponent(runId)}`,
+  );
+}
+
+export async function listCpcvRuns(modelName: string): Promise<{ items: CpcvRun[] }> {
+  return request<{ items: CpcvRun[] }>(`/models/${encodeURIComponent(modelName)}/cpcv/runs`);
+}
+
 export async function listWalkForwardTests(modelName: string): Promise<{ items: WalkForwardSavedTest[] }> {
   return request<{ items: WalkForwardSavedTest[] }>(
     `/models/${encodeURIComponent(modelName)}/walk-forward/tests`,
@@ -94,6 +113,30 @@ export async function runWalkForwardTest(
     method: "POST",
     body: JSON.stringify(settings),
   });
+}
+
+export async function startWalkForwardRun(
+  modelName: string,
+  settings: WalkForwardSettings,
+): Promise<WalkForwardRun> {
+  return request<WalkForwardRun>(`/models/${encodeURIComponent(modelName)}/walk-forward/runs`, {
+    method: "POST",
+    body: JSON.stringify(settings),
+  });
+}
+
+export async function getWalkForwardRun(modelName: string, runId: string): Promise<WalkForwardRun> {
+  return request<WalkForwardRun>(
+    `/models/${encodeURIComponent(modelName)}/walk-forward/runs/${encodeURIComponent(runId)}`,
+  );
+}
+
+export async function listWalkForwardRuns(
+  modelName: string,
+): Promise<{ items: WalkForwardRun[] }> {
+  return request<{ items: WalkForwardRun[] }>(
+    `/models/${encodeURIComponent(modelName)}/walk-forward/runs`,
+  );
 }
 
 export async function listBacktestTests(modelName: string): Promise<{ items: BacktestSavedTest[] }> {
@@ -131,6 +174,12 @@ export async function startBacktestRun(
 export async function getBacktestRun(modelName: string, runId: string): Promise<BacktestRun> {
   return request<BacktestRun>(
     `/models/${encodeURIComponent(modelName)}/backtest/runs/${encodeURIComponent(runId)}`,
+  );
+}
+
+export async function listBacktestRuns(modelName: string): Promise<{ items: BacktestRun[] }> {
+  return request<{ items: BacktestRun[] }>(
+    `/models/${encodeURIComponent(modelName)}/backtest/runs`,
   );
 }
 
@@ -216,6 +265,14 @@ export async function getTradingStrategyBacktestRun(
 ): Promise<BacktestRun> {
   return request<BacktestRun>(
     `/trading-strategies/${encodeURIComponent(strategyName)}/backtest/runs/${encodeURIComponent(runId)}`,
+  );
+}
+
+export async function listTradingStrategyBacktestRuns(
+  strategyName: string,
+): Promise<{ items: BacktestRun[] }> {
+  return request<{ items: BacktestRun[] }>(
+    `/trading-strategies/${encodeURIComponent(strategyName)}/backtest/runs`,
   );
 }
 

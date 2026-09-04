@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 import httpx
 import pandas as pd
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from its.authz.context import AuthContext
@@ -19,6 +21,12 @@ from its.strategies.testing.walk_forward import (
     list_test_paths,
     read_json,
     read_test_summary,
+)
+from services.strategy_backend.app.test_runs import (
+    find_test_run,
+    list_test_runs,
+    public_test_run,
+    queue_test_run,
 )
 
 DATA_BACKEND_BASE_URL = os.getenv(
@@ -78,14 +86,90 @@ async def run_walk_forward_test(
         )
     ),
 ) -> dict[str, Any]:
+    return await run_walk_forward_flow(
+        model_name=model_name,
+        request=request,
+        output_path=cache_path(model_name, request.test_name),
+        authorization=http_request.headers.get("authorization"),
+    )
+
+
+@router.post("/runs", status_code=status.HTTP_202_ACCEPTED)
+async def start_walk_forward_run(
+    model_name: str,
+    request: WalkForwardRunRequest,
+    background_tasks: BackgroundTasks,
+    http_request: Request,
+    _auth: AuthContext = Depends(
+        require_permissions(
+            Permissions.STRATEGY_TEST_RUN,
+            Permissions.DATA_INSTRUMENTS_READ,
+            Permissions.DATA_PRICES_READ,
+            Permissions.DATA_DIVIDENDS_READ,
+        )
+    ),
+) -> dict[str, Any]:
+    validate_walk_forward_request(request)
+    output_path = cache_path(model_name, request.test_name)
+    return public_test_run(
+        queue_test_run(
+            test_type="walk_forward",
+            subject_name=model_name,
+            test_name=request.test_name,
+            output_path=output_path,
+            flow=run_walk_forward_flow,
+            flow_kwargs={
+                "model_name": model_name,
+                "request": request,
+                "output_path": output_path,
+                "authorization": http_request.headers.get("authorization"),
+            },
+            background_tasks=background_tasks,
+        )
+    )
+
+
+@router.get("/runs")
+async def list_walk_forward_runs(
+    model_name: str,
+    _auth: AuthContext = Depends(require_permissions(Permissions.STRATEGY_TEST_READ)),
+) -> dict[str, Any]:
+    return {
+        "items": [
+            public_test_run(run)
+            for run in list_test_runs(test_type="walk_forward", subject_name=model_name)
+        ]
+    }
+
+
+@router.get("/runs/{run_id}")
+async def get_walk_forward_run(
+    model_name: str,
+    run_id: str,
+    _auth: AuthContext = Depends(require_permissions(Permissions.STRATEGY_TEST_READ)),
+) -> dict[str, Any]:
+    run = find_test_run(run_id, test_type="walk_forward", subject_name=model_name)
+    if run is None:
+        raise HTTPException(status_code=404, detail="WalkForward run was not found.")
+    return public_test_run(run)
+
+
+def validate_walk_forward_request(request: WalkForwardRunRequest) -> None:
     if request.start_date >= request.end_date:
         raise HTTPException(
             status_code=422,
             detail="start_date must be before end_date.",
         )
 
-    path = cache_path(model_name, request.test_name)
-    authorization = http_request.headers.get("authorization")
+
+async def run_walk_forward_flow(
+    *,
+    model_name: str,
+    request: WalkForwardRunRequest,
+    output_path: Path,
+    authorization: str | None,
+) -> dict[str, Any]:
+    validate_walk_forward_request(request)
     stocks = await fetch_stocks(request, authorization=authorization)
     figis = [item["figi"] for item in stocks if item.get("figi")]
     if not figis:
@@ -97,7 +181,8 @@ async def run_walk_forward_test(
     dividends_info = await fetch_dividends(figis, request, authorization=authorization)
 
     settings = request.model_dump(mode="json")
-    result = generate_walk_forward_report(
+    result = await asyncio.to_thread(
+        generate_walk_forward_report,
         model_name,
         stocks,
         prices,
@@ -105,8 +190,10 @@ async def run_walk_forward_test(
         dividends_info=dividends_info,
     )
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     return result
 
 

@@ -84,6 +84,7 @@ export interface CpcvSettings {
   n_folds: number;
   n_test_folds: number;
   test_size: number;
+  n_jobs: number;
 }
 
 export interface CpcvPeriod {
@@ -462,15 +463,20 @@ export interface BacktestPnlReport {
   };
 }
 
-export interface BacktestRun {
+export interface TestRun {
   run_id: string;
+  test_type: "cpcv" | "walk_forward" | "backtest";
   subject_name: string;
+  test_name: string;
   status: "queued" | "running" | "completed" | "failed";
   created_at: string;
   updated_at: string;
-  result: BacktestResult | null;
   error: string | null;
 }
+
+export type CpcvRun = TestRun;
+export type WalkForwardRun = TestRun;
+export type BacktestRun = TestRun;
 
 export interface RiskModelDefinition {
   id: string;

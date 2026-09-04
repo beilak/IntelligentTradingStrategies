@@ -6,13 +6,18 @@ import math
 import os
 import re
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 from fastapi import HTTPException
-from skfolio.model_selection import CombinatorialPurgedCV, cross_val_predict
+from skfolio import Population
+from skfolio.model_selection import CombinatorialPurgedCV
+from skfolio.portfolio import MultiPeriodPortfolio, Portfolio
+from sklearn.base import clone
 
 from its.strategies.core.types.strategy_types import Strategy
 
@@ -62,10 +67,15 @@ def generate_cpcv_report(
         pd.DataFrame(stocks),
         _dividends_info=dividends_info,
     ).build()
+    validation_pipeline = clone(strategy.pipeline)
+    _limit_pipeline_price_context(
+        validation_pipeline, pd.Timestamp(x_train.index.max())
+    )
     try:
-        strategy.pipeline.fit(x_train)
+        validation_pipeline.fit(x_train)
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if not _pipeline_selected_no_assets(validation_pipeline):
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     n_test_folds = settings.get("n_test_folds", 6)
     cv = CombinatorialPurgedCV(
@@ -74,17 +84,18 @@ def generate_cpcv_report(
     )
     cv_summary = series_to_rows(cv.summary(x_test), "value")
     try:
-        population = cross_val_predict(
+        population = causal_cpcv_predict(
             strategy.pipeline,
+            x_train,
             x_test,
-            cv=cv,
-            n_jobs=1,
+            cv,
             portfolio_params={
-                "annualized_factor": annualized_factor(
+                "annualization_factor": annualized_factor(
                     settings.get("interval", "CANDLE_INTERVAL_DAY")
                 ),
                 "tag": strategy.name,
             },
+            n_jobs=int(settings.get("n_jobs", 1)),
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -129,11 +140,152 @@ def generate_cpcv_report(
                 if item.get("figi") in set(figis)
             ],
             "asset_count": len(returns.columns),
+            "date_policy": {
+                "mode": "causal_cpcv",
+                "rule": (
+                    "Each test segment is fitted only on the base train period and "
+                    "CPCV training rows strictly earlier than test_start; long-form "
+                    "price context is limited through that fold's train_end."
+                ),
+            },
         },
         "cv_summary": cv_summary,
         "report": report_rows,
         "paths": paths,
     }
+
+
+def causal_cpcv_predict(
+    pipeline: Any,
+    x_train: pd.DataFrame,
+    x_test: pd.DataFrame,
+    cv: CombinatorialPurgedCV,
+    *,
+    portfolio_params: dict[str, Any] | None = None,
+    n_jobs: int = 1,
+) -> Population:
+    """Build CPCV paths without training any test segment on later observations."""
+    splits = list(cv.split(x_test))
+    path_ids = cv.get_path_ids()
+    path_count = int(np.max(path_ids)) + 1
+    path_portfolios: list[list[Portfolio]] = [[] for _ in range(path_count)]
+
+    work_items = []
+    for split_index, (candidate_train, test_segments) in enumerate(splits):
+        for segment_index, test_index in enumerate(test_segments):
+            if len(test_index) == 0:
+                continue
+            path_id = int(path_ids[split_index, segment_index])
+            work_items.append((path_id, candidate_train, test_index))
+
+    worker_count = resolve_n_jobs(n_jobs)
+    if worker_count == 1:
+        results = [
+            _fit_cpcv_segment(pipeline, x_train, x_test, item) for item in work_items
+        ]
+    else:
+        with ThreadPoolExecutor(
+            max_workers=min(worker_count, len(work_items)),
+            thread_name_prefix="cpcv",
+        ) as executor:
+            results = list(
+                executor.map(
+                    lambda item: _fit_cpcv_segment(pipeline, x_train, x_test, item),
+                    work_items,
+                )
+            )
+
+    for path_id, portfolio in results:
+        path_portfolios[path_id].append(portfolio)
+
+    params = {} if portfolio_params is None else portfolio_params.copy()
+    name = params.pop("name", "path")
+    return Population(
+        [
+            MultiPeriodPortfolio(
+                portfolios=portfolios,
+                name=f"{name}_{path_id}",
+                check_observations_order=False,
+                **params,
+            )
+            for path_id, portfolios in enumerate(path_portfolios)
+        ]
+    )
+
+
+def resolve_n_jobs(n_jobs: int) -> int:
+    if n_jobs == -1:
+        return max(1, os.cpu_count() or 1)
+    if n_jobs < 1:
+        raise ValueError("n_jobs must be -1 or a positive integer.")
+    return n_jobs
+
+
+def _fit_cpcv_segment(
+    pipeline: Any,
+    x_train: pd.DataFrame,
+    x_test: pd.DataFrame,
+    work_item: tuple[int, np.ndarray, np.ndarray],
+) -> tuple[int, Portfolio]:
+    path_id, candidate_train, test_index = work_item
+    test_start_position = int(test_index[0])
+    earlier_train = candidate_train[candidate_train < test_start_position]
+    fold_train = pd.concat([x_train, x_test.iloc[earlier_train]])
+    test_returns = x_test.iloc[test_index]
+
+    fitted_pipeline = clone(pipeline)
+    train_end = pd.Timestamp(fold_train.index.max())
+    _limit_pipeline_price_context(fitted_pipeline, train_end)
+    try:
+        fitted_pipeline.fit(fold_train)
+    except ValueError:
+        if not _pipeline_selected_no_assets(fitted_pipeline):
+            raise
+        portfolio = _cash_portfolio(test_returns)
+    else:
+        portfolio = fitted_pipeline.predict(test_returns)
+    return path_id, portfolio
+
+
+def _pipeline_selected_no_assets(pipeline: Any) -> bool:
+    """Return True only when a fitted selector produced an empty asset set."""
+    for _, step in getattr(pipeline, "steps", [])[:-1]:
+        get_mask = getattr(step, "_get_support_mask", None)
+        if not callable(get_mask):
+            continue
+        try:
+            mask = np.asarray(get_mask(), dtype=bool)
+        except (AttributeError, TypeError, ValueError):
+            continue
+        if mask.size > 0 and not mask.any():
+            return True
+    return False
+
+
+def _cash_portfolio(test_returns: pd.DataFrame) -> Portfolio:
+    """Represent an empty-selection CPCV segment as a fully cash portfolio."""
+    return Portfolio(
+        X=test_returns,
+        weights=np.zeros(test_returns.shape[1], dtype=float),
+        name="cash",
+    )
+
+
+def _limit_pipeline_price_context(pipeline: Any, train_end: pd.Timestamp) -> None:
+    """Expose long-form candles only through the causal CPCV training end."""
+    cutoff = pd.to_datetime(train_end, errors="raise", utc=True).tz_localize(None)
+    for _, step in getattr(pipeline, "steps", []):
+        prices = getattr(step, "asset_universe_prices", None)
+        if not isinstance(prices, pd.DataFrame) or "time" not in prices.columns:
+            continue
+
+        limited = prices.copy()
+        limited["time"] = pd.to_datetime(
+            limited["time"],
+            errors="coerce",
+            utc=True,
+        ).dt.tz_localize(None)
+        step.asset_universe_prices = limited.loc[limited["time"] <= cutoff].copy()
 
 
 def build_returns_matrix(prices: pd.DataFrame) -> pd.DataFrame:

@@ -1,3 +1,15 @@
+from its.strategies.models.equity_liquidity_momentum import (
+    ModelEquityLiquidityMomentumCVaRRiskParityBuilder,
+    ModelEquityLiquidityMomentumEqualRiskContributionBuilder,
+    ModelEquityLiquidityMomentumEqualWeightBuilder,
+    ModelEquityLiquidityMomentumHERCBuilder,
+    ModelEquityLiquidityMomentumHRPBuilder,
+    ModelEquityLiquidityMomentumInverseVolatilityBuilder,
+    ModelEquityLiquidityMomentumMaximumDiversificationBuilder,
+    ModelEquityLiquidityMomentumMaximumSharpeBuilder,
+    ModelEquityLiquidityMomentumMinimumCVaRBuilder,
+    ModelEquityLiquidityMomentumMinimumVarianceBuilder,  # 3ME испорчен, нужно пересчитать (
+)
 from its.strategies.models.extremum_range_long_only import (
     ModelExtremumRangeLongOnlyBuilder,
 )
@@ -100,6 +112,16 @@ __all__ = [
     "Generated202605011631187355892cTop1Builder",
     "Generated202605011631187355892cTop2Builder",
     "Generated202605011631187355892cTop3Builder",
+    "ModelEquityLiquidityMomentumCVaRRiskParityBuilder",
+    "ModelEquityLiquidityMomentumEqualRiskContributionBuilder",
+    "ModelEquityLiquidityMomentumEqualWeightBuilder",
+    "ModelEquityLiquidityMomentumHERCBuilder",
+    "ModelEquityLiquidityMomentumHRPBuilder",
+    "ModelEquityLiquidityMomentumInverseVolatilityBuilder",
+    "ModelEquityLiquidityMomentumMaximumDiversificationBuilder",
+    "ModelEquityLiquidityMomentumMaximumSharpeBuilder",
+    "ModelEquityLiquidityMomentumMinimumCVaRBuilder",
+    "ModelEquityLiquidityMomentumMinimumVarianceBuilder",
     "ModelExtremumRangeLongOnlyBuilder",
     "ModelHighTurnoverWithCQMBuilder",
     "ModelHighTurnoverWithEQBuilder",

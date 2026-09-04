@@ -3,14 +3,13 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import uuid
-from datetime import UTC, date, datetime
+from datetime import date
 from pathlib import Path
 from typing import Any
 
 import httpx
 import pandas as pd
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from its.authz.context import AuthContext
@@ -24,6 +23,15 @@ from its.strategies.testing.backtest import (
     read_json,
     read_test_summary,
 )
+from services.strategy_backend.app.test_runs import (
+    TEST_RUNS,
+    execute_test_run,
+    find_test_run,
+    list_test_runs,
+    prune_test_runs,
+    public_test_run,
+    queue_test_run,
+)
 
 DATA_BACKEND_BASE_URL = os.getenv(
     "DATA_BACKEND_BASE_URL",
@@ -31,12 +39,7 @@ DATA_BACKEND_BASE_URL = os.getenv(
 ).rstrip("/")
 
 router = APIRouter(prefix="/models/{model_name}/backtest", tags=["backtest"])
-BACKTEST_RUNS: dict[str, dict[str, Any]] = {}
-MAX_CONCURRENT_BACKTESTS = max(
-    1, int(os.getenv("STRATEGY_MAX_CONCURRENT_BACKTESTS", "2"))
-)
-BACKTEST_RUN_SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_BACKTESTS)
-MAX_RETAINED_BACKTEST_RUNS = 100
+BACKTEST_RUNS = TEST_RUNS
 
 
 class BacktestRunRequest(BaseModel):
@@ -107,7 +110,7 @@ async def run_backtest_test(
     )
 
 
-@router.post("/runs")
+@router.post("/runs", status_code=status.HTTP_202_ACCEPTED)
 async def start_backtest_run(
     model_name: str,
     request: BacktestRunRequest,
@@ -122,14 +125,29 @@ async def start_backtest_run(
         )
     ),
 ) -> dict[str, Any]:
-    return queue_backtest_run(
-        subject_name=model_name,
-        request=request,
-        output_path=cache_path(model_name, request.test_name),
-        report_factory=generate_backtest_report,
-        authorization=http_request.headers.get("authorization"),
-        background_tasks=background_tasks,
+    return public_test_run(
+        queue_backtest_run(
+            subject_name=model_name,
+            request=request,
+            output_path=cache_path(model_name, request.test_name),
+            report_factory=generate_backtest_report,
+            authorization=http_request.headers.get("authorization"),
+            background_tasks=background_tasks,
+        )
     )
+
+
+@router.get("/runs")
+async def list_backtest_runs(
+    model_name: str,
+    _auth: AuthContext = Depends(require_permissions(Permissions.STRATEGY_TEST_READ)),
+) -> dict[str, Any]:
+    return {
+        "items": [
+            public_test_run(run)
+            for run in list_test_runs(test_type="backtest", subject_name=model_name)
+        ]
+    }
 
 
 @router.get("/runs/{run_id}")
@@ -138,10 +156,10 @@ async def get_backtest_run(
     run_id: str,
     _auth: AuthContext = Depends(require_permissions(Permissions.STRATEGY_TEST_READ)),
 ) -> dict[str, Any]:
-    run = BACKTEST_RUNS.get(run_id)
-    if run is None or run["subject_name"] != model_name:
+    run = find_test_run(run_id, test_type="backtest", subject_name=model_name)
+    if run is None:
         raise HTTPException(status_code=404, detail="Backtest run was not found.")
-    return run
+    return public_test_run(run)
 
 
 def queue_backtest_run(
@@ -154,73 +172,34 @@ def queue_backtest_run(
     background_tasks: BackgroundTasks,
 ) -> dict[str, Any]:
     validate_backtest_request(request)
-    output_key = str(output_path)
-    for existing_run in BACKTEST_RUNS.values():
-        if existing_run.get("output_path") == output_key and existing_run.get(
-            "status"
-        ) in {"queued", "running"}:
-            return existing_run
-
-    prune_backtest_runs()
-    run_id = uuid.uuid4().hex
-    now = datetime.now(UTC).isoformat()
-    run = {
-        "run_id": run_id,
-        "subject_name": subject_name,
-        "status": "queued",
-        "created_at": now,
-        "updated_at": now,
-        "result": None,
-        "error": None,
-        "output_path": output_key,
-    }
-    BACKTEST_RUNS[run_id] = run
-    background_tasks.add_task(
-        execute_backtest_run,
-        run_id=run_id,
+    return queue_test_run(
+        test_type="backtest",
         subject_name=subject_name,
-        request=request,
+        test_name=request.test_name,
         output_path=output_path,
-        report_factory=report_factory,
-        authorization=authorization,
+        flow=run_backtest_flow,
+        flow_kwargs={
+            "subject_name": subject_name,
+            "request": request,
+            "output_path": output_path,
+            "report_factory": report_factory,
+            "authorization": authorization,
+        },
+        background_tasks=background_tasks,
     )
-    return run
 
 
 async def execute_backtest_run(**kwargs: Any) -> None:
     run_id = str(kwargs.pop("run_id"))
-    run = BACKTEST_RUNS[run_id]
-    async with BACKTEST_RUN_SEMAPHORE:
-        run.update(status="running", updated_at=datetime.now(UTC).isoformat())
-        try:
-            result = await run_backtest_flow(**kwargs)
-            run.update(
-                status="completed",
-                result=result,
-                updated_at=datetime.now(UTC).isoformat(),
-            )
-        except Exception as exc:
-            run.update(
-                status="failed",
-                error=str(exc),
-                updated_at=datetime.now(UTC).isoformat(),
-            )
+    await execute_test_run(
+        run_id=run_id,
+        flow=run_backtest_flow,
+        flow_kwargs=kwargs,
+    )
 
 
 def prune_backtest_runs() -> None:
-    overflow = len(BACKTEST_RUNS) - MAX_RETAINED_BACKTEST_RUNS + 1
-    if overflow <= 0:
-        return
-    finished = sorted(
-        (
-            run
-            for run in BACKTEST_RUNS.values()
-            if run.get("status") in {"completed", "failed"}
-        ),
-        key=lambda run: str(run.get("updated_at", "")),
-    )
-    for run in finished[:overflow]:
-        BACKTEST_RUNS.pop(str(run["run_id"]), None)
+    prune_test_runs()
 
 
 def validate_backtest_request(request: BacktestRunRequest) -> None:

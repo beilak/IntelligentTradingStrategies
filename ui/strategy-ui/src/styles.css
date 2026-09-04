@@ -554,7 +554,19 @@ select {
 
 .backtest-report-actions {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   justify-content: flex-end;
+}
+
+.report-download-trigger {
+  border-color: rgba(102, 217, 239, 0.38);
+  color: #bdeef6;
+}
+
+.report-download-trigger:hover,
+.report-download-trigger:focus-visible {
+  border-color: rgba(102, 217, 239, 0.72);
 }
 
 .backtest-pnl-trigger {

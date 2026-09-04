@@ -852,7 +852,11 @@ def _limit_pipeline_price_context(strategy: Any, train_end: pd.Timestamp) -> Non
                 step._backtest_full_asset_universe_prices = full_prices
 
             limited = full_prices.copy()
-            limited["time"] = pd.to_datetime(limited["time"], errors="coerce")
+            limited["time"] = pd.to_datetime(
+                limited["time"],
+                errors="coerce",
+                utc=True,
+            ).dt.tz_localize(None)
             step.asset_universe_prices = limited.loc[
                 limited["time"] <= train_end
             ].copy()

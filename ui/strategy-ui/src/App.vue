@@ -6,6 +6,7 @@ import {
     ChevronDown,
     CircleHelp,
     DatabaseZap,
+    Download,
     FileChartColumn,
     FolderOpen,
     GitBranch,
@@ -25,6 +26,7 @@ import {
     getBacktestTest,
     getBacktestRun,
     getCpcvTest,
+    getCpcvRun,
     getLatestStrategyComparison,
     getModelDetail,
     getRegistry,
@@ -33,21 +35,27 @@ import {
     getTradingStrategyBacktestRun,
     getTradingStrategyDetail,
     getWalkForwardTest,
+    getWalkForwardRun,
     listAvailableRiskModels,
     listBacktestTests,
+    listBacktestRuns,
     listCpcvTests,
+    listCpcvRuns,
     listRiskModelTests,
     listTradingStrategies,
     listTradingStrategyBacktestTests,
+    listTradingStrategyBacktestRuns,
     listWalkForwardTests,
+    listWalkForwardRuns,
     startBacktestRun,
-    runCpcvTest,
+    startCpcvRun,
     runRiskModelTest,
     setTradingStrategyProdReady,
     startTradingStrategyBacktestRun,
-    runWalkForwardTest,
+    startWalkForwardRun,
 } from "./api";
 import { messages, cpcvMetricTranslations } from "./i18n";
+import { downloadMarkdownReport } from "./reportExport";
 import type {
     BacktestResult,
     BacktestSavedTest,
@@ -65,6 +73,7 @@ import type {
     RiskModelSavedTest,
     RiskModelSettings,
     StrategyComparisonResult,
+    TestRun,
     TradingStrategyProductionState,
     WalkForwardResult,
     WalkForwardSavedTest,
@@ -97,6 +106,9 @@ const isBacktestLoading = ref(false);
 const isRiskModelRunning = ref(false);
 const isRiskModelLoading = ref(false);
 const isComparisonLoading = ref(false);
+const activeCpcvRunId = ref("");
+const activeWalkForwardRunId = ref("");
+const activeBacktestRunId = ref("");
 const error = ref("");
 const cpcvError = ref("");
 const walkForwardError = ref("");
@@ -589,7 +601,13 @@ async function loadSavedCpcvTests(modelName = selectedModelName.value) {
     if (!modelName) return;
     isCpcvLoading.value = true;
     try {
-        savedCpcvTests.value = (await listCpcvTests(modelName)).items;
+        const [tests, runs] = await Promise.all([
+            listCpcvTests(modelName),
+            listCpcvRuns(modelName),
+        ]);
+        savedCpcvTests.value = tests.items;
+        const activeRun = runs.items.find(isActiveTestRun);
+        if (activeRun) void followCpcvRun(modelName, activeRun);
     } catch (err) {
         cpcvError.value = formatError(err);
     } finally {
@@ -616,18 +634,41 @@ async function openCpcvTest(testName: string) {
 
 async function runCpcv() {
     if (!selectedModelName.value) return;
-    isCpcvRunning.value = true;
+    const modelName = selectedModelName.value;
     cpcvError.value = "";
     try {
-        cpcvResult.value = await runCpcvTest(
-            selectedModelName.value,
-            cpcvSettings.value,
+        await followCpcvRun(
+            modelName,
+            await startCpcvRun(modelName, cpcvSettings.value),
         );
-        await loadSavedCpcvTests(selectedModelName.value);
     } catch (err) {
         cpcvError.value = formatError(err);
+    }
+}
+
+async function followCpcvRun(modelName: string, initialRun: TestRun) {
+    if (activeCpcvRunId.value === initialRun.run_id) return;
+    activeCpcvRunId.value = initialRun.run_id;
+    isCpcvRunning.value = true;
+    try {
+        const run = await waitForTestRun(initialRun, (runId) =>
+            getCpcvRun(modelName, runId),
+        );
+        const result = await getCpcvTest(modelName, run.test_name);
+        const tests = await listCpcvTests(modelName);
+        if (selectedModelName.value === modelName && isCoreStrategyTab.value) {
+            cpcvResult.value = result;
+            savedCpcvTests.value = tests.items;
+        }
+    } catch (err) {
+        if (selectedModelName.value === modelName) {
+            cpcvError.value = formatError(err);
+        }
     } finally {
-        isCpcvRunning.value = false;
+        if (activeCpcvRunId.value === initialRun.run_id) {
+            activeCpcvRunId.value = "";
+            isCpcvRunning.value = false;
+        }
     }
 }
 
@@ -635,9 +676,13 @@ async function loadSavedWalkForwardTests(modelName = selectedModelName.value) {
     if (!modelName) return;
     isWalkForwardLoading.value = true;
     try {
-        savedWalkForwardTests.value = (
-            await listWalkForwardTests(modelName)
-        ).items;
+        const [tests, runs] = await Promise.all([
+            listWalkForwardTests(modelName),
+            listWalkForwardRuns(modelName),
+        ]);
+        savedWalkForwardTests.value = tests.items;
+        const activeRun = runs.items.find(isActiveTestRun);
+        if (activeRun) void followWalkForwardRun(modelName, activeRun);
     } catch (err) {
         walkForwardError.value = formatError(err);
     } finally {
@@ -667,18 +712,41 @@ async function openWalkForwardTest(testName: string) {
 
 async function runWalkForward() {
     if (!selectedModelName.value) return;
-    isWalkForwardRunning.value = true;
+    const modelName = selectedModelName.value;
     walkForwardError.value = "";
     try {
-        walkForwardResult.value = await runWalkForwardTest(
-            selectedModelName.value,
-            walkForwardSettings.value,
+        await followWalkForwardRun(
+            modelName,
+            await startWalkForwardRun(modelName, walkForwardSettings.value),
         );
-        await loadSavedWalkForwardTests(selectedModelName.value);
     } catch (err) {
         walkForwardError.value = formatError(err);
+    }
+}
+
+async function followWalkForwardRun(modelName: string, initialRun: TestRun) {
+    if (activeWalkForwardRunId.value === initialRun.run_id) return;
+    activeWalkForwardRunId.value = initialRun.run_id;
+    isWalkForwardRunning.value = true;
+    try {
+        const run = await waitForTestRun(initialRun, (runId) =>
+            getWalkForwardRun(modelName, runId),
+        );
+        const result = await getWalkForwardTest(modelName, run.test_name);
+        const tests = await listWalkForwardTests(modelName);
+        if (selectedModelName.value === modelName && isCoreStrategyTab.value) {
+            walkForwardResult.value = result;
+            savedWalkForwardTests.value = tests.items;
+        }
+    } catch (err) {
+        if (selectedModelName.value === modelName) {
+            walkForwardError.value = formatError(err);
+        }
     } finally {
-        isWalkForwardRunning.value = false;
+        if (activeWalkForwardRunId.value === initialRun.run_id) {
+            activeWalkForwardRunId.value = "";
+            isWalkForwardRunning.value = false;
+        }
     }
 }
 
@@ -686,9 +754,20 @@ async function loadSavedBacktestTests(modelName = selectedModelName.value) {
     if (!modelName) return;
     isBacktestLoading.value = true;
     try {
-        savedBacktestTests.value = isTradingStrategyTab.value
-            ? (await listTradingStrategyBacktestTests(modelName)).items
-            : (await listBacktestTests(modelName)).items;
+        const tradingStrategy = isTradingStrategyTab.value;
+        const [tests, runs] = await Promise.all([
+            tradingStrategy
+                ? listTradingStrategyBacktestTests(modelName)
+                : listBacktestTests(modelName),
+            tradingStrategy
+                ? listTradingStrategyBacktestRuns(modelName)
+                : listBacktestRuns(modelName),
+        ]);
+        savedBacktestTests.value = tests.items;
+        const activeRun = runs.items.find(isActiveTestRun);
+        if (activeRun) {
+            void followBacktestRun(modelName, tradingStrategy, activeRun);
+        }
     } catch (err) {
         backtestError.value = formatError(err);
     } finally {
@@ -723,40 +802,91 @@ async function openBacktestTest(testName: string) {
 
 async function runBacktest() {
     if (!selectedModelName.value) return;
-    isBacktestRunning.value = true;
+    const modelName = selectedModelName.value;
+    const tradingStrategy = isTradingStrategyTab.value;
     backtestError.value = "";
     try {
-        let run = isTradingStrategyTab.value
-            ? await startTradingStrategyBacktestRun(
-                  selectedModelName.value,
-                  backendBacktestSettings(),
-              )
-            : await startBacktestRun(
-                  selectedModelName.value,
-                  backendBacktestSettings(),
-              );
-        while (run.status === "queued" || run.status === "running") {
-            await new Promise((resolve) => window.setTimeout(resolve, 1_000));
-            run = isTradingStrategyTab.value
-                ? await getTradingStrategyBacktestRun(
-                      selectedModelName.value,
-                      run.run_id,
+        await followBacktestRun(
+            modelName,
+            tradingStrategy,
+            tradingStrategy
+                ? await startTradingStrategyBacktestRun(
+                      modelName,
+                      backendBacktestSettings(),
                   )
-                : await getBacktestRun(selectedModelName.value, run.run_id);
-        }
-        if (run.status === "failed") {
-            throw new Error(run.error ?? "Backtest failed");
-        }
-        if (!run.result) {
-            throw new Error("Backtest completed without a result");
-        }
-        backtestResult.value = run.result;
-        await loadSavedBacktestTests(selectedModelName.value);
+                : await startBacktestRun(
+                      modelName,
+                      backendBacktestSettings(),
+                  ),
+        );
     } catch (err) {
         backtestError.value = formatError(err);
-    } finally {
-        isBacktestRunning.value = false;
     }
+}
+
+async function followBacktestRun(
+    modelName: string,
+    tradingStrategy: boolean,
+    initialRun: TestRun,
+) {
+    if (activeBacktestRunId.value === initialRun.run_id) return;
+    activeBacktestRunId.value = initialRun.run_id;
+    isBacktestRunning.value = true;
+    try {
+        const run = await waitForTestRun(initialRun, (runId) =>
+            tradingStrategy
+                ? getTradingStrategyBacktestRun(modelName, runId)
+                : getBacktestRun(modelName, runId),
+        );
+        const result = tradingStrategy
+            ? await getTradingStrategyBacktestTest(modelName, run.test_name)
+            : await getBacktestTest(modelName, run.test_name);
+        const tests = tradingStrategy
+            ? await listTradingStrategyBacktestTests(modelName)
+            : await listBacktestTests(modelName);
+        if (
+            selectedModelName.value === modelName &&
+            isTradingStrategyTab.value === tradingStrategy
+        ) {
+            backtestResult.value = result;
+            savedBacktestTests.value = tests.items;
+        }
+    } catch (err) {
+        if (selectedModelName.value === modelName) {
+            backtestError.value = formatError(err);
+        }
+    } finally {
+        if (activeBacktestRunId.value === initialRun.run_id) {
+            activeBacktestRunId.value = "";
+            isBacktestRunning.value = false;
+        }
+    }
+}
+
+function isActiveTestRun(run: TestRun): boolean {
+    return run.status === "queued" || run.status === "running";
+}
+
+async function waitForTestRun(
+    initialRun: TestRun,
+    refresh: (runId: string) => Promise<TestRun>,
+): Promise<TestRun> {
+    let run = initialRun;
+    let consecutiveFetchErrors = 0;
+    while (run.status === "queued" || run.status === "running") {
+        await new Promise((resolve) => window.setTimeout(resolve, 2_000));
+        try {
+            run = await refresh(run.run_id);
+            consecutiveFetchErrors = 0;
+        } catch (err) {
+            consecutiveFetchErrors += 1;
+            if (consecutiveFetchErrors >= 5) throw err;
+        }
+    }
+    if (run.status === "failed") {
+        throw new Error(run.error ?? `${run.test_type} failed`);
+    }
+    return run;
 }
 
 function backendBacktestSettings(): BacktestSettings {
@@ -864,9 +994,10 @@ function defaultCpcvSettings(): CpcvSettings {
         end_date: toDateInput(end),
         interval: "CANDLE_INTERVAL_DAY",
         class_code: "TQBR",
-        n_folds: 10,
-        n_test_folds: 6,
+        n_folds: 5,
+        n_test_folds: 2,
         test_size: 0.33,
+        n_jobs: -1,
     };
 }
 
@@ -1039,6 +1170,10 @@ function testTypeLabel(value: string) {
             backtesting: "Backtesting",
         }[value] ?? value
     );
+}
+
+function exportReport(result: CpcvResult | WalkForwardResult | BacktestResult) {
+    downloadMarkdownReport(result, locale.value);
 }
 
 function openAssetsModal(source: "cpcv" | "walkForward" | "riskModel") {
@@ -2317,6 +2452,16 @@ function polarPoint(cx: number, cy: number, radius: number, ratio: number) {
                                     type="number"
                                 />
                             </label>
+                            <label>
+                                <span>{{ t.parallelWorkers }}</span>
+                                <select v-model.number="cpcvSettings.n_jobs">
+                                    <option :value="-1">{{ t.allCpuCores }}</option>
+                                    <option :value="1">1</option>
+                                    <option :value="2">2</option>
+                                    <option :value="4">4</option>
+                                    <option :value="8">8</option>
+                                </select>
+                            </label>
                         </div>
 
                         <div class="cpcv-actions">
@@ -2379,6 +2524,16 @@ function polarPoint(cx: number, cy: number, radius: number, ratio: number) {
                     </div>
 
                     <div v-if="cpcvResult" class="cpcv-results">
+                        <div class="backtest-report-actions">
+                            <button
+                                class="icon-text-button report-download-trigger"
+                                type="button"
+                                @click="exportReport(cpcvResult)"
+                            >
+                                <Download :size="17" />
+                                <span>{{ t.exportMarkdown }}</span>
+                            </button>
+                        </div>
                         <div class="result-strip">
                             <article>
                                 <span>{{ t.train }}</span>
@@ -2724,6 +2879,16 @@ function polarPoint(cx: number, cy: number, radius: number, ratio: number) {
                     </div>
 
                     <div v-if="walkForwardResult" class="cpcv-results">
+                        <div class="backtest-report-actions">
+                            <button
+                                class="icon-text-button report-download-trigger"
+                                type="button"
+                                @click="exportReport(walkForwardResult)"
+                            >
+                                <Download :size="17" />
+                                <span>{{ t.exportMarkdown }}</span>
+                            </button>
+                        </div>
                         <div class="result-strip">
                             <article>
                                 <span>{{ t.train }}</span>
@@ -4322,6 +4487,14 @@ function polarPoint(cx: number, cy: number, radius: number, ratio: number) {
 
                     <div v-if="backtestResult" class="cpcv-results">
                         <div class="backtest-report-actions">
+                            <button
+                                class="icon-text-button report-download-trigger"
+                                type="button"
+                                @click="exportReport(backtestResult)"
+                            >
+                                <Download :size="17" />
+                                <span>{{ t.exportMarkdown }}</span>
+                            </button>
                             <button
                                 class="icon-text-button backtest-pnl-trigger"
                                 type="button"

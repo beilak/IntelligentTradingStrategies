@@ -133,6 +133,9 @@ services:
       STRATEGY_TEST_CACHE_DIR: /app/its/data/strategy_tests/cpcv
       STRATEGY_WF_CACHE_DIR: /app/its/data/strategy_tests/walk_forward
       STRATEGY_BACKTEST_CACHE_DIR: /app/its/data/strategy_tests/backtest
+      STRATEGY_RUN_STATUS_DIR: /app/its/data/strategy_tests/runs
+      STRATEGY_MAX_CONCURRENT_TESTS: "1"
+      STRATEGY_MAX_CPCV_MODEL_FITS: "200"
     volumes:
       - ./its/ga:/app/its/ga:ro
       - ./its/strategies:/app/its/strategies:ro
@@ -146,6 +149,7 @@ services:
         condition: service_healthy
     expose:
       - "8000"
+    restart: unless-stopped
 
   strategy-ui:
     build:

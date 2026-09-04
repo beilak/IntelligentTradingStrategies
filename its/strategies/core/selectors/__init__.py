@@ -2,6 +2,9 @@ from its.strategies.core.selectors.cross_sectional_momentum_selector import (
     CrossSectionalMomentumSelector,
 )
 from its.strategies.core.selectors.divident_selector import DividendHistorySelector
+from its.strategies.core.selectors.equity_liquidity_selector import (
+    EquityLiquiditySelector,
+)
 from its.strategies.core.selectors.intraday_turnover_selection import (
     IntradayTurnoverSelector,
 )
@@ -20,6 +23,7 @@ from its.strategies.core.selectors.trend_selector import (
 __all__ = [
     "CrossSectionalMomentumSelector",
     "DividendHistorySelector",
+    "EquityLiquiditySelector",
     "IntradayTurnoverSelector",
     "KeepAllSelector",
     "QuarterlyTopTurnoverSelector",

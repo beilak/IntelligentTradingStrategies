@@ -6,9 +6,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 from fastapi import HTTPException
-from skfolio.model_selection import WalkForward, cross_val_predict
+from skfolio.model_selection import WalkForward
+from skfolio.portfolio import MultiPeriodPortfolio, Portfolio
+from sklearn.base import clone
 
 from its.strategies.testing.cpcv import (
     annualized_factor,
@@ -65,7 +68,6 @@ def generate_walk_forward_report(
         pd.DataFrame(stocks),
         _dividends_info=dividends_info,
     ).build()
-    strategy.pipeline.fit(x_train)
 
     train_size_months = settings.get("train_size_months", 3)
     freq_months = settings.get("freq_months", 3)
@@ -89,11 +91,10 @@ def generate_walk_forward_report(
                 f"freq_months={freq_months}, wf_test_size={settings.get('wf_test_size', 1)}."
             ),
         )
-    population = cross_val_predict(
+    population = walk_forward_cross_val_predict(
         strategy.pipeline,
         x_test,
-        cv=walk_forward,
-        n_jobs=1,
+        splits,
         portfolio_params={
             "annualized_factor": annualized_factor(
                 settings.get("interval", "CANDLE_INTERVAL_DAY")
@@ -141,6 +142,89 @@ def generate_walk_forward_report(
         "windows": windows,
         "paths": paths,
     }
+
+
+def walk_forward_cross_val_predict(
+    pipeline: Any,
+    X: pd.DataFrame,
+    splits: list[dict[str, Any]],
+    *,
+    portfolio_params: dict[str, Any] | None = None,
+) -> MultiPeriodPortfolio:
+    """Fit and predict every WF fold with point-in-time price context.
+
+    ``skfolio.cross_val_predict`` slices ``X`` for each fold, but it cannot slice
+    long-form candle data stored as estimator parameters.  Strategies using that
+    context would therefore see candles after the fold's training end.  Clone the
+    pipeline per fold and explicitly limit its context before fitting.
+    """
+    portfolios = []
+    for split in splits:
+        train_dates = pd.DatetimeIndex(split["train_dates"])
+        test_dates = pd.DatetimeIndex(split["test_dates"])
+        if train_dates.empty or test_dates.empty:
+            continue
+
+        fitted_pipeline = clone(pipeline)
+        train_end = pd.Timestamp(train_dates.max())
+        _limit_pipeline_price_context(fitted_pipeline, train_end)
+        test_returns = X.loc[test_dates]
+        try:
+            fitted_pipeline.fit(X.loc[train_dates])
+        except ValueError:
+            if not _pipeline_selected_no_assets(fitted_pipeline):
+                raise
+            portfolios.append(_cash_portfolio(test_returns))
+            continue
+        portfolios.append(fitted_pipeline.predict(test_returns))
+
+    params = {} if portfolio_params is None else portfolio_params.copy()
+    return MultiPeriodPortfolio(
+        portfolios=portfolios,
+        check_observations_order=False,
+        **params,
+    )
+
+
+def _pipeline_selected_no_assets(pipeline: Any) -> bool:
+    """Return True only when a fitted selector produced an empty asset set."""
+    for _, step in getattr(pipeline, "steps", [])[:-1]:
+        get_mask = getattr(step, "_get_support_mask", None)
+        if not callable(get_mask):
+            continue
+        try:
+            mask = np.asarray(get_mask(), dtype=bool)
+        except (AttributeError, TypeError, ValueError):
+            continue
+        if mask.size > 0 and not mask.any():
+            return True
+    return False
+
+
+def _cash_portfolio(test_returns: pd.DataFrame) -> Portfolio:
+    """Represent an empty-selection WF fold as a fully cash portfolio."""
+    return Portfolio(
+        X=test_returns,
+        weights=np.zeros(test_returns.shape[1], dtype=float),
+        name="cash",
+    )
+
+
+def _limit_pipeline_price_context(pipeline: Any, train_end: pd.Timestamp) -> None:
+    """Expose long-form candles only through the current WF training end."""
+    cutoff = pd.to_datetime(train_end, errors="raise", utc=True).tz_localize(None)
+    for _, step in getattr(pipeline, "steps", []):
+        prices = getattr(step, "asset_universe_prices", None)
+        if not isinstance(prices, pd.DataFrame) or "time" not in prices.columns:
+            continue
+
+        limited = prices.copy()
+        limited["time"] = pd.to_datetime(
+            limited["time"],
+            errors="coerce",
+            utc=True,
+        ).dt.tz_localize(None)
+        step.asset_universe_prices = limited.loc[limited["time"] <= cutoff].copy()
 
 
 def walk_forward_summary(

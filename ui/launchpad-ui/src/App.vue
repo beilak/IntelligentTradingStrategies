@@ -236,18 +236,18 @@ const tiles = computed(() => {
     });
   }
 
-  if (hasPermission("system.health.read")) {
-    items.push({
-      id: "system",
-      title: t.value.observabilityTitle,
-      subtitle: t.value.observabilitySubtitle,
-      body: t.value.observabilityBody,
-      href: "/health",
-      icon: Activity,
-      accent: "#aee9d1",
-      metrics: [t.value.statusData, t.value.statusStrategy],
-    });
-  }
+  // if (hasPermission("system.health.read")) {
+  //   items.push({
+  //     id: "system",
+  //     title: t.value.observabilityTitle,
+  //     subtitle: t.value.observabilitySubtitle,
+  //     body: t.value.observabilityBody,
+  //     href: "/health",
+  //     icon: Activity,
+  //     accent: "#aee9d1",
+  //     metrics: [t.value.statusData, t.value.statusStrategy],
+  //   });
+  // }
 
   if (items.length === 0) {
     items.push({
